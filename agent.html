@@ -1883,9 +1883,24 @@
     <div id="settings-popover">
         <div class="settings-panel">
         <div class="settings-panel-head">
-            <span class="head-label">Tools</span>
+            <span class="icon">shield</span>
+            <span class="head-label">Security &amp; Permissions</span>
+        </div>
+        <div class="popover-section-title" style="margin-top: 0; margin-bottom: 8px;">
+            <span class="icon" style="font-size: 14px;">build</span>
+            <span>Tools</span>
         </div>
         <div id="tools-list"></div>
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+            <div class="ct-item-row" style="border-bottom: none; padding: 4px 0;">
+                <span class="ct-item-name">.agent files</span>
+                <div class="tri-switch" id="shield-agent-switch">
+                    <button class="tri-btn never active never" data-agent-val="hide">hide</button>
+                    <button class="tri-btn always" data-agent-val="show">show</button>
+                </div>
+            </div>
+            <div style="font-size: 10px; color: var(--dim); margin-top: 4px; line-height: 1.4;">Controls whether .agent files are visible to all tools (read, write, grep, etc.)</div>
+        </div>
 
         </div>
     </div>
@@ -1990,6 +2005,7 @@
                             <label>Preserve last N messages:</label>
                             <input type="number" id="settings-compress-preserve" value="6" min="1" max="50">
                         </div>
+
                     </div>
                     <div id="danger-zone-footer" style="padding: 10px 10px 0 10px;">
                         <div class="popover-section-title" style="margin-top: 0;">
@@ -2283,7 +2299,8 @@ const CONFIG_DEFAULTS = {
     'compress-enabled': 'true',
     'compress-threshold': '75',
     'compress-preserve': '6',
-    'window-mode': 'floating'
+    'window-mode': 'floating',
+    'hide-agent-files': 'true'
 };
 
 const GLOW_STATUS_COLORS = {
@@ -2650,18 +2667,9 @@ function seedBuiltinToolSources() {
             modes: ['code'],
             permission: 'ask'
         }, `
-    if (await api.isToolOrAgentPath(args.filepath)) {
-        return \`ERROR: \${args.filepath} is a virtual settings file and can't be renamed or moved.\`;
-    }
-    if (await api.isAgentPath(args.new_name)) {
-        return "ERROR: Cannot rename files into .agent";
-    }
-
-    try {
-        const err = await api.renameFile(args.filepath, args.new_name);
-        if (err) return err;
-        return \`Renamed \${args.filepath} to \${args.new_name}\`;
-    } catch(e) { return \`ERROR: \${e.message}\`; }
+    const err = await api.renameFile(args.filepath, args.new_name);
+    if (err) return err;
+    return \`Renamed \${args.filepath} to \${args.new_name}\`;
 `),
 
         duckduckgo_search: buildToolFileSource({
@@ -3077,6 +3085,13 @@ function isPromptFileMode(path) {
 const SENSITIVE_USER_FILES = [MODELS_FILE, CONFIG_FILE];
 function isSensitiveUserFile(path) {
     return SENSITIVE_USER_FILES.includes(path);
+}
+
+function shouldHideFromTools(path) {
+    if (AppConfig.get('hide-agent-files', 'true') !== 'true') {
+        return false;
+    }
+    return path === CUSTOM_TOOLS_DIR || path.startsWith(CUSTOM_TOOLS_DIR + '/');
 }
 
 let currentPendingTool = null;
@@ -6213,6 +6228,9 @@ async function readFileContentForTool(filepath) {
     if (isSensitiveUserFile(filepath)) {
         return { error: `ERROR: ${filepath} is a private user settings file and cannot be read by a tool call.` };
     }
+    if (shouldHideFromTools(filepath)) {
+        return { error: `ERROR: ${filepath} has .agent extension and is hidden from tool access. You can enable access in Settings > Explorer > Show .agent files to tools.` };
+    }
     if (isAgentPath(filepath) && !isToolFilePath(filepath) && !isVirtualAgentFile(filepath)) {
         return { error: `ERROR: ${filepath} is inside .agent and cannot be read by a tool call.` };
     }
@@ -7720,6 +7738,17 @@ function setToolPermission(name, val) {
     saveToolPermState(permState);
 }
 
+function updateAgentFilesSwitch() {
+    const sw = document.getElementById('shield-agent-switch');
+    if (!sw) return;
+    const isHidden = AppConfig.get('hide-agent-files', 'true') === 'true';
+    sw.querySelectorAll('[data-agent-val]').forEach(btn => {
+        const val = btn.dataset.agentVal;
+        const active = (val === 'hide' && isHidden) || (val === 'show' && !isHidden);
+        btn.className = `tri-btn ${val === 'hide' ? 'never' : 'always'} ${active ? 'active ' + (val === 'hide' ? 'never' : 'always') : ''}`;
+    });
+}
+
 function renderToolsList() {
     toolsListEl.innerHTML = '';
 
@@ -7868,6 +7897,7 @@ function applyConfigToUI() {
     if (ce) ce.checked = AppConfig.get('compress-enabled', 'true') !== 'false';
     if (ct) ct.value = AppConfig.get('compress-threshold', '75');
     if (cp) cp.value = AppConfig.get('compress-preserve', '6');
+    updateAgentFilesSwitch();
 }
 
 const COMPRESS_PROMPT = `You are a context compression assistant for a coding agent.
@@ -8282,6 +8312,13 @@ window.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('settings-glow-enabled').addEventListener('change', e => {
         AppConfig.set('glow-enabled', e.target.checked ? "true" : "false");
         updateGenGlow();
+    });
+    document.getElementById('shield-agent-switch').addEventListener('click', e => {
+        const btn = e.target.closest('[data-agent-val]');
+        if (!btn) return;
+        const val = btn.dataset.agentVal;
+        AppConfig.set('hide-agent-files', val === 'hide' ? 'true' : 'false');
+        updateAgentFilesSwitch();
     });
     const _wmEl = document.getElementById('settings-window-mode');
     if (_wmEl) {
@@ -10433,8 +10470,6 @@ async function runTool(runId, toolMeta, args) {
         fileExists: (fp) => callApi(runId, 'fileExists', [fp]),
         isBinary: (fp) => callApi(runId, 'isBinary', [fp]),
         isSensitiveFile: (fp) => callApi(runId, 'isSensitiveFile', [fp]),
-        isAgentPath: (fp) => callApi(runId, 'isAgentPath', [fp]),
-        isToolOrAgentPath: (fp) => callApi(runId, 'isToolOrAgentPath', [fp]),
         applySearchReplace: (original, searchBlock, replaceBlock) => applySearchReplace(original, searchBlock, replaceBlock),
         cleanupText: (text) => cleanupText(text),
         getMaxReadLines: () => callApi(runId, 'getMaxReadLines', [])
@@ -10463,6 +10498,9 @@ const TOOL_API_METHODS = {
         if (isSensitiveUserFile(fp)) {
             return `ERROR: ${fp} is a private user settings file and cannot be written by a tool call.`;
         }
+        if (shouldHideFromTools(fp)) {
+            return `ERROR: ${fp} has .agent extension and is hidden from tool access. You can enable access in Settings > Explorer > Show .agent files to tools.`;
+        }
         const res = await writeDisk(fp, content, { fromLLMTool: true, sessionId });
         return (res && res.output) ? res.output : null;
     },
@@ -10470,19 +10508,30 @@ const TOOL_API_METHODS = {
         if (isSensitiveUserFile(oldPath)) {
             return `ERROR: ${oldPath} is a private user settings file and cannot be renamed by a tool call.`;
         }
+        if (isToolOrAgentPath(oldPath)) {
+            return `ERROR: ${oldPath} is a virtual settings file and can't be renamed or moved.`;
+        }
+        if (isAgentPath(newPath)) {
+            return `ERROR: Cannot rename files into .agent`;
+        }
+        if (shouldHideFromTools(oldPath)) {
+            return `ERROR: ${oldPath} has .agent extension and is hidden from tool access. You can enable access in Settings > Explorer > Show .agent files to tools.`;
+        }
+        if (shouldHideFromTools(newPath)) {
+            return `ERROR: ${newPath} has .agent extension and is hidden from tool access. You can enable access in Settings > Explorer > Show .agent files to tools.`;
+        }
         const res = await performRename(oldPath, newPath, sessionId);
         return (res && res.error) ? res.error : null;
     },
     listFiles: async () => Object.keys(registry.meta).filter(f =>
         registry.meta[f]?.kind === 'file' &&
         !isSensitiveUserFile(f) &&
+        !shouldHideFromTools(f) &&
         !(isAgentPath(f) && !isToolFilePath(f) && !isVirtualAgentFile(f))
     ),
-    fileExists: async (toolName, [fp]) => !!registry.meta[fp] && !isSensitiveUserFile(fp),
+    fileExists: async (toolName, [fp]) => !!registry.meta[fp] && !isSensitiveUserFile(fp) && !shouldHideFromTools(fp),
     isBinary: async (toolName, [fp]) => !!registry.meta[fp]?.isBinary,
     isSensitiveFile: async (toolName, [fp]) => isSensitiveUserFile(fp),
-    isAgentPath: async (toolName, [fp]) => isAgentPath(fp),
-    isToolOrAgentPath: async (toolName, [fp]) => isToolOrAgentPath(fp),
     getMaxReadLines: async () => Math.max(1, parseInt(document.getElementById('settings-read-lines').value, 10) || 500)
 };
 
