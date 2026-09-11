@@ -11227,8 +11227,9 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                         if (assistantText) {
                             const hasThinkOpen = assistantText.includes('<think>') || assistantText.includes('<thinking>');
                             const hasThinkClosed = assistantText.includes('</think>') || assistantText.includes('</thinking>');
+                            const isInUnclosedThinking = hasThinkOpen && !hasThinkClosed;
 
-                            if (hasThinkOpen && !hasThinkClosed && !thinkingFinished) {
+                            if (isInUnclosedThinking && !thinkingFinished) {
                                 const thinkMatch = assistantText.match(/<think(?:ing)?>([\s\S]*?)$/i);
                                 if (thinkMatch && thinkMatch[1]) {
                                     if (!thoughtDiv) {
@@ -11238,6 +11239,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                                     const bodyEl = thoughtDiv.querySelector('.thought-body');
                                     if (bodyEl) bodyEl.innerText = thinkMatch[1];
                                 }
+                                // Don't render assistant content while in unclosed thinking block
                             } else {
                                 if (thoughtDiv && !thinkingFinished) stopThinkingTimer(thoughtDiv);
                                 const displayContent = stripThinkingTags(assistantText);
@@ -11261,10 +11263,18 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                         if (bodyEl) bodyEl.innerText = reasoningText;
                     }
                     if (assistantText) {
-                        const displayContent = stripThinkingTags(assistantText);
-                        if (displayContent.trim()) {
-                            if (!streamDiv) { streamDiv = print("", "log-entry md-content", runSessionId); runGen.currentAssistantDiv = streamDiv; }
-                            streamDiv.innerHTML = normalizeBlockHTML(formatMarkdownSnippet(displayContent));
+                        // Check if we're in an unclosed thinking block
+                        const hasThinkOpen = assistantText.includes('<think>') || assistantText.includes('<thinking>');
+                        const hasThinkClosed = assistantText.includes('</think>') || assistantText.includes('</thinking>');
+                        const isInUnclosedThinking = hasThinkOpen && !hasThinkClosed;
+                        
+                        // Only render assistant text if not in unclosed thinking block
+                        if (!isInUnclosedThinking || thinkingFinished) {
+                            const displayContent = stripThinkingTags(assistantText);
+                            if (displayContent.trim()) {
+                                if (!streamDiv) { streamDiv = print("", "log-entry md-content", runSessionId); runGen.currentAssistantDiv = streamDiv; }
+                                streamDiv.innerHTML = normalizeBlockHTML(formatMarkdownSnippet(displayContent));
+                            }
                         }
                     }
                     reorderSpinnerToBottom(runSessionId);
