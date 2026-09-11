@@ -137,6 +137,11 @@
             border: 1px solid var(--border-highlight);
             box-shadow: 0 20px 70px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.04);
             display: flex; flex-direction: column; overflow: hidden; position: relative;
+            transition: width 0.15s ease, height 0.15s ease, border-radius 0.15s ease, max-width 0.15s ease;
+        }
+        #window.window-maximized {
+            width: 100vw; max-width: none; height: 100dvh;
+            border-radius: 0; border: none; box-shadow: none;
         }
         #gen-glow {
             position: absolute; inset: 0; z-index: 0; pointer-events: none;
@@ -1923,6 +1928,17 @@
                         <span style="font-size:10px; color:var(--dim); font-weight:700; text-transform:uppercase;">Settings</span>
                     </div>
                     <div id="settings-content" style="padding: 10px; overflow-y: auto; flex: 1;">
+                        <div class="popover-section-title" style="margin-top: 0;">
+                            <span class="icon" style="font-size: 14px;">aspect_ratio</span>
+                            <span>Window</span>
+                        </div>
+                        <div class="settings-field-row" style="margin-top: 10px;">
+                            <label>Window style:</label>
+                            <select id="settings-window-mode">
+                                <option value="floating">Floating</option>
+                                <option value="maximized">Maximized</option>
+                            </select>
+                        </div>
                         <div class="settings-field-row">
                             <label>Max Read Lines:</label>
                             <input type="number" id="settings-read-lines" value="500" min="1" max="100000">
@@ -2266,7 +2282,8 @@ const CONFIG_DEFAULTS = {
     'glow-enabled': 'true',
     'compress-enabled': 'true',
     'compress-threshold': '75',
-    'compress-preserve': '6'
+    'compress-preserve': '6',
+    'window-mode': 'floating'
 };
 
 const GLOW_STATUS_COLORS = {
@@ -5071,6 +5088,16 @@ async function maybeUpdateSessionTitleFromPrompt(prompt, sessionId) {
     }
 }
 
+function countConversationMessages(msgs) {
+    if (!Array.isArray(msgs)) return 0;
+    let count = 0;
+    for (const m of msgs) {
+        if (!m) continue;
+        if (m.role === 'user' || m.role === 'assistant') count++;
+    }
+    return count;
+}
+
 function getWorkspaceSessionKey() {
     const ws = rootHandle ? rootHandle.name : '_default_ws_';
     return `codeagent_sessions_${ws}`;
@@ -5098,7 +5125,7 @@ async function selectInitialSession() {
             createdAt: activeRecord.createdAt,
             updatedAt: activeRecord.updatedAt,
             runningTimeMs: activeRecord.runningTimeMs || 0,
-            msgCount: (activeRecord.messages || []).length
+            msgCount: countConversationMessages(activeRecord.messages)
         };
         state.activeSessionId = activeId;
         state._lastSavedIndex = { sessionIds: sessionIds.slice(), activeSessionId: activeId, meta: { ...state.sessionMeta } };
@@ -5219,7 +5246,7 @@ async function saveSession(sessionId) {
             createdAt: s.createdAt,
             updatedAt: s.updatedAt,
             runningTimeMs: s.runningTimeMs || 0,
-            msgCount: (s.messages || []).length
+            msgCount: countConversationMessages(s.messages)
         };
     }
 
@@ -5593,7 +5620,7 @@ function renderSessionPopoverList() {
                 createdAt: s.createdAt,
                 updatedAt: s.updatedAt,
                 runningTimeMs: s.runningTimeMs || 0,
-                msgCount: (s.messages || []).length
+                msgCount: countConversationMessages(s.messages)
             };
         }
         return (state.sessionMeta && state.sessionMeta[id]) || { id, title: 'Untitled Session', createdAt: 0, runningTimeMs: 0, msgCount: 0 };
@@ -7820,11 +7847,21 @@ async function checkPermission(toolName, actionDesc, sessionId) {
     return { allowed: approved, error: approved ? null : (result.reason ? `Permission denied by user. Reason: ${result.reason}` : "Permission denied by user.") };
 }
 
+function applyWindowMode(mode) {
+    const windowEl = document.getElementById('window');
+    if (!windowEl) return;
+    windowEl.classList.toggle('window-maximized', mode === 'maximized');
+}
+
 function applyConfigToUI() {
     readLinesInput.value = AppConfig.get('read-lines', '500');
     document.getElementById('settings-thinking-timeout').value = AppConfig.get('thinking-timeout', '-1');
     document.getElementById('settings-keep-skipped-thinking').checked = AppConfig.get('keep-skipped-thinking') === "true";
     document.getElementById('settings-glow-enabled').checked = AppConfig.get('glow-enabled', 'true') !== 'false';
+    const wm = document.getElementById('settings-window-mode');
+    const windowModeVal = AppConfig.get('window-mode', 'floating') === 'maximized' ? 'maximized' : 'floating';
+    if (wm) wm.value = windowModeVal;
+    applyWindowMode(windowModeVal);
     const ce = document.getElementById('settings-compress-enabled');
     const ct = document.getElementById('settings-compress-threshold');
     const cp = document.getElementById('settings-compress-preserve');
@@ -8246,6 +8283,14 @@ window.addEventListener('DOMContentLoaded', async () => {
         AppConfig.set('glow-enabled', e.target.checked ? "true" : "false");
         updateGenGlow();
     });
+    const _wmEl = document.getElementById('settings-window-mode');
+    if (_wmEl) {
+        _wmEl.addEventListener('change', e => {
+            const mode = e.target.value === 'maximized' ? 'maximized' : 'floating';
+            AppConfig.set('window-mode', mode);
+            applyWindowMode(mode);
+        });
+    }
     const _ceEl = document.getElementById('settings-compress-enabled');
     const _ctEl = document.getElementById('settings-compress-threshold');
     const _cpEl = document.getElementById('settings-compress-preserve');
@@ -8420,6 +8465,16 @@ function commitInlineEdit(promptId) {
     }
 
     state.messages = state.messages.slice(0, msgIdx);
+
+    const editSid = state.activeSessionId;
+    if (state.sessions[editSid]) {
+        state.sessions[editSid].messages = state.messages;
+    }
+    const editGen = getGenState(editSid);
+    editGen.hasNewContent = true;
+    editGen.postCompressTokenOverride = null;
+    saveSession(editSid);
+
     let node = wrap.closest('.log-entry');
     while (node) {
         const toRemove = node;
