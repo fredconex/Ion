@@ -2385,7 +2385,6 @@ const state = {
     lastTokenUsage: null,
     actualGenTokenCount: null,
     expandedFolders: new Set(),
-    showHiddenFiles: localStorage.getItem('explorer_show_hidden') === '1',
     availableModels: [],
     selectedContextItem: null,
     canResumeTask: false,
@@ -2770,7 +2769,6 @@ function seedBuiltinToolSources() {
 }
 
 const BUILTIN_TOOL_NAMES = ['read', 'edit', 'write', 'grep', 'find', 'rename'];
-const RETIRED_TOOL_NAMES = ['done'];
 const DEFAULT_CUSTOM_TOOL_NAMES = ['duckduckgo_search', 'fetch_url'];
 
 const TOOL_IO_READ_ONLY = new Set(['read', 'grep', 'find']);
@@ -2892,14 +2890,6 @@ function registerToolsVirtualFiles() {
     Object.keys(persisted).forEach(name => {
         registry.files[toolFilePath(name)] = persisted[name];
     });
-
-    if (RETIRED_TOOL_NAMES.includes('done')) {
-        const doneFp = toolFilePath('done');
-        delete registry.files[doneFp];
-        delete registry.meta[doneFp];
-        forgetPersistedToolFile('done');
-        markToolDeleted('done');
-    }
 
     BUILTIN_TOOL_NAMES.concat(DEFAULT_CUSTOM_TOOL_NAMES).forEach(name => {
         const fp = toolFilePath(name);
@@ -6684,7 +6674,7 @@ window.addEventListener('focus', () => syncWorkspace(true));
 async function fastTraverseDirectory(handle, path = "", targetMap) {
     for await (const entry of handle.values()) {
         if (IGNORED_DIRS.has(entry.name)) continue;
-        if (entry.name.startsWith('.') && !state.showHiddenFiles && entry.name !== PLAN_FILE && entry.name !== '.gitignore' && entry.name !== CUSTOM_TOOLS_DIR) {
+        if (entry.name.startsWith('.') && entry.name !== PLAN_FILE && entry.name !== '.gitignore' && entry.name !== CUSTOM_TOOLS_DIR) {
             continue;
         }
 
