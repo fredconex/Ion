@@ -3182,7 +3182,6 @@ function isSessionRunning(sessionId) {
 }
 
 let rootHandle = null;
-let savedDirectoryHandle = null;
 
 const IGNORED_DIRS = new Set(['node_modules', '.git', 'venv', '__pycache__', 'target', 'build', 'dist']);
 
@@ -3935,25 +3934,13 @@ function getDB() {
     });
 }
 
-async function saveHandleToDB(handle) {
-    try {
-        const db = await getDB();
-        const tx = db.transaction(STORE_HANDLES, 'readwrite');
-        tx.objectStore(STORE_HANDLES).put(handle, 'last_folder');
-        return new Promise(res => tx.oncomplete = res);
-    } catch(e) {}
-}
-
-async function loadHandleFromDB() {
-    try {
-        const db = await getDB();
-        return new Promise((res) => {
-            const tx = db.transaction(STORE_HANDLES, 'readonly');
-            const req = tx.objectStore(STORE_HANDLES).get('last_folder');
-            req.onsuccess = () => res(req.result);
-            req.onerror = () => res(null);
-        });
-    } catch(e) { return null; }
+async function getMostRecentHandle() {
+    const folders = getRecentFolders();
+    if (!folders.length) return null;
+    const newest = folders
+        .slice()
+        .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
+    return await loadRecentHandleFromDB(newest.name);
 }
 
 async function saveWorkspaceCacheToDB(wsName, metadataMap) {
@@ -8285,23 +8272,24 @@ window.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => location.reload(), 900);
     });
 
-    savedDirectoryHandle = await loadHandleFromDB();
+    const lastHandle = await getMostRecentHandle();
     let restoredWorkspaceSilently = false;
-    if (savedDirectoryHandle) {
+
+    if (lastHandle) {
         try {
-            const perm = await savedDirectoryHandle.queryPermission({ mode: 'readwrite' });
+            const perm = await lastHandle.queryPermission({ mode: 'readwrite' });
             if (perm === 'granted') {
-                await setWorkspace(savedDirectoryHandle);
+                await setWorkspace(lastHandle);
                 restoredWorkspaceSilently = true;
             }
-        } catch(e) {
-        }
+        } catch(e) {}
     }
+
     if (!restoredWorkspaceSilently) {
         renderRecentFoldersList();
         renderExplorerTree();
-        if (savedDirectoryHandle) {
-            showWorkspaceReconnectPrompt(savedDirectoryHandle);
+        if (lastHandle) {
+            showWorkspaceReconnectPrompt(lastHandle);
         } else {
             await loadAllSessions();
         }
@@ -9483,8 +9471,7 @@ window.continueTask = async () => {
 
 async function pickFolderWithMemory() {
     const options = { mode: 'readwrite', id: 'code_agent_workspace' };
-    const targetStart = rootHandle || savedDirectoryHandle;
-    if (targetStart) options.startIn = targetStart;
+    if (rootHandle) options.startIn = rootHandle;
     return await window.showDirectoryPicker(options);
 }
 
@@ -9578,28 +9565,28 @@ function renderRecentFoldersList() {
         item.addEventListener('click', async (e) => {
             if (isNoFolderOverlayHidden()) return;
             if (e.target.closest('.recent-folder-remove')) return;
+
             const folderName = item.dataset.folderName;
-            markRecentFolderAccessed(folderName);
             if (rootHandle) await closeWorkspaceNoConfirm();
+
             try {
                 const handle = await loadRecentHandleFromDB(folderName);
                 if (handle) {
                     const perm = await handle.requestPermission({ mode: 'readwrite' });
                     if (perm === 'granted') {
+                        markRecentFolderAccessed(folderName);
                         await setWorkspace(handle);
                         return;
                     }
                 }
+            } catch (err) { /* fall through to picker */ }
+
+            // Handle is gone or permission denied → let the user repick
+            try {
                 const newHandle = await pickFolderWithMemory();
                 await setWorkspace(newHandle);
                 await addToRecentFolders(newHandle);
-            } catch(err) {
-                try {
-                    const newHandle = await pickFolderWithMemory();
-                    await setWorkspace(newHandle);
-                    await addToRecentFolders(newHandle);
-                } catch(e2) {}
-            }
+            } catch (e2) { /* user cancelled */ }
         });
     });
 
@@ -9614,7 +9601,6 @@ function renderRecentFoldersList() {
 
 async function setWorkspace(handle) {
     rootHandle = handle;
-    savedDirectoryHandle = handle;
 
     if (btnExitWorkspace) btnExitWorkspace.style.display = 'flex';
     if (btnSessionToggle) btnSessionToggle.style.display = 'flex';
@@ -9636,8 +9622,6 @@ async function setWorkspace(handle) {
     await syncWorkspace(true);
     await restoreActiveSessionContent();
     renderSessionPopoverList();
-
-    await saveHandleToDB(handle);
 
     const noFolderOverlay = document.getElementById('no-folder-overlay');
     if (noFolderOverlay) noFolderOverlay.classList.add('hidden');
@@ -9726,12 +9710,13 @@ document.getElementById('no-folder-btn').addEventListener('click', async () => {
     if (rootHandle) await closeWorkspaceNoConfirm();
 
     if (pendingReconnectHandle) {
-        const handleToReconnect = pendingReconnectHandle;
+        const h = pendingReconnectHandle;
         pendingReconnectHandle = null;
         try {
-            const perm = await handleToReconnect.requestPermission({ mode: 'readwrite' });
+            const perm = await h.requestPermission({ mode: 'readwrite' });
             if (perm === 'granted') {
-                await setWorkspace(handleToReconnect);
+                markRecentFolderAccessed(h.name);
+                await setWorkspace(h);
                 return;
             }
         } catch(e) {}
@@ -9741,7 +9726,7 @@ document.getElementById('no-folder-btn').addEventListener('click', async () => {
         const handle = await pickFolderWithMemory();
         await setWorkspace(handle);
         await addToRecentFolders(handle);
-    } catch(e) {}
+    } catch(e) { /* user cancelled */ }
 });
 
 if (btnExitWorkspace) {
