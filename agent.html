@@ -1645,6 +1645,7 @@
             #btn-sidebar-toggle-mobile { display: flex !important; }
             #btn-sidebar-close-mobile { display: flex !important; }
             #btn-sidebar-collapse { display: none; }
+            #btn-window-toggle { display: none !important; }
             #sidebar-mobile-header {
                 display: flex !important; background: rgba(0, 0, 0, 0.2);
                 border-bottom: 1px solid var(--border);
@@ -1785,6 +1786,9 @@
         </button>
 
         <div style="flex-grow: 1;"></div>
+        <button id="btn-window-toggle" class="icon-btn" title="Maximize window">
+            <span class="icon">fullscreen</span>
+        </button>
 
         <button id="btn-settings-toggle" class="icon-btn" title="Security & Permissions">
             <span class="icon">shield</span>
@@ -1944,15 +1948,8 @@
                     </div>
                     <div id="settings-content" style="padding: 10px; overflow-y: auto; flex: 1;">
                         <div class="popover-section-title" style="margin-top: 0;">
-                            <span class="icon" style="font-size: 14px;">aspect_ratio</span>
-                            <span>Window</span>
-                        </div>
-                        <div class="settings-field-row" style="margin-top: 10px;">
-                            <label>Window style:</label>
-                            <select id="settings-window-mode">
-                                <option value="floating">Floating</option>
-                                <option value="maximized">Maximized</option>
-                            </select>
+                            <span class="icon" style="font-size: 14px;">tune</span>
+                            <span>General</span>
                         </div>
                         <div class="settings-field-row">
                             <label>Max Read Lines:</label>
@@ -7879,7 +7876,18 @@ async function checkPermission(toolName, actionDesc, sessionId) {
 function applyWindowMode(mode) {
     const windowEl = document.getElementById('window');
     if (!windowEl) return;
-    windowEl.classList.toggle('window-maximized', mode === 'maximized');
+    const isMax = mode === 'maximized';
+    windowEl.classList.toggle('window-maximized', isMax);
+    const wm = document.getElementById('settings-window-mode');
+    if (wm) wm.value = isMax ? 'maximized' : 'floating';
+    const btn = document.getElementById('btn-window-toggle');
+    if (btn) {
+        btn.title = isMax ? 'Restore floating window' : 'Maximize window';
+        const icon = btn.querySelector('.icon');
+        if (icon) {
+            icon.textContent = isMax ? 'fullscreen_exit' : 'fullscreen';
+        }
+    }
 }
 
 function applyConfigToUI() {
@@ -8326,6 +8334,18 @@ window.addEventListener('DOMContentLoaded', async () => {
             const mode = e.target.value === 'maximized' ? 'maximized' : 'floating';
             AppConfig.set('window-mode', mode);
             applyWindowMode(mode);
+        });
+    }
+    const btnWindowToggle = document.getElementById('btn-window-toggle');
+    if (btnWindowToggle) {
+        btnWindowToggle.addEventListener('click', () => {
+            const currentMode = AppConfig.get('window-mode', 'floating') === 'maximized' ? 'maximized' : 'floating';
+            const nextMode = currentMode === 'maximized' ? 'floating' : 'maximized';
+            AppConfig.set('window-mode', nextMode);
+            applyWindowMode(nextMode);
+            setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+            }, 160);
         });
     }
     const _ceEl = document.getElementById('settings-compress-enabled');
