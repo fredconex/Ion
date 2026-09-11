@@ -6,7 +6,8 @@
 
 Ion is a zero-install, browser-native autonomous coding agent. It connects to any OpenAI-compatible LLM endpoint (local or remote) and provides an integrated development environment featuring multi-file edits, integrated Monaco diff inspection, checkpoint versioning, and tool execution directly inside the browser.
 
----
+# 
+<img width="2541" height="1258" alt="image" src="https://github.com/user-attachments/assets/df28914f-dc30-497c-a0c7-4a6395e4dc2a" />
 
 ## Security and Isolation
 
