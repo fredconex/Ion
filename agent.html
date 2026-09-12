@@ -477,10 +477,39 @@
             color: #fff; font-size: 12px; font-weight: 600;
             text-transform: uppercase; letter-spacing: 0.4px;
         }
-        .popover-section-title {
-            color: var(--magenta); font-size: 11px; font-weight: 700;
-            margin-bottom: 8px; text-transform: uppercase;
-            letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;
+        .settings-panel-group {
+            border: 0;
+            border-radius: 0;
+            overflow: hidden;
+            margin-bottom: 6px;
+        }
+        .settings-panel-header {
+            border: 1px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--dim);
+            user-select: none;
+        }
+        .settings-panel-header .icon {
+            font-size: 13px;
+            color: var(--dim);
+        }
+        .settings-panel-body {
+            padding: 8px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .settings-panel-body .settings-field-row {
+            margin-bottom: 0;
         }
         .settings-field-row {
             display: flex; flex-direction: column; gap: 4px;
@@ -561,6 +590,15 @@
         .tri-btn.active.never { background: rgba(224, 108, 117, 0.2); color: var(--red); font-weight: 700; }
         .tri-btn.active.ask { background: rgba(229, 192, 123, 0.2); color: var(--yellow); font-weight: 700; }
         .tri-btn.active.always { background: rgba(152, 195, 121, 0.2); color: var(--green); font-weight: 700; }
+        .tri-btn.active.off { background: rgba(224, 108, 117, 0.2); color: var(--red); font-weight: 700; }
+        .tri-btn.active.on { background: rgba(152, 195, 121, 0.2); color: var(--green); font-weight: 700; }
+        .duo-switch-row {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 8px;
+        }
+        .duo-switch-row .duo-switch-label {
+            font-size: 11px; color: var(--fg); font-weight: 600;
+        }
         .toggle-switch {
             position: relative; display: inline-block;
             width: 34px; height: 18px; flex-shrink: 0;
@@ -1172,6 +1210,31 @@
             cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
         }
         .btn-plan-edit:hover { border-color: var(--yellow); background: rgba(229, 192, 123, 0.15); }
+        #welcome-msg { display: flex; flex-direction: column; gap: 10px; }
+        .welcome-title { color: var(--magenta); font-weight: 700; }
+        .welcome-list { display: flex; flex-direction: column; gap: 3px; }
+        .welcome-models-card {
+            margin-top: 2px; background: rgba(86, 182, 194, 0.08);
+            border: 1px solid rgba(86, 182, 194, 0.3);
+            border-radius: 8px; padding: 10px 14px;
+            display: flex; flex-direction: column; gap: 6px; white-space: normal;
+        }
+        .welcome-models-header {
+            display: flex; align-items: center; gap: 6px;
+            color: var(--cyan); font-weight: 700; font-size: 12px;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .welcome-models-body {
+            font-size: 12px; color: var(--fg); line-height: 1.5;
+        }
+        .btn-models-edit {
+            background: var(--bg-input); border: 1px solid var(--border);
+            color: var(--cyan); padding: 4px 10px; border-radius: 6px;
+            font-family: inherit; font-size: 11px; font-weight: 600;
+            cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+            width: fit-content; margin-top: 2px; transition: all 0.15s ease;
+        }
+        .btn-models-edit:hover { border-color: var(--cyan); background: rgba(86, 182, 194, 0.15); }
         #diff-view {
             display: none; flex-grow: 1; flex-direction: column;
             overflow: hidden; background: var(--bg-main); position: relative;
@@ -1946,74 +2009,96 @@
                     <div class="sidebar-panel-header">
                         <span style="font-size:10px; color:var(--dim); font-weight:700; text-transform:uppercase;">Settings</span>
                     </div>
-                    <div id="settings-content" style="padding: 10px; overflow-y: auto; flex: 1;">
-                        <div class="popover-section-title" style="margin-top: 0;">
-                            <span class="icon" style="font-size: 14px;">tune</span>
-                            <span>General</span>
+                    <div id="settings-content" style="padding: 0; overflow-y: auto; flex: 1;">
+                        
+                        <!-- General Panel -->
+                        <div class="settings-panel-group">
+                            <div class="settings-panel-header">
+                                <span class="icon">tune</span>
+                                <span>General</span>
+                            </div>
+                            <div class="settings-panel-body">
+                                <div class="settings-field-row">
+                                    <label>Max Read Lines:</label>
+                                    <input type="number" id="settings-read-lines" value="500" min="1" max="100000">
+                                </div>
+                                <div class="settings-field-row">
+                                    <label>Thinking Timeout (seconds, -1 = disabled):</label>
+                                    <input type="number" id="settings-thinking-timeout" value="-1" min="-1" max="3600">
+                                </div>
+                                <div class="settings-field-row">
+                                    <div class="duo-switch-row">
+                                        <span class="duo-switch-label">Keep skipped thinking in context</span>
+                                        <div class="tri-switch duo-switch" id="settings-keep-skipped-thinking">
+                                            <button class="tri-btn off active off" data-val="off">off</button>
+                                            <button class="tri-btn on" data-val="on">on</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="settings-field-row">
-                            <label>Max Read Lines:</label>
-                            <input type="number" id="settings-read-lines" value="500" min="1" max="100000">
+
+                        <!-- Background Glow Panel -->
+                        <div class="settings-panel-group">
+                            <div class="settings-panel-header">
+                                <span class="icon">tonality</span>
+                                <span>Background Glow</span>
+                            </div>
+                            <div class="settings-panel-body">
+                                <div class="settings-field-row">
+                                    <div class="duo-switch-row">
+                                        <span class="duo-switch-label">Enable status glow</span>
+                                        <div class="tri-switch duo-switch" id="settings-glow-enabled">
+                                            <button class="tri-btn off active off" data-val="off">off</button>
+                                            <button class="tri-btn on" data-val="on">on</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="settings-field-row" style="margin-top: 10px;">
-                            <label>Thinking Timeout (seconds, -1 = disabled):</label>
-                            <input type="number" id="settings-thinking-timeout" value="-1" min="-1" max="3600">
-                        </div>
-                        <div class="settings-field-row" style="margin-top: 10px;">
-                            <label style="display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer;">
-                                <span style="font-size: 11px; color: var(--fg); font-weight: 600;">Keep skipped thinking in context</span>
-                                <span class="toggle-switch">
-                                    <input type="checkbox" id="settings-keep-skipped-thinking">
-                                    <span class="toggle-slider"></span>
-                                </span>
-                            </label>
-                        </div>
-                        <div class="popover-section-title" style="margin-top: 14px;">
-                            <span class="icon" style="font-size: 14px;">tonality</span>
-                            <span>Background Glow</span>
-                        </div>
-                        <div class="settings-field-row" style="margin-top: 10px;">
-                            <label style="display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer;">
-                                <span style="font-size: 11px; color: var(--fg); font-weight: 600;">Enable status glow</span>
-                                <span class="toggle-switch">
-                                    <input type="checkbox" id="settings-glow-enabled">
-                                    <span class="toggle-slider"></span>
-                                </span>
-                            </label>
-                        </div>
-                        <div class="popover-section-title" style="margin-top: 18px;">
-                            <span class="icon" style="font-size: 14px;">compress</span>
-                            <span>Context Compression</span>
-                        </div>
-                        <div class="settings-field-row" style="margin-top: 10px;">
-                            <label style="display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer;">
-                                <span style="font-size: 11px; color: var(--fg); font-weight: 600;">Enable auto-compression</span>
-                                <span class="toggle-switch">
-                                    <input type="checkbox" id="settings-compress-enabled">
-                                    <span class="toggle-slider"></span>
-                                </span>
-                            </label>
-                        </div>
-                        <div class="settings-field-row" style="margin-top: 10px;">
-                            <label>Compress at (% of context window):</label>
-                            <input type="number" id="settings-compress-threshold" value="75" min="10" max="99">
-                        </div>
-                        <div class="settings-field-row" style="margin-top: 10px;">
-                            <label>Preserve last N messages:</label>
-                            <input type="number" id="settings-compress-preserve" value="6" min="1" max="50">
+
+                        <!-- Context Compression Panel -->
+                        <div class="settings-panel-group">
+                            <div class="settings-panel-header">
+                                <span class="icon">compress</span>
+                                <span>Context Compression</span>
+                            </div>
+                            <div class="settings-panel-body">
+                                <div class="settings-field-row">
+                                    <div class="duo-switch-row">
+                                        <span class="duo-switch-label">Enable auto-compression</span>
+                                        <div class="tri-switch duo-switch" id="settings-compress-enabled">
+                                            <button class="tri-btn off active off" data-val="off">off</button>
+                                            <button class="tri-btn on" data-val="on">on</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="settings-field-row">
+                                    <label>Compress at (% of context window):</label>
+                                    <input type="number" id="settings-compress-threshold" value="75" min="10" max="99">
+                                </div>
+                                <div class="settings-field-row">
+                                    <label>Preserve last N messages:</label>
+                                    <input type="number" id="settings-compress-preserve" value="6" min="1" max="50">
+                                </div>
+                            </div>
                         </div>
 
                     </div>
-                    <div id="danger-zone-footer" style="padding: 10px 10px 0 10px;">
-                        <div class="popover-section-title" style="margin-top: 0;">
-                            <span class="icon" style="font-size: 14px;">delete</span>
-                            <span>Danger Zone</span>
-                        </div>
-                        <div class="settings-field-row" style="margin-top: 10px;">
-                            <button id="btn-clear-data" class="danger-btn" title="Reset all settings and clear stored data">
-                                <span class="icon" style="font-size: 14px;">delete</span>
-                                <span>Clear All Data</span>
-                            </button>
+                    <div id="danger-zone-footer" style="padding: 0;">
+                        <div class="settings-panel-group" style="border-color: rgba(224, 108, 117, 0.3);">
+                            <div class="settings-panel-header" style="background: rgba(224, 108, 117, 0.08); color: var(--red); border-bottom-color: rgba(224, 108, 117, 0.2);">
+                                <span class="icon" style="color: var(--red);">delete</span>
+                                <span>Danger Zone</span>
+                            </div>
+                            <div class="settings-panel-body">
+                                <div class="settings-field-row">
+                                    <button id="btn-clear-data" class="danger-btn" title="Reset all settings and clear stored data">
+                                        <span class="icon" style="font-size: 14px;">delete</span>
+                                        <span>Clear All Data</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2129,9 +2214,7 @@
 
             <div id="terminal-view">
                 <div id="terminal-container">
-                    <div id="terminal">
-                        <div class="log-entry dim" id="welcome-msg"><span class="magenta bold">Code Agent Terminal</span> - Ready.<br>- <b class="yellow">Plan</b>: Creates step-by-step implementation plan in <code class="yellow">.agent_plan.md</code> with zero code edits until approved.<br>- <b class="cyan">Ask</b>: Safe read-only mode to explore, explain, and query codebase.<br>- <b class="magenta">Code</b>: Full autonomous implementation with surgical edits.<br>- Type <span class="cyan">/</span> for command menu (<span class="cyan">/plan</span>, <span class="cyan">/ask</span>, <span class="cyan">/code</span>, <span class="cyan">/execute-plan</span>, <span class="cyan">/restore</span>, <span class="cyan">/compact</span>).<br>- Press <span class="yellow">ESC</span> at any time to cancel generation.<br>- <span class="cyan">↑/↓</span> for history &nbsp;|&nbsp; <span class="cyan">/</span> for commands &nbsp;|&nbsp; <span class="cyan">@</span> for files &nbsp;|&nbsp; <span class="cyan">Tab</span> to accept autocomplete</div>
-                    </div>
+                    <div id="terminal"></div>
                     <div id="prompt-rail" class="prompt-rail"></div>
                 </div>
             </div>
@@ -7735,6 +7818,32 @@ function setToolPermission(name, val) {
     saveToolPermState(permState);
 }
 
+function setDuoSwitch(el, isOn) {
+    if (!el) return;
+    el.querySelectorAll('[data-val]').forEach(btn => {
+        const val = btn.dataset.val;
+        const active = (val === 'on') === !!isOn;
+        btn.className = `tri-btn ${val} ${active ? 'active ' + val : ''}`;
+    });
+}
+function getDuoSwitch(el) {
+    if (!el) return false;
+    const onBtn = el.querySelector('[data-val="on"]');
+    return !!(onBtn && onBtn.classList.contains('active'));
+}
+function initDuoSwitch(id, onChange) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('click', e => {
+        const btn = e.target.closest('[data-val]');
+        if (!btn) return;
+        const isOn = btn.dataset.val === 'on';
+        if (getDuoSwitch(el) === isOn) return;
+        setDuoSwitch(el, isOn);
+        onChange(isOn);
+    });
+}
+
 function updateAgentFilesSwitch() {
     const sw = document.getElementById('shield-agent-switch');
     if (!sw) return;
@@ -7893,8 +8002,8 @@ function applyWindowMode(mode) {
 function applyConfigToUI() {
     readLinesInput.value = AppConfig.get('read-lines', '500');
     document.getElementById('settings-thinking-timeout').value = AppConfig.get('thinking-timeout', '-1');
-    document.getElementById('settings-keep-skipped-thinking').checked = AppConfig.get('keep-skipped-thinking') === "true";
-    document.getElementById('settings-glow-enabled').checked = AppConfig.get('glow-enabled', 'true') !== 'false';
+    setDuoSwitch(document.getElementById('settings-keep-skipped-thinking'), AppConfig.get('keep-skipped-thinking') === "true");
+    setDuoSwitch(document.getElementById('settings-glow-enabled'), AppConfig.get('glow-enabled', 'true') !== 'false');
     const wm = document.getElementById('settings-window-mode');
     const windowModeVal = AppConfig.get('window-mode', 'floating') === 'maximized' ? 'maximized' : 'floating';
     if (wm) wm.value = windowModeVal;
@@ -7902,7 +8011,7 @@ function applyConfigToUI() {
     const ce = document.getElementById('settings-compress-enabled');
     const ct = document.getElementById('settings-compress-threshold');
     const cp = document.getElementById('settings-compress-preserve');
-    if (ce) ce.checked = AppConfig.get('compress-enabled', 'true') !== 'false';
+    setDuoSwitch(ce, AppConfig.get('compress-enabled', 'true') !== 'false');
     if (ct) ct.value = AppConfig.get('compress-threshold', '75');
     if (cp) cp.value = AppConfig.get('compress-preserve', '6');
     updateAgentFilesSwitch();
@@ -8057,11 +8166,17 @@ async function compressContext(sessionId, { silent = false, manual = false } = {
 
     const body = renderPromptTemplate(COMPRESS_PROMPT, { conversation: transcript });
 
+    const gen = getGenState(sid);
+    const compressController = new AbortController();
+    gen.activeController = compressController;
+    gen.compressionInFlight = true;
+
     let summaryText = '';
     try {
         const resp = await fetch(`${apiUrl}/chat/completions`, {
             method: 'POST',
             headers,
+            signal: compressController.signal,
             body: JSON.stringify({
                 model,
                 messages: [
@@ -8080,13 +8195,17 @@ async function compressContext(sessionId, { silent = false, manual = false } = {
         summaryText = (data.choices?.[0]?.message?.content || '').trim();
         if (!summaryText) throw new Error('Empty summary returned');
     } catch (e) {
+        const wasAborted = e.name === 'AbortError' || gen.retryCancelled;
         if (liveTick) clearInterval(liveTick);
         if (liveBox) {
-            finalizeCompressionBoxError(liveBox, e.message || String(e));
+            finalizeCompressionBoxError(liveBox, wasAborted ? 'Cancelled' : (e.message || String(e)), wasAborted);
         } else if (!silent) {
-            showToast(`Compression failed: ${e.message}`, 'error');
+            showToast(wasAborted ? 'Compression cancelled' : `Compression failed: ${e.message}`, wasAborted ? 'info' : 'error');
         }
-        return { ok: false, error: e.message };
+        return { ok: false, error: wasAborted ? 'Cancelled' : e.message, aborted: wasAborted };
+    } finally {
+        gen.compressionInFlight = false;
+        if (gen.activeController === compressController) gen.activeController = null;
     }
 
     const summaryMsg = {
@@ -8123,7 +8242,6 @@ async function compressContext(sessionId, { silent = false, manual = false } = {
         if (isLive) state.messages = ctx.messages;
         state.sessions[sid]._compressionHistory = ctx.baseline.compressionHistory;
     }
-    const gen = getGenState(sid);
     gen.hasNewContent = true;
     await saveSession(sid);
 
@@ -8257,15 +8375,15 @@ function finalizeCompressionBox(wrapper, entry) {
     smartScroll();
 }
 
-function finalizeCompressionBoxError(wrapper, message) {
+function finalizeCompressionBoxError(wrapper, message, cancelled) {
     if (!wrapper || !wrapper.isConnected) return;
     wrapper.innerHTML = `<div class="tool-box done-box compression-box error-box">
         <div class="tool-box-header">
             <span class="icon icon-chevron">expand_more</span>
             <span class="tool-io-indicator io-mixed"><span class="icon">compress</span></span>
             <span class="tool-badge compress">compact</span>
-            <span class="tool-summary">Compression failed</span>
-            <span class="icon" style="font-size:14px; color:var(--red); margin-left:auto;">error</span>
+            <span class="tool-summary">${cancelled ? 'Compression cancelled' : 'Compression failed'}</span>
+            <span class="icon" style="font-size:14px; color:${cancelled ? 'var(--dim)' : 'var(--red)'}; margin-left:auto;">${cancelled ? 'cancel' : 'error'}</span>
         </div>
         <div class="tool-box-body">
             <div class="tool-output-text error-output-text">${escapeHTML(message)}</div>
@@ -8316,9 +8434,9 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     readLinesInput.addEventListener('input', e => AppConfig.set('read-lines', e.target.value));
     document.getElementById('settings-thinking-timeout').addEventListener('input', e => AppConfig.set('thinking-timeout', e.target.value));
-    document.getElementById('settings-keep-skipped-thinking').addEventListener('change', e => AppConfig.set('keep-skipped-thinking', e.target.checked ? "true" : "false"));
-    document.getElementById('settings-glow-enabled').addEventListener('change', e => {
-        AppConfig.set('glow-enabled', e.target.checked ? "true" : "false");
+    initDuoSwitch('settings-keep-skipped-thinking', isOn => AppConfig.set('keep-skipped-thinking', isOn ? "true" : "false"));
+    initDuoSwitch('settings-glow-enabled', isOn => {
+        AppConfig.set('glow-enabled', isOn ? "true" : "false");
         updateGenGlow();
     });
     document.getElementById('shield-agent-switch').addEventListener('click', e => {
@@ -8348,10 +8466,9 @@ window.addEventListener('DOMContentLoaded', async () => {
             }, 160);
         });
     }
-    const _ceEl = document.getElementById('settings-compress-enabled');
     const _ctEl = document.getElementById('settings-compress-threshold');
     const _cpEl = document.getElementById('settings-compress-preserve');
-    if (_ceEl) _ceEl.addEventListener('change', e => AppConfig.set('compress-enabled', e.target.checked ? 'true' : 'false'));
+    initDuoSwitch('settings-compress-enabled', isOn => AppConfig.set('compress-enabled', isOn ? 'true' : 'false'));
     if (_ctEl) _ctEl.addEventListener('input', e => AppConfig.set('compress-threshold', e.target.value));
     if (_cpEl) _cpEl.addEventListener('input', e => AppConfig.set('compress-preserve', e.target.value));
 
@@ -8644,7 +8761,28 @@ function updateWelcomeVisibility() {
             const div = document.createElement('div');
             div.className = 'log-entry dim';
             div.id = 'welcome-msg';
-            div.innerHTML = `<span class="magenta bold">Code Agent Terminal</span> - Ready.<br>- <b class="yellow">Plan</b>: Creates step-by-step implementation plan in <code class="yellow">.agent_plan.md</code> with zero code edits until approved.<br>- <b class="cyan">Ask</b>: Safe read-only mode to explore, explain, and query codebase.<br>- <b class="magenta">Code</b>: Full autonomous implementation with surgical edits.<br>- Type <span class="cyan">/</span> for command menu (<span class="cyan">/plan</span>, <span class="cyan">/ask</span>, <span class="cyan">/code</span>, <span class="cyan">/execute-plan</span>, <span class="cyan">/restore</span>, <span class="cyan">/compact</span>).<br>- Press <span class="yellow">ESC</span> at any time to cancel generation.<br>- <span class="cyan">↑/↓</span> for history &nbsp;|&nbsp; <span class="cyan">/</span> for commands &nbsp;|&nbsp; <span class="cyan">@</span> for files &nbsp;|&nbsp; <span class="cyan">Tab</span> to accept autocomplete`;
+            div.innerHTML = `
+                <div><span class="welcome-title">Code Agent Terminal</span> - Ready.</div>
+                <div class="welcome-list">
+                    <div>- <b class="yellow">Plan</b>: Creates step-by-step implementation plan in <code class="yellow">.agent_plan.md</code> with zero code edits until approved.</div>
+                    <div>- <b class="cyan">Ask</b>: Safe read-only mode to explore, explain, and query codebase.</div>
+                    <div>- <b class="magenta">Code</b>: Full autonomous implementation with surgical edits.</div>
+                    <div>- Type <span class="cyan">/</span> for command menu (<span class="cyan">/plan</span>, <span class="cyan">/ask</span>, <span class="cyan">/code</span>, <span class="cyan">/execute-plan</span>, <span class="cyan">/restore</span>, <span class="cyan">/compact</span>).</div>
+                    <div>- Press <span class="yellow">ESC</span> at any time to cancel generation.</div>
+                    <div>- <span class="cyan">↑/↓</span> for history &nbsp;|&nbsp; <span class="cyan">/</span> for commands &nbsp;|&nbsp; <span class="cyan">@</span> for files &nbsp;|&nbsp; <span class="cyan">Tab</span> to accept autocomplete</div>
+                </div>
+                <div class="welcome-models-card">
+                    <div class="welcome-models-header">
+                        <span class="icon" style="font-size:14px;">tune</span>
+                        <span>Model Settings</span>
+                    </div>
+                    <div class="welcome-models-body">Models, providers, and API keys are configured in <code class="cyan">${MODELS_FILE}</code>. Edit it directly, use the model picker dropdown above the prompt box to switch models.</div>
+                    <button class="btn-models-edit" onclick="openFileTab('${MODELS_FILE}')">
+                        <span class="icon" style="font-size:14px;">edit_note</span>
+                        <span>Open ${MODELS_FILE} in Editor</span>
+                    </button>
+                </div>
+            `;
             term.appendChild(div);
         } else {
             welcomeMsg.style.display = 'block';
@@ -11009,14 +11147,21 @@ async function runTask(task, blameId, imageUrls, sessionId) {
     if (isRunLive()) updateWelcomeVisibility();
     maybeUpdateSessionTitleFromPrompt(task, runSessionId).catch(() => {});
 
+    runGen.isRunning = true;
+    runGen.retryCancelled = false;
+    if (isRunLive()) updatePromptSendButton();
+
     try {
         await maybeAutoCompress(runSessionId);
     } catch (e) {
         console.warn('Auto-compress failed:', e);
     }
 
-    runGen.isRunning = true;
-    if (isRunLive()) updatePromptSendButton();
+    if (runGen.retryCancelled) {
+        runGen.isRunning = false;
+        if (isRunLive()) updatePromptSendButton();
+        return;
+    }
 
     runGen.currentPromptContext = {
         id: blameId || ('prompt_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6)),
@@ -11446,7 +11591,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                 }
 
                 let partialContent = "";
-                const keepSkipped = document.getElementById('settings-keep-skipped-thinking').checked;
+                const keepSkipped = getDuoSwitch(document.getElementById('settings-keep-skipped-thinking'));
                 if (reasoningText) {
                     if (keepSkipped) {
                         partialContent = `\n[thinking skipped by user - partial reasoning preserved]\n${reasoningText}\n`;
