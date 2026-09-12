@@ -498,6 +498,16 @@
             color: var(--dim);
             user-select: none;
         }
+        /* Add styling for number input arrows */
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] {
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
         .settings-panel-header .icon {
             font-size: 13px;
             color: var(--dim);
