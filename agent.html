@@ -328,6 +328,158 @@
             cursor: pointer; padding: 4px; border-radius: 4px;
         }
         #about-modal-close:hover { color: var(--fg); background: rgba(255,255,255,0.06); }
+        #models-modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.55); z-index: 400;
+            align-items: center; justify-content: center;
+        }
+        #models-modal {
+            background: var(--bg-panel); border: 1px solid var(--border-highlight);
+            border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+            width: 780px; max-width: 94vw; height: 520px; max-height: 86vh;
+            display: flex; flex-direction: column; animation: fadeIn 0.12s ease-out;
+        }
+        #models-modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        #models-modal-title {
+            font-size: 12px; font-weight: 700; color: var(--cyan);
+            font-family: var(--font-mono); display: flex; align-items: center; gap: 6px;
+        }
+        #models-modal-header-actions { display: flex; align-items: center; gap: 6px; }
+        #models-modal-close {
+            background: transparent; border: none; color: var(--dim);
+            cursor: pointer; padding: 4px; border-radius: 4px;
+        }
+        #models-modal-close:hover { color: var(--fg); background: rgba(255,255,255,0.06); }
+        #models-modal-footer {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border); flex-shrink: 0;
+        }
+        #models-modal-footer-hint { font-size: 10.5px; color: var(--dim); }
+
+        /* Two-pane body: fixed provider list on the left, detail pane on the right */
+        #models-modal-body { flex: 1; display: flex; min-height: 0; }
+        #mm-sidebar {
+            width: 220px; flex-shrink: 0; border-right: 1px solid var(--border);
+            display: flex; flex-direction: column; min-height: 0;
+        }
+        #mm-provider-list { flex: 1; overflow-y: auto; padding: 6px; }
+        .mm-provider-item {
+            display: flex; align-items: center; gap: 7px;
+            padding: 7px 8px; border-radius: 6px; cursor: pointer;
+            margin-bottom: 1px; border: 1px solid transparent;
+        }
+        .mm-provider-item:hover { background: rgba(255,255,255,0.04); }
+        .mm-provider-item.active {
+            background: rgba(86,182,194,0.12); border-color: rgba(86,182,194,0.35);
+        }
+        .mm-provider-item-name {
+            font-size: 12px; color: var(--fg); flex: 1; min-width: 0;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .mm-provider-item.active .mm-provider-item-name { color: var(--cyan); font-weight: 600; }
+        .mm-provider-item-count {
+            font-size: 9.5px; color: var(--dim); font-family: var(--font-mono);
+            background: rgba(255,255,255,0.05); border-radius: 8px; padding: 1px 6px; flex-shrink: 0;
+        }
+        #mm-add-provider-btn {
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+            width: calc(100% - 12px); margin: 0 6px 6px; background: transparent;
+            border: 1px dashed var(--border-highlight); color: var(--dim);
+            padding: 8px; border-radius: 6px; flex-shrink: 0;
+            font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+        }
+        #mm-add-provider-btn:hover { color: var(--cyan); border-color: var(--cyan); background: rgba(86,182,194,0.06); }
+        #mm-add-provider-btn .icon { font-size: 14px; }
+
+        #mm-detail { flex: 1; overflow-y: auto; padding: 14px 16px; min-width: 0; }
+        .mm-empty-detail {
+            height: 100%; display: flex; align-items: center; justify-content: center;
+            color: var(--dim); font-size: 12px; text-align: center; padding: 20px;
+        }
+        .mm-detail-head {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 14px; gap: 10px;
+        }
+        .mm-detail-title-input {
+            background: transparent; border: none; border-bottom: 1px solid transparent;
+            color: var(--fg); font-size: 15px; font-weight: 700; padding: 2px 0;
+            font-family: inherit; outline: none; flex: 1; min-width: 0;
+        }
+        .mm-detail-title-input:hover { border-bottom-color: var(--border); }
+        .mm-detail-title-input:focus { border-bottom-color: var(--cyan); }
+        .mm-remove-provider-btn {
+            display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+            background: transparent; border: 1px solid var(--border);
+            color: var(--dim); padding: 5px 9px; border-radius: 6px;
+            font-family: inherit; font-size: 11px; cursor: pointer;
+        }
+        .mm-remove-provider-btn:hover { color: var(--red); border-color: var(--red); background: rgba(224,108,117,0.1); }
+        .mm-remove-provider-btn .icon { font-size: 13px; }
+        .mm-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+        .mm-row label {
+            font-size: 10px; color: var(--dim); text-transform: uppercase;
+            letter-spacing: 0.4px; width: 60px; flex-shrink: 0;
+        }
+        .mm-row input[type="text"], .mm-row input[type="password"], .mm-row input[type="number"] {
+            background: var(--bg-main); border: 1px solid var(--border);
+            color: var(--fg); padding: 6px 8px; border-radius: 6px;
+            font-family: inherit; font-size: 12px; outline: none; width: 100%;
+        }
+        .mm-row input:focus { border-color: var(--cyan); }
+        .mm-key-wrap { position: relative; flex: 1; display: flex; }
+        .mm-key-wrap input { padding-right: 30px; }
+        .mm-key-toggle {
+            position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+            background: transparent; border: none; color: var(--dim);
+            cursor: pointer; padding: 3px; border-radius: 4px; display: flex;
+        }
+        .mm-key-toggle:hover { color: var(--fg); }
+        .mm-key-toggle .icon { font-size: 14px; }
+        .mm-models-label {
+            font-size: 10px; color: var(--dim); text-transform: uppercase;
+            letter-spacing: 0.4px; margin: 16px 0 6px;
+            padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.06);
+        }
+        .mm-model-row {
+            display: flex; align-items: center; gap: 6px;
+            padding: 4px 0;
+        }
+        .mm-model-row input[type="text"] {
+            background: var(--bg-main); border: 1px solid var(--border);
+            color: var(--fg); padding: 5px 8px; border-radius: 6px;
+            font-family: var(--font-mono); font-size: 11.5px; outline: none;
+        }
+        .mm-model-row .mm-model-name-wrap { position: relative; flex: 2; min-width: 0; display: flex; }
+        .mm-model-row .mm-model-name { flex: 1; min-width: 0; padding-right: 26px; }
+        .mm-model-search-btn {
+            position: absolute; right: 3px; top: 50%; transform: translateY(-50%);
+            background: transparent; border: none; color: var(--dim);
+            cursor: pointer; padding: 3px; border-radius: 4px; display: flex;
+        }
+        .mm-model-search-btn:hover { color: var(--cyan); background: rgba(86,182,194,0.12); }
+        .mm-model-search-btn .icon { font-size: 14px; }
+        .mm-model-row .mm-model-ctx { flex: 1; min-width: 0; }
+        .mm-model-row .mm-model-ctx::placeholder { color: var(--dim); }
+        .mm-add-model-btn {
+            display: inline-flex; align-items: center; gap: 4px;
+            background: transparent; border: 1px dashed var(--border-highlight);
+            color: var(--dim); padding: 5px 10px; border-radius: 6px;
+            font-family: inherit; font-size: 11px; cursor: pointer; margin-top: 4px;
+        }
+        .mm-add-model-btn:hover { color: var(--cyan); border-color: var(--cyan); }
+        .mm-add-model-btn .icon { font-size: 13px; }
+        .mm-empty {
+            text-align: center; color: var(--dim); font-size: 12px; padding: 24px 10px;
+        }
+        .mm-model-remove-btn {
+            background: transparent; border: none; color: var(--dim);
+            cursor: pointer; padding: 4px; border-radius: 4px; display: flex; flex-shrink: 0;
+        }
+        .mm-model-remove-btn:hover { color: var(--red); background: rgba(224,108,117,0.15); }
+        .mm-model-remove-btn .icon { font-size: 15px; }
         #about-modal .about-logo { width: 72px; height: 72px; margin: 4px auto 14px; }
         #about-modal .about-logo svg { width: 100%; height: 100%; }
         #about-modal .about-name { text-align: center; font-size: 16px; font-weight: 700; color: var(--fg); }
@@ -1374,13 +1526,13 @@
         .inline-model-picker-btn .icon { font-size: 10px; line-height: 1; }
         #model-picker-overlay {
             display: none; position: fixed; top: 0; left: 0;
-            right: 0; bottom: 0; z-index: 200;
+            right: 0; bottom: 0; z-index: 500;
         }
         #model-picker-dropdown {
             display: none; position: fixed; background: var(--bg-panel);
             border: 1px solid var(--border-highlight); border-radius: 8px;
             box-shadow: 0 12px 40px rgba(0, 0, 0, 0.9);
-            width: 380px; max-height: 420px; z-index: 201;
+            width: 380px; max-height: 420px; z-index: 501;
             overflow: hidden; flex-direction: column;
         }
         #model-picker-header {
@@ -2009,6 +2161,37 @@
                     <span class="icon">favorite</span>
                     <span>Support Development</span>
                 </a>
+            </div>
+        </div>
+    </div>
+
+    <div id="models-modal-overlay">
+        <div id="models-modal">
+            <div id="models-modal-header">
+                <div id="models-modal-title">
+                    <span class="icon" style="font-size: 14px;">tune</span>
+                    <span>Model Providers</span>
+                </div>
+                <div id="models-modal-header-actions">
+                    <button id="models-modal-edit-json" class="icon-btn" title="Edit as raw JSON">
+                        <span class="icon" style="font-size: 15px;">data_object</span>
+                    </button>
+                    <button id="models-modal-close" class="icon-btn" title="Close">
+                        <span class="icon" style="font-size: 16px;">close</span>
+                    </button>
+                </div>
+            </div>
+            <div id="models-modal-body">
+                <div id="mm-sidebar">
+                    <div id="mm-provider-list"></div>
+                    <button type="button" id="mm-add-provider-btn">
+                        <span class="icon">add</span><span>Add Provider</span>
+                    </button>
+                </div>
+                <div id="mm-detail"></div>
+            </div>
+            <div id="models-modal-footer">
+                <span id="models-modal-footer-hint">Changes save automatically to .agent/models.json</span>
             </div>
         </div>
     </div>
@@ -4048,6 +4231,8 @@ function initMonaco() {
                 if (modelPickerDropdown.contains(e.target)) return;
                 const widgetNode = document.querySelector('.inline-model-picker-btn');
                 if (widgetNode && widgetNode.contains(e.target)) return;
+                const mmTrigger = e.target.closest && e.target.closest('.mm-model-search-btn');
+                if (mmTrigger) return;
                 hideModelPicker();
             });
 
@@ -7685,8 +7870,245 @@ modelSelectOverlay.addEventListener('click', closeModelSelect);
 modelSelectConfigBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     closeModelSelect();
+    openModelsModal();
+});
+
+// --- Models modal: a friendly add/remove UI over .agent/models.json,
+// rather than requiring hand-edited JSON for the common case.
+// Fixed two-pane layout: provider list on the left (always in the same place),
+// selected provider's details on the right. ---
+const modelsModalOverlay = document.getElementById('models-modal-overlay');
+const modelsModalClose = document.getElementById('models-modal-close');
+const modelsModalEditJson = document.getElementById('models-modal-edit-json');
+const mmProviderListEl = document.getElementById('mm-provider-list');
+const mmDetailEl = document.getElementById('mm-detail');
+const mmAddProviderBtn = document.getElementById('mm-add-provider-btn');
+
+let _mmSelectedIdx = 0;
+
+function openModelsModal() {
+    _mmSelectedIdx = 0;
+    renderModelsModal();
+    modelsModalOverlay.style.display = 'flex';
+}
+
+function closeModelsModal() {
+    modelsModalOverlay.style.display = 'none';
+}
+
+// Persists MODEL_PROVIDERS through the same path as a manual JSON edit,
+// so validation, the virtual file, the dropdown, and the explorer all stay in sync.
+function commitModelsChange() {
+    saveModels();
+    renderModelDropdown();
+    renderExplorerTree();
+}
+
+function mmNewProvider() {
+    return { provider: 'New Provider', url: '', key: '', models: [{ name: '', context_window: DEFAULT_CONTEXT_WINDOW }] };
+}
+
+// Renders both panes. `focusField` optionally names an input to focus/select
+// in the detail pane right after render (used after Add Provider / Add Model).
+function renderModelsModal(focusField) {
+    const hasProviders = Array.isArray(MODEL_PROVIDERS) && MODEL_PROVIDERS.length > 0;
+    if (hasProviders) {
+        _mmSelectedIdx = Math.max(0, Math.min(_mmSelectedIdx, MODEL_PROVIDERS.length - 1));
+    }
+
+    // Left pane: the provider list, always in the same place.
+    mmProviderListEl.innerHTML = !hasProviders
+        ? `<div class="mm-empty" style="padding:18px 8px;">No providers yet</div>`
+        : MODEL_PROVIDERS.map((p, pi) => {
+            const modelCount = (p.models || []).length;
+            return `
+            <div class="mm-provider-item${pi === _mmSelectedIdx ? ' active' : ''}" data-pi="${pi}">
+                <span class="mm-provider-item-name">${escapeHTML(p.provider || 'Unnamed provider')}</span>
+                <span class="mm-provider-item-count">${modelCount}</span>
+            </div>`;
+        }).join('');
+
+    mmProviderListEl.querySelectorAll('.mm-provider-item').forEach(item => {
+        item.addEventListener('click', () => {
+            _mmSelectedIdx = Number(item.getAttribute('data-pi'));
+            renderModelsModal();
+        });
+    });
+
+    // Right pane: details for the selected provider only.
+    if (!hasProviders) {
+        mmDetailEl.innerHTML = `<div class="mm-empty-detail">No providers configured yet.<br>Use "Add Provider" on the left to create one.</div>`;
+        return;
+    }
+
+    const p = MODEL_PROVIDERS[_mmSelectedIdx];
+    const modelRows = (p.models || []).map((m, mi) => `
+        <div class="mm-model-row" data-mi="${mi}">
+            <div class="mm-model-name-wrap">
+                <input type="text" class="mm-model-name" data-field="name" placeholder="model-id" value="${escapeHTML(m.name || '')}" />
+                <button type="button" class="mm-model-search-btn" title="Browse models from API">
+                    <span class="icon">search</span>
+                </button>
+            </div>
+            <input type="text" class="mm-model-ctx" data-field="context_window" placeholder="context window" value="${m.context_window != null ? escapeHTML(String(m.context_window)) : ''}" />
+            <button type="button" class="mm-model-remove-btn" title="Remove model">
+                <span class="icon">close</span>
+            </button>
+        </div>`).join('');
+
+    mmDetailEl.innerHTML = `
+        <div class="mm-detail-head">
+            <input type="text" class="mm-detail-title-input" data-field="provider" placeholder="Provider name" value="${escapeHTML(p.provider || '')}" />
+            <button type="button" class="mm-remove-provider-btn"><span class="icon">delete</span><span>Remove</span></button>
+        </div>
+        <div class="mm-row">
+            <label>URL</label>
+            <input type="text" data-field="url" placeholder="https://api.example.com/v1" value="${escapeHTML(p.url || '')}" />
+        </div>
+        <div class="mm-row">
+            <label>API Key</label>
+            <div class="mm-key-wrap">
+                <input type="password" data-field="key" placeholder="(optional)" value="${escapeHTML(p.key || '')}" />
+                <button type="button" class="mm-key-toggle" title="Show/hide key">
+                    <span class="icon">visibility</span>
+                </button>
+            </div>
+        </div>
+        <div class="mm-models-label">Models</div>
+        ${modelRows || '<div class="mm-empty" style="padding:8px 0;">No models yet</div>'}
+        <button type="button" class="mm-add-model-btn"><span class="icon">add</span><span>Add Model</span></button>
+    `;
+
+    wireModelsDetailEvents();
+
+    if (focusField) {
+        const target = mmDetailEl.querySelector(focusField);
+        if (target) { target.focus(); if (target.select) target.select(); }
+    }
+}
+
+function wireModelsDetailEvents() {
+    const pi = _mmSelectedIdx;
+
+    // Provider name (lives in the title input now)
+    const titleInput = mmDetailEl.querySelector('.mm-detail-title-input');
+    titleInput.addEventListener('change', () => {
+        MODEL_PROVIDERS[pi].provider = titleInput.value;
+        commitModelsChange();
+        renderModelsModal(); // refresh the left-pane label too
+    });
+
+    // Other provider-level fields (url, key)
+    mmDetailEl.querySelectorAll('.mm-row input[data-field]').forEach(inp => {
+        inp.addEventListener('change', () => {
+            const field = inp.getAttribute('data-field');
+            MODEL_PROVIDERS[pi][field] = inp.value;
+            commitModelsChange();
+        });
+    });
+
+    // Show/hide API key
+    const keyToggle = mmDetailEl.querySelector('.mm-key-toggle');
+    if (keyToggle) {
+        keyToggle.addEventListener('click', () => {
+            const input = keyToggle.previousElementSibling;
+            const icon = keyToggle.querySelector('.icon');
+            const showing = input.type === 'text';
+            input.type = showing ? 'password' : 'text';
+            icon.textContent = showing ? 'visibility' : 'visibility_off';
+        });
+    }
+
+    // Model-level field edits (name, context_window)
+    mmDetailEl.querySelectorAll('.mm-model-row input[data-field]').forEach(inp => {
+        inp.addEventListener('change', () => {
+            const row = inp.closest('.mm-model-row');
+            const mi = Number(row.getAttribute('data-mi'));
+            const field = inp.getAttribute('data-field');
+            if (field === 'context_window') {
+                const n = parseInt(inp.value, 10);
+                if (inp.value.trim() === '') delete MODEL_PROVIDERS[pi].models[mi].context_window;
+                else MODEL_PROVIDERS[pi].models[mi].context_window = Number.isFinite(n) && n > 0 ? n : DEFAULT_CONTEXT_WINDOW;
+            } else {
+                MODEL_PROVIDERS[pi].models[mi][field] = inp.value;
+            }
+            commitModelsChange();
+            if (field === 'name') renderModelsModal(); // refresh model count badge on the left
+        });
+    });
+
+    // Remove a single model
+    mmDetailEl.querySelectorAll('.mm-model-remove-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mi = Number(btn.closest('.mm-model-row').getAttribute('data-mi'));
+            MODEL_PROVIDERS[pi].models.splice(mi, 1);
+            commitModelsChange();
+            renderModelsModal();
+        });
+    });
+
+    // Browse models from the provider's API and fill the name field
+    mmDetailEl.querySelectorAll('.mm-model-search-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const mi = Number(btn.closest('.mm-model-row').getAttribute('data-mi'));
+            const provider = MODEL_PROVIDERS[pi];
+            const currentName = (provider.models[mi] && provider.models[mi].name) || '';
+            const modelInfo = { label: currentName, url: provider.url || '', key: provider.key || '' };
+
+            const btnRect = btn.getBoundingClientRect();
+            showModelPicker(null, null, { top: btnRect.bottom, left: btnRect.left }, currentName, modelInfo, (modelId) => {
+                MODEL_PROVIDERS[pi].models[mi].name = modelId;
+                commitModelsChange();
+                renderModelsModal();
+            });
+        });
+    });
+
+    // Add a model to the selected provider
+    const addModelBtn = mmDetailEl.querySelector('.mm-add-model-btn');
+    if (addModelBtn) {
+        addModelBtn.addEventListener('click', () => {
+            MODEL_PROVIDERS[pi].models = MODEL_PROVIDERS[pi].models || [];
+            const newIdx = MODEL_PROVIDERS[pi].models.length;
+            MODEL_PROVIDERS[pi].models.push({ name: '', context_window: DEFAULT_CONTEXT_WINDOW });
+            commitModelsChange();
+            renderModelsModal(`.mm-model-row[data-mi="${newIdx}"] .mm-model-name`);
+        });
+    }
+
+    // Remove the whole provider
+    const removeBtn = mmDetailEl.querySelector('.mm-remove-provider-btn');
+    removeBtn.addEventListener('click', () => {
+        const name = MODEL_PROVIDERS[pi].provider || 'this provider';
+        if (!confirm(`Remove "${name}" and all its models?`)) return;
+        MODEL_PROVIDERS.splice(pi, 1);
+        if (_mmSelectedIdx >= MODEL_PROVIDERS.length) _mmSelectedIdx = MODEL_PROVIDERS.length - 1;
+        commitModelsChange();
+        renderModelsModal();
+    });
+}
+
+mmAddProviderBtn.addEventListener('click', () => {
+    MODEL_PROVIDERS.push(mmNewProvider());
+    _mmSelectedIdx = MODEL_PROVIDERS.length - 1;
+    commitModelsChange();
+    renderModelsModal('.mm-detail-title-input');
+});
+
+modelsModalClose.addEventListener('click', closeModelsModal);
+modelsModalOverlay.addEventListener('click', (e) => {
+    if (e.target === modelsModalOverlay) closeModelsModal();
+});
+modelsModalEditJson.addEventListener('click', () => {
+    closeModelsModal();
     openFileTab(MODELS_FILE);
 });
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modelsModalOverlay.style.display === 'flex' && !(_modelPickerState && _modelPickerState.visible)) closeModelsModal();
+});
+
 
 modelSelectSearch.addEventListener('input', (e) => {
     _modelSelectState.filter = e.target.value;
@@ -7938,7 +8360,7 @@ function hideModelPickerWidget() {
     }
 }
 
-function showModelPicker(targetLine, targetColumn, editorOffset, currentModelName, modelInfo) {
+function showModelPicker(targetLine, targetColumn, editorOffset, currentModelName, modelInfo, onSelect) {
     _modelPickerState = {
         visible: true,
         targetLine,
@@ -7950,7 +8372,10 @@ function showModelPicker(targetLine, targetColumn, editorOffset, currentModelNam
         loading: true,
         error: null,
         filter: '',
-        selectedIdx: 0
+        selectedIdx: 0,
+        // When set, selecting a model calls this instead of editing the Monaco buffer
+        // (used by the Models modal's inline picker button).
+        onSelect: onSelect || null
     };
 
     const dropdownH = 420;
@@ -8074,6 +8499,12 @@ function selectModelFromPicker(model) {
     const modelId = model.id || model.name || '';
     if (!modelId) return;
 
+    if (_modelPickerState.onSelect) {
+        _modelPickerState.onSelect(modelId);
+        hideModelPicker();
+        return;
+    }
+
     const editor = monacoEditor;
     if (!editor) {
         hideModelPicker();
@@ -8147,6 +8578,7 @@ modelPickerSearch.addEventListener('keydown', (e) => {
             selectModelFromPicker(filtered[selectedIdx]);
         }
     } else if (e.key === 'Escape') {
+        e.stopPropagation();
         hideModelPicker();
     }
 });
