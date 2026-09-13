@@ -15,6 +15,7 @@
             --bg-dock: #181818;
             --bg-input: #222222;
             --bg-sidebar: #121212;
+            --bg-secondary: #1a1a1a;
             --bg-hover: rgba(255, 255, 255, 0.05);
             --border: #2e2e2e;
             --border-highlight: #3d3d3d;
@@ -1228,6 +1229,7 @@
             border: 1px solid rgba(86, 182, 194, 0.3);
             border-radius: 8px; padding: 10px 14px;
             display: flex; flex-direction: column; gap: 6px; white-space: normal;
+            align-self: flex-start; max-width: min(95%, 640px);
         }
         .welcome-models-header {
             display: flex; align-items: center; gap: 6px;
@@ -1474,14 +1476,65 @@
             font-weight: 600; font-family: var(--font-mono);
             cursor: default; transition: all 0.15s ease;
         }
-        #model-group { display: flex; align-items: center; margin-left: auto; padding-right: 4px; }
-        #model-select {
+        #model-group { display: flex; align-items: center; margin-left: auto; padding-right: 4px; position: relative; }
+        #model-select-btn {
+            display: flex; align-items: center; gap: 6px;
             background: var(--bg-input); border: 1px solid var(--border);
-            color: var(--fg); padding: 2px 6px; border-radius: 6px;
+            color: var(--fg); padding: 3px 8px; border-radius: 6px;
             font-size: 11px; font-family: var(--font-mono);
-            cursor: pointer; max-width: 220px;
+            cursor: pointer; max-width: 260px;
         }
-        #model-select:focus { border-color: var(--cyan); }
+        #model-select-btn:hover, #model-select-btn.open { border-color: var(--cyan); }
+        #model-select-btn .msb-name {
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            font-weight: 600; color: var(--fg);
+        }
+        #model-select-btn .msb-provider {
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            color: var(--dim); font-size: 8px; flex-shrink: 1; min-width: 0;
+        }
+        #model-select-btn .msb-caret { color: var(--dim); font-size: 14px; flex-shrink: 0; margin-left: 2px; }
+        #model-select-overlay {
+            display: none; position: fixed; inset: 0; z-index: 1200;
+        }
+        #model-select-dropdown {
+            display: none; position: absolute; z-index: 1201;
+            bottom: calc(100% + 6px); right: 0;
+            width: 360px; max-height: 360px;
+            background: var(--bg-secondary); border: 1px solid var(--border-highlight);
+            border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            flex-direction: column; overflow: hidden;
+        }
+        #model-select-search-wrap { display: flex; align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        #model-select-search {
+            width: 100%; background: var(--bg-input); border: 1px solid var(--border);
+            color: var(--fg); padding: 5px 8px; border-radius: 6px;
+            font-size: 11px; font-family: var(--font-mono); box-sizing: border-box;
+        }
+        #model-select-search:focus { border-color: var(--cyan); outline: none; }
+        #model-select-config-btn {
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+            width: 28px; height: 28px; background: var(--bg-input); border: 1px solid var(--border);
+            color: var(--dim); border-radius: 6px; cursor: pointer;
+        }
+        #model-select-config-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+        #model-select-config-btn .icon { font-size: 16px; }
+        #model-select-list { flex: 1; overflow-y: auto; padding: 4px; }
+        #model-select-list::-webkit-scrollbar { width: 6px; }
+        #model-select-list::-webkit-scrollbar-thumb { background: var(--border-highlight); border-radius: 4px; }
+        .msd-group-label {
+            padding: 6px 8px 2px; font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
+            color: var(--dim); font-weight: 600;
+        }
+        .msd-item {
+            display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+            padding: 7px 8px; border-radius: 6px; cursor: pointer; font-family: var(--font-mono);
+        }
+        .msd-item:hover, .msd-item.highlighted { background: rgba(86, 182, 194, 0.15); }
+        .msd-item.current .msd-item-name { color: var(--cyan); }
+        .msd-item-name { font-size: 12px; font-weight: 600; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .msd-item-provider { font-size: 9px; color: var(--dim); flex-shrink: 0; white-space: nowrap; }
+        .msd-empty { padding: 20px; text-align: center; color: var(--dim); font-size: 12px; }
         #prompt-bar {
             background: var(--bg-secondary); border: none;
             padding: 8px 12px 12px 12px; display: flex;
@@ -1796,7 +1849,9 @@
             .mode-segmented-group button { flex: 1; justify-content: center; padding: 6px 4px; font-size: 10px; gap: 3px; }
             .mode-segmented-group button .icon { font-size: 12px; }
             #model-group { flex-shrink: 0; }
-            #model-select { max-width: 100px; font-size: 10px; padding: 4px 4px; }
+            #model-select-btn { max-width: 140px; font-size: 10px; padding: 4px 6px; }
+            #model-select-btn .msb-provider { display: none; }
+            #model-select-dropdown { width: 300px; }
             #prompt-input-row { gap: 0; border-radius: 8px; padding: 3px; }
             #cmd { min-height: 40px; font-size: 14px; padding: 6px; }
             #prompt-symbol { width: 40px; min-height: 40px; border-radius: 6px; font-size: 18px; }
@@ -1805,7 +1860,8 @@
         }
         @media (max-width: 380px) {
             #prompt-bar { padding: 4px 6px 6px 6px; }
-            #model-select { max-width: 60px; }
+            #model-select-btn { max-width: 90px; }
+            #model-select-dropdown { width: 260px; right: -40px; }
             .mode-segmented-group button { padding: 5px 2px; font-size: 9px; }
             .mode-segmented-group button span:not(.icon) { display: none; }
             .mode-segmented-group button .icon { font-size: 14px; }
@@ -1816,7 +1872,7 @@
             #mode-toolbar { flex-wrap: wrap; gap: 4px; }
             .mode-segmented-group { flex: 1; min-width: 150px; }
             #model-group { width: auto; margin-left: auto; }
-            #model-select { max-width: 80px; }
+            #model-select-btn { max-width: 100px; }
         }
         #btn-sidebar-toggle-mobile { display: none; }
     </style>
@@ -2331,8 +2387,21 @@
                             </div>
                         </div>
                         <div id="model-group">
-                            <select id="model-select" title="Model (from .agent/models.json)">
-                            </select>
+                            <button type="button" id="model-select-btn" title="Model (from .agent/models.json)">
+                                <span class="msb-name" id="msb-name">—</span>
+                                <span class="msb-provider" id="msb-provider">—</span>
+                                <span class="icon msb-caret">expand_more</span>
+                            </button>
+                            <div id="model-select-overlay"></div>
+                            <div id="model-select-dropdown">
+                                <div id="model-select-search-wrap">
+                                    <input type="text" id="model-select-search" placeholder="Filter models..." autocomplete="off" />
+                                    <button type="button" id="model-select-config-btn" title="Edit .agent/models.json">
+                                        <span class="icon">settings</span>
+                                    </button>
+                                </div>
+                                <div id="model-select-list"></div>
+                            </div>
                         </div>
                     </div>
 
@@ -3084,7 +3153,7 @@ function restoreAgentFile(path) {
     if (!kind) return { error: `${path} has no built-in default.` };
 
     if (kind === 'models') {
-        MODEL_PRESETS = seedDefaultModels();
+        MODEL_PROVIDERS = seedDefaultModels();
         saveModels();
         renderModelDropdown();
     } else if (kind === 'config') {
@@ -3451,23 +3520,109 @@ const SLASH_COMMANDS = [
 const DEFAULT_CONTEXT_WINDOW = 32768;
 
 function seedDefaultModels() {
-    return {
-        llama: { label: "Local llama.cpp (127.0.0.1:8080)", url: "http://127.0.0.1:8080/v1", model: "llama", key: "", context_window: DEFAULT_CONTEXT_WINDOW },
-        lmstudio: { label: "LM Studio (127.0.0.1:1234)", url: "http://127.0.0.1:1234/v1", model: "local-model", key: "", context_window: DEFAULT_CONTEXT_WINDOW },
-        ollama: { label: "Ollama (127.0.0.1:11434)", url: "http://127.0.0.1:11434/v1", model: "qwen2.5-coder", key: "", context_window: DEFAULT_CONTEXT_WINDOW },
-        openrouter: { label: "OpenRouter API", url: "https://openrouter.ai/api/v1", model: "anthropic/claude-3.5-sonnet", key: "", context_window: DEFAULT_CONTEXT_WINDOW },
-        openai: { label: "OpenAI Official API", url: "https://api.openai.com/v1", model: "gpt-4o", key: "", context_window: DEFAULT_CONTEXT_WINDOW },
-        groq: { label: "Groq Cloud", url: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile", key: "", context_window: DEFAULT_CONTEXT_WINDOW },
-        deepseek: { label: "DeepSeek API", url: "https://api.deepseek.com/v1", model: "deepseek-chat", key: "", context_window: DEFAULT_CONTEXT_WINDOW },
-        mistral: { label: "Mistral AI", url: "https://api.mistral.ai/v1", model: "codestral-latest", key: "", context_window: DEFAULT_CONTEXT_WINDOW },
-        custom: { label: "Custom Endpoint", url: "http://127.0.0.1:8080/v1", model: "llama", key: "", context_window: DEFAULT_CONTEXT_WINDOW }
-    };
+    // Providers are a flat array. Each provider has one endpoint (url/key)
+    // and a list of selectable `models`. A model is just its `name` (also
+    // used directly as the API model id sent to the endpoint) plus its own
+    // `context_window`, since context length varies per-model even within
+    // one provider.
+    return [
+        {
+            provider: "Llama.cpp (local:8080)",
+            url: "http://127.0.0.1:8080/v1",
+            key: "",
+            models: [
+                { name: "llama", context_window: DEFAULT_CONTEXT_WINDOW }
+            ]
+        },
+        {
+            provider: "LM Studio (local:1234)",
+            url: "http://127.0.0.1:1234/v1",
+            key: "",
+            models: [
+                { name: "local-model", context_window: DEFAULT_CONTEXT_WINDOW }
+            ]
+        },
+        {
+            provider: "Ollama (local:11434)",
+            url: "http://127.0.0.1:11434/v1",
+            key: "",
+            models: [
+                { name: "qwen2.5-coder", context_window: DEFAULT_CONTEXT_WINDOW }
+            ]
+        },
+        {
+            provider: "OpenRouter API",
+            url: "https://openrouter.ai/api/v1",
+            key: "",
+            models: [
+                { name: "anthropic/claude-3.5-sonnet", context_window: 200000 },
+                { name: "openrouter/free", context_window: 128000 }
+            ]
+        },
+        {
+            provider: "OpenAI Official API",
+            url: "https://api.openai.com/v1",
+            key: "",
+            models: [
+                { name: "gpt-4o", context_window: 128000 }
+            ]
+        },
+        {
+            provider: "Groq Cloud",
+            url: "https://api.groq.com/openai/v1",
+            key: "",
+            models: [
+                { name: "llama-3.3-70b-versatile", context_window: 128000 }
+            ]
+        },
+        {
+            provider: "DeepSeek API",
+            url: "https://api.deepseek.com/v1",
+            key: "",
+            models: [
+                { name: "deepseek-chat", context_window: 64000 }
+            ]
+        },
+        {
+            provider: "Mistral AI",
+            url: "https://api.mistral.ai/v1",
+            key: "",
+            models: [
+                { name: "codestral-latest", context_window: 32000 }
+            ]
+        },
+        {
+            provider: "Custom Endpoint",
+            url: "http://127.0.0.1:8080/v1",
+            key: "",
+            models: [
+                { name: "llama", context_window: DEFAULT_CONTEXT_WINDOW }
+            ]
+        }
+    ];
 }
 
-let MODEL_PRESETS = seedDefaultModels();
+let MODEL_PROVIDERS = seedDefaultModels();
 
+// Pretty-prints providers with each model on its own compact single line
+// (e.g. {"name": "llama", "context_window": 32768}), since a plain
+// JSON.stringify(..., null, 2) would explode every model object across
+// several lines and make the file much harder to skim/edit by hand.
 function modelsFileContent() {
-    return JSON.stringify(Object.values(MODEL_PRESETS), null, 2) + '\n';
+    const indentProvider = '  ';
+    const indentModel = '    ';
+    const indentModelBody = '      ';
+
+    const compactModel = (m) => '{' + Object.keys(m).map(k => `${JSON.stringify(k)}: ${JSON.stringify(m[k])}`).join(', ') + '}';
+
+    const providerLines = MODEL_PROVIDERS.map(p => {
+        const modelLines = (p.models || []).map(m => indentModelBody + compactModel(m)).join(',\n');
+        const otherKeys = Object.keys(p).filter(k => k !== 'models');
+        const headerLines = otherKeys.map(k => `${indentModel}${JSON.stringify(k)}: ${JSON.stringify(p[k])}`).join(',\n');
+        return `${indentProvider}{\n${headerLines},\n${indentModel}"models": [\n${modelLines}\n${indentModel}]\n${indentProvider}}`;
+    }).join(',\n');
+
+    return `[\n${providerLines}\n]\n`;
 }
 
 function registerModelsVirtualFile() {
@@ -3478,30 +3633,84 @@ function registerModelsVirtualFile() {
 }
 
 function saveModels() {
-    localStorage.setItem('models_json', JSON.stringify(MODEL_PRESETS));
+    localStorage.setItem('models_json', JSON.stringify(MODEL_PROVIDERS));
     registerModelsVirtualFile();
 }
 
-function renderModelDropdown() {
-    const select = document.getElementById('model-select');
-    if (!select) return;
-    const previousValue = select.value;
-    select.innerHTML = '';
-    Object.entries(MODEL_PRESETS).forEach(([id, preset]) => {
-        const opt = document.createElement('option');
-        opt.value = id;
-        opt.textContent = preset.label || id;
-        select.appendChild(opt);
+// Providers/models must be an array of { provider, url, models: [{name, context_window}] }.
+// Anything else (e.g. stale localStorage from an older schema) is rejected
+// so callers can fall back to defaults instead of crashing.
+function isValidProvidersShape(data) {
+    return Array.isArray(data) && data.every(p =>
+        p && typeof p === 'object' &&
+        typeof p.provider === 'string' &&
+        Array.isArray(p.models) &&
+        p.models.every(m => m && typeof m === 'object' && typeof m.name === 'string')
+    );
+}
+
+// Flatten providers -> selectable model entries, each carrying its own
+// provider + model config, for rendering and lookup. Entries are keyed by
+// (providerName, modelName) since a model's `name` IS its API model id.
+function getAllModelEntries() {
+    const out = [];
+    if (!Array.isArray(MODEL_PROVIDERS)) return out;
+    MODEL_PROVIDERS.forEach(p => {
+        (p.models || []).forEach(m => {
+            const rawName = m.name || '';
+            out.push({
+                providerName: p.provider || 'Unknown provider',
+                name: rawName,
+                displayName: shortenModelName(rawName),
+                url: p.url || '',
+                key: p.key || '',
+                contextWindow: Number(m.context_window) > 0 ? Number(m.context_window) : DEFAULT_CONTEXT_WINDOW
+            });
+        });
     });
-    const target = MODEL_PRESETS[previousValue] ? previousValue : (MODEL_PRESETS[localStorage.getItem('selected_model')] ? localStorage.getItem('selected_model') : 'llama');
-    if (MODEL_PRESETS[target]) select.value = target;
+    return out;
+}
+
+function findModelEntry(providerName, modelName) {
+    return getAllModelEntries().find(e => e.providerName === providerName && e.name === modelName) || null;
+}
+
+function getSelectedModelKey() {
+    const stored = localStorage.getItem('selected_model');
+    const entries = getAllModelEntries();
+    if (stored) {
+        const sepIdx = stored.indexOf('::');
+        if (sepIdx !== -1) {
+            const providerName = stored.slice(0, sepIdx);
+            const modelName = stored.slice(sepIdx + 2);
+            if (findModelEntry(providerName, modelName)) return { providerName, modelName };
+        }
+    }
+    return entries.length ? { providerName: entries[0].providerName, modelName: entries[0].name } : null;
+}
+
+function setSelectedModel(providerName, modelName) {
+    if (!findModelEntry(providerName, modelName)) return;
+    localStorage.setItem('selected_model', `${providerName}::${modelName}`);
+    renderModelDropdown();
+}
+
+function renderModelDropdown() {
+    const nameEl = document.getElementById('msb-name');
+    const providerEl = document.getElementById('msb-provider');
+    if (!nameEl || !providerEl) return;
+    const sel = getSelectedModelKey();
+    const entry = sel && findModelEntry(sel.providerName, sel.modelName);
+    nameEl.textContent = entry ? (entry.displayName || shortenModelName(entry.name)) : 'No model';
+    providerEl.textContent = entry ? entry.providerName : '';
+    if (_modelSelectState.visible) renderModelSelectList();
 }
 
 function getCurrentModelInfo() {
-    const id = document.getElementById('model-select').value;
-    const preset = MODEL_PRESETS[id];
-    return preset
-        ? { url: preset.url || '', model: preset.model || '', key: preset.key || '', contextWindow: Number(preset.context_window) > 0 ? Number(preset.context_window) : DEFAULT_CONTEXT_WINDOW }
+    const sel = getSelectedModelKey();
+    const entry = sel && findModelEntry(sel.providerName, sel.modelName);
+    return entry
+        ? { url: entry.url, model: entry.name, key: entry.key, contextWindow: entry.contextWindow }
         : { url: '', model: '', key: '', contextWindow: DEFAULT_CONTEXT_WINDOW };
 }
 
@@ -7397,14 +7606,114 @@ input.addEventListener('input', () => {
 const settingsPopover = document.getElementById('settings-popover');
 const btnSettingsToggle = document.getElementById('btn-settings-toggle');
 const readLinesInput = document.getElementById('settings-read-lines');
-const modelSelect = document.getElementById('model-select');
 
-modelSelect.addEventListener('change', (e) => {
-    const id = e.target.value;
-    const preset = MODEL_PRESETS[id];
-    if (preset) {
-        saveModels();
-        localStorage.setItem('selected_model', id);
+// --- Top-of-prompt model select dropdown (custom, since a native <select>
+// can't render a bold model name next to a dim provider name per-row) ---
+const modelSelectBtn = document.getElementById('model-select-btn');
+const modelSelectOverlay = document.getElementById('model-select-overlay');
+const modelSelectDropdown = document.getElementById('model-select-dropdown');
+const modelSelectSearch = document.getElementById('model-select-search');
+const modelSelectConfigBtn = document.getElementById('model-select-config-btn');
+const modelSelectList = document.getElementById('model-select-list');
+
+let _modelSelectState = { visible: false, filter: '', selectedIdx: 0 };
+
+function openModelSelect() {
+    _modelSelectState.visible = true;
+    _modelSelectState.filter = '';
+    const entries = getAllModelEntries();
+    const sel = getSelectedModelKey();
+    const currentIdx = sel ? entries.findIndex(e => e.providerName === sel.providerName && e.name === sel.modelName) : -1;
+    _modelSelectState.selectedIdx = currentIdx >= 0 ? currentIdx : 0;
+    modelSelectBtn.classList.add('open');
+    modelSelectDropdown.style.display = 'flex';
+    modelSelectOverlay.style.display = 'block';
+    modelSelectSearch.value = '';
+    renderModelSelectList();
+    setTimeout(() => modelSelectSearch.focus(), 0);
+}
+
+function closeModelSelect() {
+    _modelSelectState.visible = false;
+    modelSelectBtn.classList.remove('open');
+    modelSelectDropdown.style.display = 'none';
+    modelSelectOverlay.style.display = 'none';
+}
+
+function getModelEntriesFiltered() {
+    const filter = (_modelSelectState.filter || '').toLowerCase();
+    return getAllModelEntries()
+        .filter(e => !filter || (e.displayName || e.name).toLowerCase().includes(filter) || e.providerName.toLowerCase().includes(filter));
+}
+
+function renderModelSelectList() {
+    const entries = getModelEntriesFiltered();
+    if (!entries.length) {
+        modelSelectList.innerHTML = `<div class="msd-empty">No models found${_modelSelectState.filter ? ' for filter' : ''}</div>`;
+        return;
+    }
+    const sel = getSelectedModelKey();
+    _modelSelectState.selectedIdx = Math.min(_modelSelectState.selectedIdx, entries.length - 1);
+    modelSelectList.innerHTML = entries.map((e, i) => {
+        const isCurrent = sel && e.providerName === sel.providerName && e.name === sel.modelName;
+        const isHighlighted = i === _modelSelectState.selectedIdx;
+        const classes = ['msd-item'];
+        if (isHighlighted) classes.push('highlighted');
+        if (isCurrent) classes.push('current');
+        const displayName = e.displayName || e.name;
+        return `<div class="${classes.join(' ')}" data-idx="${i}" data-provider-name="${escapeHTML(e.providerName)}" data-model-name="${escapeHTML(e.name)}" title="${escapeHTML(e.name)} — ${escapeHTML(e.providerName)}">
+            <span class="msd-item-name">${escapeHTML(displayName)}${isCurrent ? ' ✓' : ''}</span>
+            <span class="msd-item-provider">${escapeHTML(e.providerName)}</span>
+        </div>`;
+    }).join('');
+    modelSelectList.querySelectorAll('.msd-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const providerName = el.getAttribute('data-provider-name');
+            const modelName = el.getAttribute('data-model-name');
+            setSelectedModel(providerName, modelName);
+            closeModelSelect();
+        });
+    });
+}
+
+modelSelectBtn.addEventListener('click', () => {
+    if (_modelSelectState.visible) closeModelSelect(); else openModelSelect();
+});
+
+modelSelectOverlay.addEventListener('click', closeModelSelect);
+
+modelSelectConfigBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeModelSelect();
+    openFileTab(MODELS_FILE);
+});
+
+modelSelectSearch.addEventListener('input', (e) => {
+    _modelSelectState.filter = e.target.value;
+    _modelSelectState.selectedIdx = 0;
+    renderModelSelectList();
+});
+
+modelSelectSearch.addEventListener('keydown', (e) => {
+    const entries = getModelEntriesFiltered();
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        _modelSelectState.selectedIdx = Math.min(_modelSelectState.selectedIdx + 1, entries.length - 1);
+        renderModelSelectList();
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        _modelSelectState.selectedIdx = Math.max(_modelSelectState.selectedIdx - 1, 0);
+        renderModelSelectList();
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const entry = entries[_modelSelectState.selectedIdx];
+        if (entry) {
+            setSelectedModel(entry.providerName, entry.name);
+            closeModelSelect();
+        }
+    } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeModelSelect();
     }
 });
 
@@ -7431,13 +7740,13 @@ const modelPickerSearch = document.getElementById('model-picker-search');
 const modelPickerClose = document.getElementById('model-picker-close');
 
 function getModelValueEndPosition(lineContent) {
-    const quotedRegex = /("model"\s*:\s*"[^"]*)"/;
+    const quotedRegex = /("name"\s*:\s*"[^"]*)"/;
     let match = quotedRegex.exec(lineContent);
     if (match) {
         return match.index + match[0].length + 1;
     }
 
-    const unquotedRegex = /("model"\s*:\s*)([^\s,}\]]+)/;
+    const unquotedRegex = /("name"\s*:\s*)([^\s,}\]]+)/;
     match = unquotedRegex.exec(lineContent);
     if (match) {
         const valueStart = match.index + match[1].length;
@@ -7448,17 +7757,23 @@ function getModelValueEndPosition(lineContent) {
 }
 
 function getModelValueFromLine(lineContent) {
-    const quotedRegex = /"model"\s*:\s*"([^"]*)"/;
+    const quotedRegex = /"name"\s*:\s*"([^"]*)"/;
     let match = quotedRegex.exec(lineContent);
     if (match) return match[1];
 
-    const unquotedRegex = /"model"\s*:\s*([^\s,}\]]+)/;
+    const unquotedRegex = /"name"\s*:\s*([^\s,}\]]+)/;
     match = unquotedRegex.exec(lineContent);
     if (match) return match[1];
 
     return '';
 }
 
+// Finds the config for the model line under the cursor. Since models now
+// nest one level inside their provider ({ provider, url, key, models: [...] }),
+// this walks up from the model's own object to its parent (the provider)
+// to read url/key. Handles both compact single-line models
+// ({"name": "x", "context_window": 1} all on one line) and pretty-printed
+// multi-line models.
 function findModelInfoForLine(filepath, targetLine) {
     if (!filepath || !filepath.endsWith('models.json')) return null;
     if (!monacoEditor) return null;
@@ -7466,60 +7781,77 @@ function findModelInfoForLine(filepath, targetLine) {
     const model = monacoEditor.getModel();
     if (!model) return null;
 
-    let depth = 0;
-    let objectStartLine = 1;
-    let foundObject = false;
+    const lineCount = model.getLineCount();
+    const lineText = (n) => model.getLineContent(n);
 
-    for (let line = 1; line <= targetLine; line++) {
-        const lineContent = model.getLineContent(line);
-        const noStrings = lineContent.replace(/"[^"]*"/g, '""');
-
-        const openCount = (noStrings.match(/[\[{]/g) || []).length;
-        const closeCount = (noStrings.match(/[\]}]/g) || []).length;
-
-        depth += openCount;
-
-        if (closeCount > 0 && depth > 0) {
-            depth -= closeCount;
-        }
-
-        if (depth >= 1 && openCount > 0) {
-            objectStartLine = line;
-            foundObject = true;
+    // Stack of object frames open strictly BEFORE targetLine.
+    const stack = [];
+    for (let line = 1; line < targetLine; line++) {
+        const noStrings = lineText(line).replace(/"[^"]*"/g, '""');
+        for (const ch of noStrings) {
+            if (ch === '{') stack.push({ startLine: line });
+            else if (ch === '}') stack.pop();
         }
     }
 
-    if (!foundObject) return null;
-
-    let objectEndLine = targetLine;
-    depth = 0;
-    for (let line = objectStartLine; line <= model.getLineCount(); line++) {
-        const lineContent = model.getLineContent(line);
-        const noStrings = lineContent.replace(/"[^"]*"/g, '""');
-
-        const openCount = (noStrings.match(/[\[{]/g) || []).length;
-        const closeCount = (noStrings.match(/[\]}]/g) || []).length;
-
-        depth += openCount;
-        depth -= closeCount;
-
-        if (depth === 0) {
-            objectEndLine = line;
-            break;
+    const targetNoStrings = lineText(targetLine).replace(/"[^"]*"/g, '""');
+    let localDepth = 0;
+    let sawSelfContained = false;
+    for (const ch of targetNoStrings) {
+        if (ch === '{') {
+            localDepth++;
+        } else if (ch === '}') {
+            localDepth--;
+            if (localDepth === 0) sawSelfContained = true;
         }
     }
+    const opensUnclosed = localDepth > 0;
 
-    let objectContent = '';
-    for (let line = objectStartLine; line <= objectEndLine; line++) {
-        objectContent += model.getLineContent(line) + '\n';
+    const readObjectContent = (frame) => {
+        let depth = 0;
+        let endLine = frame.startLine;
+        for (let line = frame.startLine; line <= lineCount; line++) {
+            const noStrings = lineText(line).replace(/"[^"]*"/g, '""');
+            for (const ch of noStrings) {
+                if (ch === '{') depth++;
+                else if (ch === '}') { depth--; if (depth === 0) { endLine = line; break; } }
+            }
+            if (depth === 0 && endLine === line) break;
+        }
+        let content = '';
+        for (let line = frame.startLine; line <= endLine; line++) content += lineText(line) + '\n';
+        return content;
+    };
+
+    let modelContent, providerFrame;
+
+    if (opensUnclosed) {
+        // A model object starts here and continues onto later lines.
+        const modelFrame = { startLine: targetLine };
+        providerFrame = stack.length ? stack[stack.length - 1] : modelFrame;
+        modelContent = readObjectContent(modelFrame);
+    } else if (sawSelfContained) {
+        // A complete {..} sits entirely on this line (compact model).
+        // Whatever was already open before this line is the provider.
+        if (!stack.length) return null;
+        providerFrame = stack[stack.length - 1];
+        modelContent = lineText(targetLine);
+    } else {
+        // No braces at all on this line: we're inside whatever object was
+        // already open (e.g. a bare "context_window": N, line).
+        if (!stack.length) return null;
+        const modelFrame = stack[stack.length - 1];
+        providerFrame = stack.length >= 2 ? stack[stack.length - 2] : modelFrame;
+        modelContent = readObjectContent(modelFrame);
     }
 
-    const labelMatch = objectContent.match(/"label"\s*:\s*"([^"]+)"/);
-    const urlMatch = objectContent.match(/"url"\s*:\s*"([^"]+)"/);
-    const keyMatch = objectContent.match(/"key"\s*:\s*"([^"]*)"/);
+    const providerContent = readObjectContent(providerFrame);
+    const nameMatch = modelContent.match(/"name"\s*:\s*"([^"]+)"/);
+    const urlMatch = providerContent.match(/"url"\s*:\s*"([^"]+)"/);
+    const keyMatch = providerContent.match(/"key"\s*:\s*"([^"]*)"/);
 
     return {
-        label: labelMatch ? labelMatch[1] : null,
+        label: nameMatch ? nameMatch[1] : null,
         url: urlMatch ? urlMatch[1] : null,
         key: keyMatch ? keyMatch[1] : ''
     };
@@ -7541,7 +7873,7 @@ function showModelPickerWidget(line) {
     if (valueEndCol === null) return;
 
     const widgetLine = line;
-    const widgetCol = valueEndCol;
+    const widgetCol = model.getLineMaxColumn(widgetLine);
     const widgetLineContent = lineContent;
 
     _modelPickerWidget = {
@@ -7753,7 +8085,7 @@ function selectModelFromPicker(model) {
     const model_line = editor.getModel().getLineContent(targetLine);
     const escapedModelId = modelId.replace(/\\/g, '\\\\');
 
-    const quotedRegex = /("model"\s*:\s*)"([^"]*)"/;
+    const quotedRegex = /("name"\s*:\s*)"([^"]*)"/;
     const quotedMatch = quotedRegex.exec(model_line);
 
     if (quotedMatch) {
@@ -7766,7 +8098,7 @@ function selectModelFromPicker(model) {
         );
         editor.executeEdits('model-picker', [{ range, text: escapedModelId }]);
     } else {
-        const unquotedRegex = /("model"\s*:\s*)([^\s,}\]]+)/;
+        const unquotedRegex = /("name"\s*:\s*)([^\s,}\]]+)/;
         const unquotedMatch = unquotedRegex.exec(model_line);
         if (unquotedMatch) {
             const valueStart = unquotedMatch.index + unquotedMatch[1].length;
@@ -8586,10 +8918,14 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     try {
         const storedModels = localStorage.getItem('models_json');
-        MODEL_PRESETS = storedModels ? JSON.parse(storedModels) : seedDefaultModels();
-        if (!storedModels) localStorage.setItem('models_json', JSON.stringify(MODEL_PRESETS));
+        const parsedStored = storedModels ? JSON.parse(storedModels) : null;
+        MODEL_PROVIDERS = isValidProvidersShape(parsedStored) ? parsedStored : seedDefaultModels();
+        if (!storedModels || !isValidProvidersShape(parsedStored)) {
+            localStorage.setItem('models_json', JSON.stringify(MODEL_PROVIDERS));
+        }
     } catch(e) {
-        MODEL_PRESETS = seedDefaultModels();
+        MODEL_PROVIDERS = seedDefaultModels();
+        localStorage.setItem('models_json', JSON.stringify(MODEL_PROVIDERS));
     }
     renderModelDropdown();
     registerModelsVirtualFile();
@@ -8963,10 +9299,10 @@ function updateWelcomeVisibility() {
                         <span class="icon" style="font-size:14px;">tune</span>
                         <span>Model Settings</span>
                     </div>
-                    <div class="welcome-models-body">Models, providers, and API keys are configured in <code class="cyan">${MODELS_FILE}</code>. Edit it directly, use the model picker dropdown above the prompt box to switch models.</div>
+                    <div class="welcome-models-body">Pick a model from the dropdown above the prompt, or open settings to edit <code class="cyan">${MODELS_FILE}</code>.</div>
                     <button class="btn-models-edit" onclick="openFileTab('${MODELS_FILE}')">
                         <span class="icon" style="font-size:14px;">edit_note</span>
-                        <span>Open ${MODELS_FILE} in Editor</span>
+                        <span>Open models settings</span>
                     </button>
                 </div>
             `;
@@ -10281,14 +10617,14 @@ function updateTokenStatus(usage) {
     el.title = `Model: ${model || '?'} | Prompt: ${prompt.toLocaleString()} | Gen: ${gen.toLocaleString()} | Total: ${total.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (${Math.round(pct * 100)}% of context)`;
 
     modelEl.style.display = 'inline-block';
-    modelEl.innerText = model || '?';
+    modelEl.innerText = shortenModelName(model) || '?';
     modelEl.title = model || '';
 
     fetchActiveModelName(apiUrl, apiKey, model).then(resolvedName => {
         if (!resolvedName || resolvedName === model) return;
         if (el.style.display !== 'inline-flex') return;
         el.title = `Model: ${resolvedName} | Prompt: ${prompt.toLocaleString()} | Gen: ${gen.toLocaleString()} | Total: ${total.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (${Math.round(pct * 100)}% of context)`;
-        modelEl.innerText = resolvedName;
+        modelEl.innerText = shortenModelName(resolvedName);
         modelEl.title = resolvedName;
     });
 }
@@ -10353,43 +10689,49 @@ async function writeDisk(filePath, content, opts) {
         let parsed;
         try {
             parsed = JSON.parse(content);
-            let modelsArray;
-            if (Array.isArray(parsed)) {
-                modelsArray = parsed;
-            } else if (parsed && typeof parsed === 'object') {
-                modelsArray = Object.entries(parsed).map(([id, preset]) => ({ _id: id, ...preset }));
-            } else {
-                throw new Error('must be a JSON array or object');
+            if (!Array.isArray(parsed)) {
+                throw new Error('must be a JSON array of providers');
             }
-            const requiredFields = ['label', 'url', 'model'];
-            for (let i = 0; i < modelsArray.length; i++) {
-                const m = modelsArray[i];
-                const missing = requiredFields.filter(f => !m[f]);
+            const requiredProviderFields = ['provider', 'url', 'models'];
+            const requiredModelFields = ['name'];
+            const providerIds = new Set();
+            parsed.forEach((p, pi) => {
+                const missing = requiredProviderFields.filter(f => !p[f]);
                 if (missing.length > 0) {
-                    throw new Error(`Model at index ${i} is missing required field(s): ${missing.join(', ')}`);
+                    throw new Error(`Provider at index ${pi} is missing required field(s): ${missing.join(', ')}`);
                 }
-            }
-            const labels = modelsArray.map(m => m.label);
-            const seen = new Set();
-            const dupLabels = labels.filter(l => seen.size === seen.add(l).size);
-            if (dupLabels.length > 0) {
-                throw new Error(`Duplicate model label(s): ${dupLabels.join(', ')}`);
-            }
-            MODEL_PRESETS = {};
-            modelsArray.forEach(m => {
-                const id = m.label;
-                const { _id, ...preset } = m;
-                MODEL_PRESETS[id] = preset;
+                if (!Array.isArray(p.models) || p.models.length === 0) {
+                    throw new Error(`Provider "${p.provider}" must have a non-empty "models" array`);
+                }
+                const pid = p.id || p.provider;
+                if (providerIds.has(pid)) {
+                    throw new Error(`Duplicate provider id/name: ${pid}`);
+                }
+                providerIds.add(pid);
+                const modelIds = new Set();
+                p.models.forEach((m, mi) => {
+                    const missingM = requiredModelFields.filter(f => !m[f]);
+                    if (missingM.length > 0) {
+                        throw new Error(`Model at index ${mi} in provider "${p.provider}" is missing required field(s): ${missingM.join(', ')}`);
+                    }
+                    const mid = m.id || m.name;
+                    if (modelIds.has(mid)) {
+                        throw new Error(`Duplicate model "${mid}" within provider "${p.provider}"`);
+                    }
+                    modelIds.add(mid);
+                });
             });
+            MODEL_PROVIDERS = parsed;
         } catch(e) {
             print(`<span class="red">[models] Invalid JSON, not saved: ${escapeHTML(e.message)}</span>`);
-            return { output: `ERROR: ${MODELS_FILE} must be an array of models with {label, url, model} fields. ${e.message}` };
+            return { output: `ERROR: ${MODELS_FILE} must be an array of providers, each with {provider, url, models: [{name, model, context_window}]}. ${e.message}` };
         }
         saveModels();
         registerModelsVirtualFile();
         renderModelDropdown();
         renderExplorerTree();
-        showToast(`Saved ${MODELS_FILE} (${Object.keys(MODEL_PRESETS).length} model${Object.keys(MODEL_PRESETS).length === 1 ? '' : 's'})`, 'success');
+        const totalModels = MODEL_PROVIDERS.reduce((n, p) => n + (p.models ? p.models.length : 0), 0);
+        showToast(`Saved ${MODELS_FILE} (${MODEL_PROVIDERS.length} provider${MODEL_PROVIDERS.length === 1 ? '' : 's'}, ${totalModels} model${totalModels === 1 ? '' : 's'})`, 'success');
         return { handled: true };
     }
 
@@ -11741,7 +12083,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                         const hasThinkOpen = assistantText.includes('<think>') || assistantText.includes('<thinking>');
                         const hasThinkClosed = assistantText.includes('</think>') || assistantText.includes('</thinking>');
                         const isInUnclosedThinking = hasThinkOpen && !hasThinkClosed;
-                        
+
                         // Only render assistant text if not in unclosed thinking block
                         if (!isInUnclosedThinking || thinkingFinished) {
                             const displayContent = stripThinkingTags(assistantText);
