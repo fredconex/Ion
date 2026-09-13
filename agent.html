@@ -9358,21 +9358,109 @@ function escapeHTML(str) {
     }[tag]));
 }
 
+// Single centralized thinking-block parser.
+//
+// Handles all of: <think>, <thinking>, <reasoning>, <thought>, [thinking], <|thinking|>
+// Tolerates: attributes, whitespace, case, cross-tag closing, unclosed streams.
+// Preserves code fences (```...``` / ~~~...~~~) so literal tag examples inside
+// code blocks are NOT stripped.
+//
+// Returns { clean, reasoning, unclosed, thoughts }:
+//   clean      - visible text with all reasoning removed (used for render/persist)
+//   reasoning  - accumulated reasoning text (used for the live thoughtDiv)
+//   unclosed   - reasoning text of an unterminated open block, or null
+//   thoughts   - array of closed reasoning block bodies (in order)
+//
+// `trim` is opt-in. Live streaming must NOT trim (whitespace continuity
+// matters when appending chunks); the final persist path should trim.
+function parseAssistantBuffer(raw, { trim = false } = {}) {
+    if (!raw) {
+        return { clean: '', reasoning: '', unclosed: null, thoughts: [] };
+    }
+
+    // Split out fenced code blocks so tags inside them are ignored.
+    const parts = String(raw).split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g);
+
+    let visible = '';
+    let reasoning = '';
+    let unclosed = null;
+    const thoughts = [];
+    let inThinking = false;
+    let currentThought = '';
+
+    // Groups:
+    //   m[1] = '/' for XML-style close,  m[2] = tag name
+    //   m[3] = '/' for [thinking] close, m[4] = "thinking"
+    //   m[5] = '/' for <|thinking|> close, m[6] = "thinking"
+    const re = /<(\/?)(think|thinking|reasoning|thought)\b[^>]*>|\[(\/?)(thinking)\]|<\|(\/?)(thinking)\|>/gi;
+
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        const isFence = i % 2 === 1;
+
+        if (isFence) {
+            if (inThinking) currentThought += part;
+            else visible += part;
+            continue;
+        }
+
+        let cursor = 0;
+        while (cursor < part.length) {
+            re.lastIndex = cursor;
+            const m = re.exec(part);
+            if (!m) {
+                const rest = part.slice(cursor);
+                if (inThinking) currentThought += rest;
+                else visible += rest;
+                break;
+            }
+
+            const before = part.slice(cursor, m.index);
+            if (inThinking) currentThought += before;
+            else visible += before;
+
+            const isClose = !!(m[1] || m[3] || m[5]);
+            if (isClose) {
+                if (inThinking) {
+                    thoughts.push(currentThought);
+                    reasoning += (reasoning ? '\n\n' : '') + currentThought;
+                    currentThought = '';
+                }
+                inThinking = false;
+            } else {
+                // Another open tag while already open: flush the previous
+                // thought as a closed block and start a new one. This is the
+                // correct behavior for nested/malformed streams.
+                if (inThinking && currentThought) {
+                    thoughts.push(currentThought);
+                    reasoning += (reasoning ? '\n\n' : '') + currentThought;
+                    currentThought = '';
+                }
+                inThinking = true;
+            }
+
+            cursor = m.index + m[0].length;
+        }
+    }
+
+    if (inThinking && currentThought) {
+        unclosed = currentThought;
+        reasoning += (reasoning ? '\n\n' : '') + currentThought;
+    }
+
+    const finalize = (s) => trim ? s.trim() : s;
+    return {
+        clean: finalize(visible),
+        reasoning: finalize(reasoning),
+        unclosed: unclosed === null ? null : finalize(unclosed),
+        thoughts: thoughts.map(t => trim ? t.trim() : t)
+    };
+}
+
+// Thin wrapper kept for the many existing call sites that only want the
+// visible text (sanitizeMessages, persistence, etc.).
 function stripThinkingTags(text) {
-    if (!text) return "";
-    let clean = String(text);
-
-    // Paired blocks — case-insensitive, several delimiter styles.
-    clean = clean.replace(/<(think|thinking|reasoning|thought)>[\s\S]*?<\/\1>/gi, '');
-    clean = clean.replace(/\[thinking\][\s\S]*?\[\/thinking\]/gi, '');
-    clean = clean.replace(/<\|thinking\|>[\s\S]*?<\/\|thinking\|>/gi, '');
-
-    // Unclosed trailing block: cut from the first remaining opener to EOF.
-    // Handles case variants, whitespace, and attributes.
-    const trailing = clean.search(/<(think|thinking|reasoning|thought)\b[^>]*>|\[thinking\]|<\|thinking\|>/i);
-    if (trailing !== -1) clean = clean.slice(0, trailing);
-
-    return clean;
+    return parseAssistantBuffer(text, { trim: true }).clean;
 }
 
 function formatMarkdownSnippet(text) {
@@ -12014,7 +12102,23 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                     renderPending = false;
 
                     if (isRunLive()) {
-                        if (reasoningText && !thinkingFinished) {
+                        // Extract every 50ms from the *full* accumulated buffer.
+                        // Do NOT trim reasoning here — whitespace continuity matters
+                        // while appending, or the thought body will visibly "jump".
+                        const parsed = assistantText
+                            ? parseAssistantBuffer(assistantText, { trim: false })
+                            : { clean: '', reasoning: '', unclosed: null, thoughts: [] };
+
+                        const inlineReasoning = parsed.reasoning; // already includes unclosed, joined
+                        const totalThinking = inlineReasoning
+                            ? (reasoningText ? reasoningText + '\n\n' + inlineReasoning : inlineReasoning)
+                            : reasoningText;
+
+                        const displayContent = parsed.clean;
+                        const isInUnclosedThinking = parsed.unclosed !== null;
+                        const hasCompletedInlineThoughts = parsed.thoughts.length > 0;
+
+                        if (totalThinking && !thinkingFinished) {
                             if (!thoughtDiv) {
                                 thoughtDiv = print(`
                                     <div class="thought-box collapsed">
@@ -12032,65 +12136,64 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                                 startThinkingTimer(thoughtDiv);
                             }
                             const bodyEl = thoughtDiv.querySelector('.thought-body');
-                            if (bodyEl) bodyEl.innerText = reasoningText;
+                            if (bodyEl) bodyEl.innerText = totalThinking;
                             reorderSpinnerToBottom(runSessionId);
                             smartScroll();
 
-                            const lastLine = reasoningText.trim().split('\n').pop();
+                            const lastLine = totalThinking.trim().split('\n').pop();
                             if (lastLine) updateSpinnerText(lastLine, runSessionId);
                         }
 
-                        if (assistantText) {
-                            const hasThinkOpen = assistantText.includes('<think>') || assistantText.includes('<thinking>');
-                            const hasThinkClosed = assistantText.includes('</think>') || assistantText.includes('</thinking>');
-                            const isInUnclosedThinking = hasThinkOpen && !hasThinkClosed;
-
-                            if (isInUnclosedThinking && !thinkingFinished) {
-                                const thinkMatch = assistantText.match(/<think(?:ing)?>([\s\S]*?)$/i);
-                                if (thinkMatch && thinkMatch[1]) {
-                                    if (!thoughtDiv) {
-                                        thoughtDiv = print(`<div class="thought-box collapsed"><div class="thought-header"><span class="icon icon-chevron">expand_more</span><span class="icon" style="font-size:14px; color:var(--dim);">psychology</span><span class="thought-timer">Thinking (0.0s)...</span><button class="btn-skip-thinking" title="Skip thinking and proceed"><span class="icon" style="font-size:12px;">fast_forward</span><span>Skip</span></button></div><div class="thought-body"></div></div>`, "", runSessionId);
-                                        startThinkingTimer(thoughtDiv);
-                                    }
-                                    const bodyEl = thoughtDiv.querySelector('.thought-body');
-                                    if (bodyEl) bodyEl.innerText = thinkMatch[1];
-                                }
-                                // Don't render assistant content while in unclosed thinking block
-                            } else {
-                                if (thoughtDiv && !thinkingFinished) stopThinkingTimer(thoughtDiv);
-                                const displayContent = stripThinkingTags(assistantText);
-                                if (displayContent.trim()) {
-                                    if (!streamDiv) { streamDiv = print("", "log-entry md-content", runSessionId); runGen.currentAssistantDiv = streamDiv; }
-                                    streamDiv.innerHTML = normalizeBlockHTML(formatMarkdownSnippet(displayContent));
-                                    reorderSpinnerToBottom(runSessionId);
-                                    smartScroll();
-                                }
+                        // Only stop the timer once we've left the unclosed block
+                        // AND we actually have something (visible text or a closed
+                        // inline thought) to show. This prevents prematurely ending
+                        // the "Thinking…" state while more reasoning is arriving.
+                        if (!isInUnclosedThinking && thoughtDiv && !thinkingFinished) {
+                            if (hasCompletedInlineThoughts || displayContent.trim()) {
+                                stopThinkingTimer(thoughtDiv);
                             }
                         }
-                    } else {
+
+                        if (displayContent.trim() || streamDiv) {
+                            if (!streamDiv && displayContent.trim()) {
+                                streamDiv = print("", "log-entry md-content", runSessionId);
+                                runGen.currentAssistantDiv = streamDiv;
+                            }
+                            if (streamDiv) {
+                                streamDiv.innerHTML = normalizeBlockHTML(formatMarkdownSnippet(displayContent));
+                                reorderSpinnerToBottom(runSessionId);
+                                smartScroll();
+                            }
+                        }
                     }
                 }
             }
 
             if (renderPending) {
                 if (isRunLive()) {
-                    if (reasoningText && !thinkingFinished && thoughtDiv) {
-                        const bodyEl = thoughtDiv.querySelector('.thought-body');
-                        if (bodyEl) bodyEl.innerText = reasoningText;
-                    }
-                    if (assistantText) {
-                        // Check if we're in an unclosed thinking block
-                        const hasThinkOpen = assistantText.includes('<think>') || assistantText.includes('<thinking>');
-                        const hasThinkClosed = assistantText.includes('</think>') || assistantText.includes('</thinking>');
-                        const isInUnclosedThinking = hasThinkOpen && !hasThinkClosed;
+                    const parsed = assistantText
+                        ? parseAssistantBuffer(assistantText, { trim: true })
+                        : { clean: '', reasoning: '', unclosed: null, thoughts: [] };
 
-                        // Only render assistant text if not in unclosed thinking block
-                        if (!isInUnclosedThinking || thinkingFinished) {
-                            const displayContent = stripThinkingTags(assistantText);
-                            if (displayContent.trim()) {
-                                if (!streamDiv) { streamDiv = print("", "log-entry md-content", runSessionId); runGen.currentAssistantDiv = streamDiv; }
-                                streamDiv.innerHTML = normalizeBlockHTML(formatMarkdownSnippet(displayContent));
-                            }
+                    const inlineReasoning = parsed.reasoning;
+                    const totalThinking = inlineReasoning
+                        ? (reasoningText ? reasoningText + '\n\n' + inlineReasoning : inlineReasoning)
+                        : reasoningText;
+
+                    const displayContent = parsed.clean;
+
+                    if (totalThinking && !thinkingFinished && thoughtDiv) {
+                        const bodyEl = thoughtDiv.querySelector('.thought-body');
+                        if (bodyEl) bodyEl.innerText = totalThinking;
+                    }
+
+                    if (displayContent.trim() || streamDiv) {
+                        if (!streamDiv && displayContent.trim()) {
+                            streamDiv = print("", "log-entry md-content", runSessionId);
+                            runGen.currentAssistantDiv = streamDiv;
+                        }
+                        if (streamDiv) {
+                            streamDiv.innerHTML = normalizeBlockHTML(formatMarkdownSnippet(displayContent));
                         }
                     }
                     reorderSpinnerToBottom(runSessionId);
@@ -12102,12 +12205,32 @@ async function runTask(task, blameId, imageUrls, sessionId) {
             stopSpinner(runSessionId);
 
             if (!isRunLive()) {
-                const finalDisplay = stripThinkingTags(assistantText);
-                if (reasoningText && reasoningText.trim()) {
-                    print(`<div class="thought-box collapsed"><div class="thought-header"><span class="icon icon-chevron">expand_more</span><span class="icon" style="font-size:14px; color:var(--dim);">psychology</span><span class="thought-timer">Thought</span></div><div class="thought-body">${escapeHTML(reasoningText)}</div></div>`, "", runSessionId);
+                const parsed = assistantText
+                    ? parseAssistantBuffer(assistantText, { trim: true })
+                    : { clean: '', reasoning: '', unclosed: null, thoughts: [] };
+
+                const inlineReasoning = parsed.reasoning;
+                const totalThinking = inlineReasoning
+                    ? (reasoningText ? reasoningText + '\n\n' + inlineReasoning : inlineReasoning)
+                    : reasoningText;
+
+                const displayContent = parsed.clean;
+
+                if (totalThinking && totalThinking.trim()) {
+                    print(
+                        `<div class="thought-box collapsed">` +
+                            `<div class="thought-header">` +
+                                `<span class="icon icon-chevron">expand_more</span>` +
+                                `<span class="icon" style="font-size:14px; color:var(--dim);">psychology</span>` +
+                                `<span class="thought-timer">Thought</span>` +
+                            `</div>` +
+                            `<div class="thought-body">${escapeHTML(totalThinking)}</div>` +
+                        `</div>`,
+                        "", runSessionId
+                    );
                 }
-                if (finalDisplay.trim()) {
-                    print(normalizeBlockHTML(formatMarkdownSnippet(finalDisplay)), "log-entry md-content", runSessionId);
+                if (displayContent.trim()) {
+                    print(normalizeBlockHTML(formatMarkdownSnippet(displayContent)), "log-entry md-content", runSessionId);
                 }
             }
 
@@ -12137,17 +12260,29 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                     if (iconEl) iconEl.innerText = 'fast_forward';
                 }
 
-                let partialContent = "";
+                let partialContent = '';
                 const keepSkipped = getDuoSwitch(document.getElementById('settings-keep-skipped-thinking'));
-                if (reasoningText) {
+
+                const parsed = assistantText
+                    ? parseAssistantBuffer(assistantText, { trim: true })
+                    : { clean: '', reasoning: '', unclosed: null, thoughts: [] };
+
+                const inlineReasoning = parsed.reasoning;
+                const totalThinking = inlineReasoning
+                    ? (reasoningText ? reasoningText + '\n\n' + inlineReasoning : inlineReasoning)
+                    : reasoningText;
+
+                const displayContent = parsed.clean;
+
+                if (totalThinking) {
                     if (keepSkipped) {
-                        partialContent = `\n[thinking skipped by user - partial reasoning preserved]\n${reasoningText}\n`;
+                        partialContent = `\n[thinking skipped by user - partial reasoning preserved]\n${totalThinking}\n`;
                     } else {
                         partialContent = `\n[thinking skipped by user]\n`;
                     }
                 }
-                if (assistantText) {
-                    partialContent += stripThinkingTags(assistantText);
+                if (displayContent) {
+                    partialContent += displayContent;
                 }
 
                 runCtx.messages.push({
