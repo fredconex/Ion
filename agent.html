@@ -3296,6 +3296,144 @@ let rootHandle = null;
 
 const IGNORED_DIRS = new Set(['node_modules', '.git', 'venv', '__pycache__', 'target', 'build', 'dist']);
 
+// ---- Protected paths (security) ----
+// Patterns are matched against both the full relative path and the basename,
+// using simple gitignore-style globs ('*' wildcard, trailing '/' = directory-only).
+const PROTECTED_PATTERNS = [
+    '.git',
+    '.env',
+    '*.key',
+    '*.pem',
+    '__pycache__/',
+    '*.pyc',
+    'data/',
+    '.vscode/'
+];
+
+// Cache of parsed .gitignore rules, keyed by the directory path that contains the .gitignore
+// (root .gitignore is keyed by '').
+const gitignoreCache = new Map();
+
+function globToRegExp(pattern) {
+    // Escape regex special chars except '*' and '?', then translate glob wildcards.
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    const translated = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
+    return new RegExp('^' + translated + '$', 'i');
+}
+
+function matchesPattern(pattern, fullPath, baseName, isDir) {
+    let pat = pattern.trim();
+    if (!pat || pat.startsWith('#')) return false;
+
+    let dirOnly = false;
+    if (pat.endsWith('/')) {
+        dirOnly = true;
+        pat = pat.slice(0, -1);
+    }
+    if (dirOnly && !isDir) {
+        // A dir-only pattern can still match a file living inside that directory,
+        // handled separately via isUnderDirPattern(); here we only match dirs themselves.
+        return false;
+    }
+
+    const anchored = pat.includes('/');
+    const candidate = anchored ? fullPath : baseName;
+    const re = globToRegExp(pat.replace(/^\//, ''));
+    return re.test(candidate);
+}
+
+function isUnderDirPattern(pattern, fullPath) {
+    if (!pattern.endsWith('/')) return false;
+    const dirPat = pattern.slice(0, -1).replace(/^\//, '');
+    const anchored = pattern.includes('/', 0) && pattern.indexOf('/') !== pattern.length - 1;
+    const re = globToRegExp(dirPat);
+    const parts = fullPath.split('/');
+    for (let i = 0; i < parts.length - 1; i++) {
+        // Check every path segment (directory component) against the pattern.
+        if (re.test(parts[i])) return true;
+        // Also check the path prefix up to this segment, for anchored patterns like 'a/data/'.
+        const prefix = parts.slice(0, i + 1).join('/');
+        if (dirPat.includes('/') && globToRegExp(dirPat).test(prefix)) return true;
+    }
+    return false;
+}
+
+// A small set of known "directory-like" patterns (no trailing slash in PROTECTED_PATTERNS,
+// but they conventionally name a directory, e.g. ".git", "__pycache__") that should also
+// protect everything nested underneath them, not just the entry itself.
+const IMPLICIT_DIR_PATTERNS = new Set(['.git', '__pycache__']);
+
+function isHardProtectedPath(path) {
+    if (!path) return false;
+    const parts = path.split('/');
+    const baseName = parts[parts.length - 1];
+
+    for (const pattern of PROTECTED_PATTERNS) {
+        if (pattern.endsWith('/')) {
+            if (isUnderDirPattern(pattern, path)) return true;
+            // Also cover the directory entry itself (e.g. path === "data" for pattern "data/")
+            const dirPat = pattern.slice(0, -1);
+            if (path === dirPat || path.endsWith('/' + dirPat)) return true;
+        } else if (matchesPattern(pattern, path, baseName, false)) {
+            return true;
+        }
+    }
+
+    // Any path segment that matches a known directory-like pattern protects everything beneath it
+    // (e.g. "repo/.git/config" is protected because of the "repo/.git" segment).
+    for (let i = 0; i < parts.length - 1; i++) {
+        if (IMPLICIT_DIR_PATTERNS.has(parts[i])) return true;
+    }
+
+    return false;
+}
+
+function dirnameOf(path) {
+    const idx = path.lastIndexOf('/');
+    return idx === -1 ? '' : path.slice(0, idx);
+}
+
+function parseGitignoreContent(text) {
+    return String(text || '')
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => l && !l.startsWith('#'));
+}
+
+// Populated whenever we read a .gitignore file into the registry (see fastTraverseDirectory /
+// readFileContent). Maps directory path -> array of raw gitignore pattern lines.
+function registerGitignoreRules(gitignorePath, content) {
+    const dir = dirnameOf(gitignorePath);
+    gitignoreCache.set(dir, parseGitignoreContent(content));
+}
+
+function isGitignoredPath(path) {
+    if (!path) return false;
+    const parts = path.split('/');
+    const baseName = parts[parts.length - 1];
+    for (const [dir, patterns] of gitignoreCache.entries()) {
+        // Only applies to paths inside (or equal to) the directory that owns this .gitignore.
+        if (dir && path !== dir && !path.startsWith(dir + '/')) continue;
+        const relPath = dir ? path.slice(dir.length + 1) : path;
+        const relBase = relPath.split('/').pop();
+        for (const pattern of patterns) {
+            if (pattern.endsWith('/')) {
+                if (isUnderDirPattern(pattern, relPath) || relPath === pattern.slice(0, -1)) return true;
+            } else if (matchesPattern(pattern, relPath, relBase, false)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Single source of truth: is this path protected from ALL tool calls (read/write/rename/list/exists)
+// and hidden from the explorer, regardless of the .agent show/hide toggle?
+function isSecurityProtectedPath(path) {
+    if (!path) return false;
+    return isHardProtectedPath(path) || isGitignoredPath(path);
+}
+
 const SLASH_COMMANDS = [
     { cmd: '/plan', desc: 'Switch to Plan mode (generates .agent_plan.md)' },
     { cmd: '/ask', desc: 'Switch to Ask mode (read-only Q&A)' },
@@ -6315,6 +6453,9 @@ async function readFileContent(filepath) {
 }
 
 async function readFileContentForTool(filepath) {
+    if (isSecurityProtectedPath(filepath)) {
+        return { error: `ERROR: ${filepath} is a protected path and cannot be read by a tool call.` };
+    }
     if (isSensitiveUserFile(filepath)) {
         return { error: `ERROR: ${filepath} is a private user settings file and cannot be read by a tool call.` };
     }
@@ -6330,6 +6471,10 @@ async function readFileContentForTool(filepath) {
 async function deleteFileOrDirectory(path) {
     if (isVirtualAgentFile(path) || path === CUSTOM_TOOLS_DIR || path === PROMPTS_DIR) {
         showToast(`${path} is a virtual settings file/folder and can't be deleted`, 'error');
+        return;
+    }
+    if (isSecurityProtectedPath(path)) {
+        showToast(`${path} is a protected path and can't be deleted`, 'error');
         return;
     }
     if (!rootHandle) return;
@@ -6751,6 +6896,9 @@ async function syncWorkspace(silent = true) {
     isSyncingWorkspace = true;
 
     try {
+        gitignoreCache.clear();
+        await prescanGitignoreFiles(rootHandle, "");
+
         const newMeta = {};
         await fastTraverseDirectory(rootHandle, "", newMeta);
 
@@ -6805,6 +6953,26 @@ btnReloadTree.addEventListener('click', async () => await syncWorkspace(false));
 setInterval(() => syncWorkspace(true), 3000);
 window.addEventListener('focus', () => syncWorkspace(true));
 
+// Walks the whole tree once (ignoring nothing except the standard IGNORED_DIRS) purely to find and
+// parse every .gitignore file, so rules from parent directories are known before we filter anything.
+async function prescanGitignoreFiles(handle, path = "") {
+    for await (const entry of handle.values()) {
+        if (IGNORED_DIRS.has(entry.name)) continue;
+        const fullPath = path ? `${path}/${entry.name}` : entry.name;
+        if (entry.kind === 'file') {
+            if (entry.name === '.gitignore') {
+                try {
+                    const file = await entry.getFile();
+                    const text = await file.text();
+                    registerGitignoreRules(fullPath, text);
+                } catch(e) {}
+            }
+        } else if (entry.kind === 'directory') {
+            await prescanGitignoreFiles(entry, fullPath);
+        }
+    }
+}
+
 async function fastTraverseDirectory(handle, path = "", targetMap) {
     for await (const entry of handle.values()) {
         if (IGNORED_DIRS.has(entry.name)) continue;
@@ -6813,6 +6981,7 @@ async function fastTraverseDirectory(handle, path = "", targetMap) {
         }
 
         const fullPath = path ? `${path}/${entry.name}` : entry.name;
+        if (isSecurityProtectedPath(fullPath)) continue;
         if (entry.kind === 'file') {
             let size = 0;
             let isBinary = /\.(png|jpg|jpeg|gif|ico|bmp|webp|pdf|zip|tar|gz|7z|rar|exe|dll|so|dylib|bin|dat|mp4|mp3|wav|flac|ogg|avi|mov|pyc|pyo|ttf|otf|woff|woff2|eot|db|sqlite|sqlite3|gguf|ggml|res|lps|ppu|o|obj|a|lib|class|jar|wasm|node|swf|iso|img|apk|dmg|pkl|npy|npz|parquet|onnx|pb|safetensors)$/i.test(entry.name);
@@ -6823,6 +6992,14 @@ async function fastTraverseDirectory(handle, path = "", targetMap) {
                 isBinary,
                 handle: entry
             };
+
+            if (entry.name === '.gitignore') {
+                try {
+                    const file = await entry.getFile();
+                    const text = await file.text();
+                    registerGitignoreRules(fullPath, text);
+                } catch(e) {}
+            }
         } else if (entry.kind === 'directory') {
             targetMap[fullPath] = {
                 kind: 'directory',
@@ -10121,6 +10298,11 @@ async function writeDisk(filePath, content, opts) {
     const sessionId = (opts && opts.sessionId) || state.activeSessionId;
     const isLive = sessionId === state.activeSessionId;
 
+    if (isFromLLMTool && isSecurityProtectedPath(filePath)) {
+        print(`<span class="red">[blocked] ${escapeHTML(filePath)} is a protected path and can't be written by a tool call.</span>`, "", sessionId);
+        return { output: `ERROR: ${filePath} is a protected path and cannot be written by a tool call.` };
+    }
+
     const LLM_BLOCKED_FILES = [MODELS_FILE, CONFIG_FILE];
     if (isFromLLMTool && (LLM_BLOCKED_FILES.includes(filePath) || isPromptFileMode(filePath))) {
         print(`<span class="red">[blocked] ${escapeHTML(filePath)} is user-owned and can't be written by a tool call.</span>`, "", sessionId);
@@ -10496,6 +10678,9 @@ function isToolOrAgentPath(path) {
 async function performRename(oldPath, newPath, sessionId) {
     const sid = sessionId || state.activeSessionId;
     const ctx = sessionCtx(sid);
+    if (isSecurityProtectedPath(oldPath) || isSecurityProtectedPath(newPath)) {
+        return { error: `ERROR: protected paths can't be renamed or moved.` };
+    }
     if (isToolOrAgentPath(oldPath)) {
         return { error: `ERROR: ${oldPath} is a virtual settings file and can't be renamed or moved.` };
     }
@@ -10663,6 +10848,9 @@ const TOOL_API_METHODS = {
         return res.content;
     },
     writeFile: async (toolName, [fp, content], sessionId) => {
+        if (isSecurityProtectedPath(fp)) {
+            return `ERROR: ${fp} is a protected path and cannot be written by a tool call.`;
+        }
         if (isSensitiveUserFile(fp)) {
             return `ERROR: ${fp} is a private user settings file and cannot be written by a tool call.`;
         }
@@ -10673,6 +10861,12 @@ const TOOL_API_METHODS = {
         return (res && res.output) ? res.output : null;
     },
     renameFile: async (toolName, [oldPath, newPath], sessionId) => {
+        if (isSecurityProtectedPath(oldPath)) {
+            return `ERROR: ${oldPath} is a protected path and cannot be renamed by a tool call.`;
+        }
+        if (isSecurityProtectedPath(newPath)) {
+            return `ERROR: ${newPath} is a protected path and cannot be renamed by a tool call.`;
+        }
         if (isSensitiveUserFile(oldPath)) {
             return `ERROR: ${oldPath} is a private user settings file and cannot be renamed by a tool call.`;
         }
@@ -10693,11 +10887,12 @@ const TOOL_API_METHODS = {
     },
     listFiles: async () => Object.keys(registry.meta).filter(f =>
         registry.meta[f]?.kind === 'file' &&
+        !isSecurityProtectedPath(f) &&
         !isSensitiveUserFile(f) &&
         !shouldHideFromTools(f) &&
         !(isAgentPath(f) && !isToolFilePath(f) && !isVirtualAgentFile(f))
     ),
-    fileExists: async (toolName, [fp]) => !!registry.meta[fp] && !isSensitiveUserFile(fp) && !shouldHideFromTools(fp),
+    fileExists: async (toolName, [fp]) => !!registry.meta[fp] && !isSecurityProtectedPath(fp) && !isSensitiveUserFile(fp) && !shouldHideFromTools(fp),
     isBinary: async (toolName, [fp]) => !!registry.meta[fp]?.isBinary,
     isSensitiveFile: async (toolName, [fp]) => isSensitiveUserFile(fp),
     getMaxReadLines: async () => Math.max(1, parseInt(document.getElementById('settings-read-lines').value, 10) || 500)
