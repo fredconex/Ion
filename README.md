@@ -16,7 +16,7 @@ Ion operates entirely within the client-side browser sandbox:
 - **Strict Directory Sandboxing:** Ion utilizes the standard Web File System Access API. It can only read, write, or enumerate files within the specific directory explicitly granted by the user via the browser's directory picker. It has no access to the rest of the file system or system binaries.
 - **No Background Daemon or Native Binary:** There is no local Node.js server, Python backend, or native daemon executing system commands. All file modifications and workspace state persist locally via browser IndexedDB.
 - **Configurable Tool Permissions:** Every tool provides granular permission levels (`always`, `ask`, `never`). Destructive actions and file modifications require manual user approval by default.
-- **Sensitive Configuration Shielding:** Private settings and API keys (`.agent/models.json` and `.agent/config.json`) are blocked from model read tools, preventing key leakage in prompts.
+- **Sensitive Shielding:** Private settings and API keys (`.agent/models.json`, `.agent/config.json` sensitive folders like `.venv` or folders/files included on `.gitignore`) are blocked from model tools, preventing key leakage in prompts.
 - **Web Worker Execution:** Custom and built-in tools execute inside isolated Web Workers to prevent execution hangs from blocking the primary UI thread.
 
 ---
