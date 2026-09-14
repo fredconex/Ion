@@ -429,12 +429,13 @@
             font-family: inherit; font-size: 12px; outline: none; width: 100%;
         }
         .mm-row input:focus { border-color: var(--cyan); }
-        .mm-key-wrap { position: relative; flex: 1; display: flex; }
-        .mm-key-wrap input { padding-right: 30px; }
+        .mm-key-wrap { flex: 1; display: flex; gap: 6px; }
+        .mm-key-wrap input { flex: 1; min-width: 0; }
         .mm-key-toggle {
-            position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+            flex-shrink: 0;
             background: transparent; border: none; color: var(--dim);
             cursor: pointer; padding: 3px; border-radius: 4px; display: flex;
+            align-items: center;
         }
         .mm-key-toggle:hover { color: var(--fg); }
         .mm-key-toggle .icon { font-size: 14px; }
