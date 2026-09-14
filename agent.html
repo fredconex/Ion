@@ -3064,6 +3064,28 @@ function seedBuiltinToolSources() {
             modes: ['plan', 'ask', 'code'],
             permission: 'ask'
         }, `
+    // Validate URL and filter out local paths, non-HTTP protocols, and localhost
+    let parsedUrl;
+    try {
+        parsedUrl = new URL(args.url);
+    } catch {
+        return \`ERROR: Invalid URL "\${args.url}". Only valid http:// and https:// URLs are supported (local file paths are not allowed).\`;
+    }
+
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        return \`ERROR: Unsupported protocol "\${parsedUrl.protocol}". Local files (like file://) cannot be fetched; only http:// and https:// URLs are allowed.\`;
+    }
+
+    const hostname = parsedUrl.hostname.toLowerCase();
+    const isLocalHost = hostname === 'localhost' ||
+                        hostname === '127.0.0.1' ||
+                        hostname === '0.0.0.0' ||
+                        hostname === '::1' ||
+                        hostname.endsWith('.local');
+    if (isLocalHost) {
+        return \`ERROR: Localhost requests (\${parsedUrl.hostname}) are not supported.\`;
+    }
+
     const MAX_CHARS = 15000;
     const TIMEOUT_MS = 12000;
 
@@ -3099,11 +3121,11 @@ function seedBuiltinToolSources() {
     }
 
     const attempts = [
-        { url: args.url, label: 'direct' },
-        { url: 'https://r.jina.ai/' + args.url, label: 'r.jina.ai' },
-        { url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent(args.url), label: 'allorigins.win' },
-        { url: 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(args.url), label: 'codetabs.com' },
-        { url: 'https://corsproxy.io/?url=' + encodeURIComponent(args.url), label: 'corsproxy.io' }
+        { url: parsedUrl.href, label: 'direct' },
+        { url: 'https://r.jina.ai/' + parsedUrl.href, label: 'r.jina.ai' },
+        { url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent(parsedUrl.href), label: 'allorigins.win' },
+        { url: 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(parsedUrl.href), label: 'codetabs.com' },
+        { url: 'https://corsproxy.io/?url=' + encodeURIComponent(parsedUrl.href), label: 'corsproxy.io' }
     ];
 
     let result = null;
@@ -3118,7 +3140,7 @@ function seedBuiltinToolSources() {
     }
 
     if (!result) {
-        return \`ERROR: Could not fetch \${args.url} - direct request and all proxy fallbacks failed:\\n\${errors.join('\\n')}\\n\\n(Public proxies have no uptime guarantee and can rate-limit or block certain sites/regions. If this keeps happening for the same URL, the site itself may be actively blocking proxy IP ranges.)\`;
+        return \`ERROR: Could not fetch \${parsedUrl.href} - direct request and all proxy fallbacks failed:\\n\${errors.join('\\n')}\\n\\n(Public proxies have no uptime guarantee and can rate-limit or block certain sites/regions. If this keeps happening for the same URL, the site itself may be actively blocking proxy IP ranges.)\`;
     }
 
     let output = result.text;
