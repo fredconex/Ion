@@ -9733,7 +9733,7 @@ function updateWelcomeVisibility() {
                         <span>Model Settings</span>
                     </div>
                     <div class="welcome-models-body">Pick a model from the dropdown above the prompt, or open settings to edit <code class="cyan">${MODELS_FILE}</code>.</div>
-                    <button class="btn-models-edit" onclick="openFileTab('${MODELS_FILE}')">
+                    <button class="btn-models-edit" onclick="openModelsModal()">
                         <span class="icon" style="font-size:14px;">edit_note</span>
                         <span>Open models settings</span>
                     </button>
@@ -9791,110 +9791,6 @@ function escapeHTML(str) {
     }[tag]));
 }
 
-// Single centralized thinking-block parser.
-//
-// Handles all of: <think>, <thinking>, <reasoning>, <thought>, [thinking], <|thinking|>
-// Tolerates: attributes, whitespace, case, cross-tag closing, unclosed streams.
-// Preserves code fences (```...``` / ~~~...~~~) so literal tag examples inside
-// code blocks are NOT stripped.
-//
-// Returns { clean, reasoning, unclosed, thoughts }:
-//   clean      - visible text with all reasoning removed (used for render/persist)
-//   reasoning  - accumulated reasoning text (used for the live thoughtDiv)
-//   unclosed   - reasoning text of an unterminated open block, or null
-//   thoughts   - array of closed reasoning block bodies (in order)
-//
-// `trim` is opt-in. Live streaming must NOT trim (whitespace continuity
-// matters when appending chunks); the final persist path should trim.
-function parseAssistantBuffer(raw, { trim = false } = {}) {
-    if (!raw) {
-        return { clean: '', reasoning: '', unclosed: null, thoughts: [] };
-    }
-
-    // Split out fenced code blocks so tags inside them are ignored.
-    const parts = String(raw).split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g);
-
-    let visible = '';
-    let reasoning = '';
-    let unclosed = null;
-    const thoughts = [];
-    let inThinking = false;
-    let currentThought = '';
-
-    // Groups:
-    //   m[1] = '/' for XML-style close,  m[2] = tag name
-    //   m[3] = '/' for [thinking] close, m[4] = "thinking"
-    //   m[5] = '/' for <|thinking|> close, m[6] = "thinking"
-    const re = /<(\/?)(think|thinking|reasoning|thought)\b[^>]*>|\[(\/?)(thinking)\]|<\|(\/?)(thinking)\|>/gi;
-
-    for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        const isFence = i % 2 === 1;
-
-        if (isFence) {
-            if (inThinking) currentThought += part;
-            else visible += part;
-            continue;
-        }
-
-        let cursor = 0;
-        while (cursor < part.length) {
-            re.lastIndex = cursor;
-            const m = re.exec(part);
-            if (!m) {
-                const rest = part.slice(cursor);
-                if (inThinking) currentThought += rest;
-                else visible += rest;
-                break;
-            }
-
-            const before = part.slice(cursor, m.index);
-            if (inThinking) currentThought += before;
-            else visible += before;
-
-            const isClose = !!(m[1] || m[3] || m[5]);
-            if (isClose) {
-                if (inThinking) {
-                    thoughts.push(currentThought);
-                    reasoning += (reasoning ? '\n\n' : '') + currentThought;
-                    currentThought = '';
-                }
-                inThinking = false;
-            } else {
-                // Another open tag while already open: flush the previous
-                // thought as a closed block and start a new one. This is the
-                // correct behavior for nested/malformed streams.
-                if (inThinking && currentThought) {
-                    thoughts.push(currentThought);
-                    reasoning += (reasoning ? '\n\n' : '') + currentThought;
-                    currentThought = '';
-                }
-                inThinking = true;
-            }
-
-            cursor = m.index + m[0].length;
-        }
-    }
-
-    if (inThinking && currentThought) {
-        unclosed = currentThought;
-        reasoning += (reasoning ? '\n\n' : '') + currentThought;
-    }
-
-    const finalize = (s) => trim ? s.trim() : s;
-    return {
-        clean: finalize(visible),
-        reasoning: finalize(reasoning),
-        unclosed: unclosed === null ? null : finalize(unclosed),
-        thoughts: thoughts.map(t => trim ? t.trim() : t)
-    };
-}
-
-// Thin wrapper kept for the many existing call sites that only want the
-// visible text (sanitizeMessages, persistence, etc.).
-function stripThinkingTags(text) {
-    return parseAssistantBuffer(text, { trim: true }).clean;
-}
 
 function formatMarkdownSnippet(text) {
     if (!text) return "";
@@ -11877,12 +11773,6 @@ function sanitizeMessages(msgs) {
 
         let safeM = { ...m };
 
-        // Scrub any reasoning tags that leaked into stored assistant content
-        // (e.g. from sessions saved before the storage fix, or servers that
-        // emit reasoning inline in `content`).
-        if (safeM.role === 'assistant' && typeof safeM.content === 'string') {
-            safeM.content = stripThinkingTags(safeM.content);
-        }
 
         if (safeM.tool_calls) {
             safeM.tool_calls = safeM.tool_calls.map(tc => {
@@ -12260,27 +12150,37 @@ async function runTask(task, blameId, imageUrls, sessionId) {
     runGen.retryAttempt = 0;
     runGen.retryCancelled = false;
 
-    let firstIteration = true;
-    while (!isDone) {
-        if (!firstIteration) {
-            try {
-                await maybeAutoCompress(runSessionId);
-            } catch (e) {
-                console.warn('Mid-turn auto-compress failed:', e);
+        let firstIteration = true;
+        while (!isDone) {
+            if (!firstIteration) {
+                try {
+                    await maybeAutoCompress(runSessionId);
+                } catch (e) {
+                    console.warn('Mid-turn auto-compress failed:', e);
+                }
             }
-        }
-        firstIteration = false;
+            firstIteration = false;
 
-        startSpinner(`Running (${runMode} mode...`, runSessionId);
-        runGen.activeController = new AbortController();
-        if (runGen.thinkingTimerInterval) {
-            clearInterval(runGen.thinkingTimerInterval);
-            runGen.thinkingTimerInterval = null;
-        }
+            startSpinner(`Running (${runMode} mode...`, runSessionId);
+            runGen.activeController = new AbortController();
+            if (runGen.thinkingTimerInterval) {
+                clearInterval(runGen.thinkingTimerInterval);
+                runGen.thinkingTimerInterval = null;
+            }
 
-        let assistantText = "";
-        let streamDiv = null;
-        try {
+            // --- FIX: Reset stream-specific state for each HTTP request iteration ---
+            let assistantText = "";
+            let streamDiv = null;
+            let reasoningText = "";
+            let toolBuffer = {};
+            let thoughtDiv = null;
+            let thinkingStartTime = null;
+            let thinkingFinished = false;
+            let sseBuffer = "";
+            let lastRenderTime = 0;
+            let renderPending = false;
+
+            try {
             const reqMessages = sanitizeMessages([
                 { role: "system", content: currentSystemPrompt },
                 ...runCtx.messages
@@ -12325,17 +12225,6 @@ async function runTask(task, blameId, imageUrls, sessionId) {
 
             const reader = resp.body.getReader();
             const decoder = new TextDecoder();
-            assistantText = "";
-            let reasoningText = "";
-            let toolBuffer = {};
-            streamDiv = null;
-            let thoughtDiv = null;
-            let thinkingStartTime = null;
-            let thinkingFinished = false;
-            let sseBuffer = "";
-            let lastRenderTime = 0;
-            let renderPending = false;
-
             stopSpinner(runSessionId);
             startSpinner("Generating response...", runSessionId);
 
@@ -12535,23 +12424,11 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                     renderPending = false;
 
                     if (isRunLive()) {
-                        // Extract every 50ms from the *full* accumulated buffer.
-                        // Do NOT trim reasoning here — whitespace continuity matters
-                        // while appending, or the thought body will visibly "jump".
-                        const parsed = assistantText
-                            ? parseAssistantBuffer(assistantText, { trim: false })
-                            : { clean: '', reasoning: '', unclosed: null, thoughts: [] };
+                        // reasoningText is the accumulator fed by delta.reasoning_content.
+                        // assistantText is the accumulator fed by delta.content.
+                        // They are already clean — no parsing needed.
 
-                        const inlineReasoning = parsed.reasoning; // already includes unclosed, joined
-                        const totalThinking = inlineReasoning
-                            ? (reasoningText ? reasoningText + '\n\n' + inlineReasoning : inlineReasoning)
-                            : reasoningText;
-
-                        const displayContent = parsed.clean;
-                        const isInUnclosedThinking = parsed.unclosed !== null;
-                        const hasCompletedInlineThoughts = parsed.thoughts.length > 0;
-
-                        if (totalThinking && !thinkingFinished) {
+                        if (reasoningText && !thinkingFinished) {
                             if (!thoughtDiv) {
                                 thoughtDiv = print(`
                                     <div class="thought-box collapsed">
@@ -12569,31 +12446,27 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                                 startThinkingTimer(thoughtDiv);
                             }
                             const bodyEl = thoughtDiv.querySelector('.thought-body');
-                            if (bodyEl) bodyEl.innerText = totalThinking;
+                            if (bodyEl) bodyEl.innerText = reasoningText;
                             reorderSpinnerToBottom(runSessionId);
                             smartScroll();
 
-                            const lastLine = totalThinking.trim().split('\n').pop();
+                            const lastLine = reasoningText.trim().split('\n').pop();
                             if (lastLine) updateSpinnerText(lastLine, runSessionId);
                         }
 
-                        // Only stop the timer once we've left the unclosed block
-                        // AND we actually have something (visible text or a closed
-                        // inline thought) to show. This prevents prematurely ending
-                        // the "Thinking…" state while more reasoning is arriving.
-                        if (!isInUnclosedThinking && thoughtDiv && !thinkingFinished) {
-                            if (hasCompletedInlineThoughts || displayContent.trim()) {
-                                stopThinkingTimer(thoughtDiv);
-                            }
+                        // Once we start receiving visible content, the thinking
+                        // phase is over.
+                        if (assistantText.trim() && thoughtDiv && !thinkingFinished) {
+                            stopThinkingTimer(thoughtDiv);
                         }
 
-                        if (displayContent.trim() || streamDiv) {
-                            if (!streamDiv && displayContent.trim()) {
+                        if (assistantText.trim() || streamDiv) {
+                            if (!streamDiv && assistantText.trim()) {
                                 streamDiv = print("", "log-entry md-content", runSessionId);
                                 runGen.currentAssistantDiv = streamDiv;
                             }
                             if (streamDiv) {
-                                streamDiv.innerHTML = normalizeBlockHTML(formatMarkdownSnippet(displayContent));
+                                streamDiv.innerHTML = normalizeBlockHTML(formatMarkdownSnippet(assistantText));
                                 reorderSpinnerToBottom(runSessionId);
                                 smartScroll();
                             }
@@ -12604,29 +12477,18 @@ async function runTask(task, blameId, imageUrls, sessionId) {
 
             if (renderPending) {
                 if (isRunLive()) {
-                    const parsed = assistantText
-                        ? parseAssistantBuffer(assistantText, { trim: true })
-                        : { clean: '', reasoning: '', unclosed: null, thoughts: [] };
-
-                    const inlineReasoning = parsed.reasoning;
-                    const totalThinking = inlineReasoning
-                        ? (reasoningText ? reasoningText + '\n\n' + inlineReasoning : inlineReasoning)
-                        : reasoningText;
-
-                    const displayContent = parsed.clean;
-
-                    if (totalThinking && !thinkingFinished && thoughtDiv) {
+                    if (reasoningText && !thinkingFinished && thoughtDiv) {
                         const bodyEl = thoughtDiv.querySelector('.thought-body');
-                        if (bodyEl) bodyEl.innerText = totalThinking;
+                        if (bodyEl) bodyEl.innerText = reasoningText;
                     }
 
-                    if (displayContent.trim() || streamDiv) {
-                        if (!streamDiv && displayContent.trim()) {
+                    if (assistantText.trim() || streamDiv) {
+                        if (!streamDiv && assistantText.trim()) {
                             streamDiv = print("", "log-entry md-content", runSessionId);
                             runGen.currentAssistantDiv = streamDiv;
                         }
                         if (streamDiv) {
-                            streamDiv.innerHTML = normalizeBlockHTML(formatMarkdownSnippet(displayContent));
+                            streamDiv.innerHTML = normalizeBlockHTML(formatMarkdownSnippet(assistantText));
                         }
                     }
                     reorderSpinnerToBottom(runSessionId);
@@ -12638,18 +12500,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
             stopSpinner(runSessionId);
 
             if (!isRunLive()) {
-                const parsed = assistantText
-                    ? parseAssistantBuffer(assistantText, { trim: true })
-                    : { clean: '', reasoning: '', unclosed: null, thoughts: [] };
-
-                const inlineReasoning = parsed.reasoning;
-                const totalThinking = inlineReasoning
-                    ? (reasoningText ? reasoningText + '\n\n' + inlineReasoning : inlineReasoning)
-                    : reasoningText;
-
-                const displayContent = parsed.clean;
-
-                if (totalThinking && totalThinking.trim()) {
+                if (reasoningText && reasoningText.trim()) {
                     print(
                         `<div class="thought-box collapsed">` +
                             `<div class="thought-header">` +
@@ -12657,13 +12508,13 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                                 `<span class="icon" style="font-size:14px; color:var(--dim);">psychology</span>` +
                                 `<span class="thought-timer">Thought</span>` +
                             `</div>` +
-                            `<div class="thought-body">${escapeHTML(totalThinking)}</div>` +
+                            `<div class="thought-body">${escapeHTML(reasoningText)}</div>` +
                         `</div>`,
                         "", runSessionId
                     );
                 }
-                if (displayContent.trim()) {
-                    print(normalizeBlockHTML(formatMarkdownSnippet(displayContent)), "log-entry md-content", runSessionId);
+                if (assistantText.trim()) {
+                    print(normalizeBlockHTML(formatMarkdownSnippet(assistantText)), "log-entry md-content", runSessionId);
                 }
             }
 
@@ -12672,7 +12523,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
             }
 
             if (streamDiv) {
-                attachAssistantCopyAction(streamDiv, stripThinkingTags(assistantText));
+                attachAssistantCopyAction(streamDiv, assistantText);
             }
 
             if (runGen.pendingToolDiv) {
@@ -12696,26 +12547,15 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                 let partialContent = '';
                 const keepSkipped = getDuoSwitch(document.getElementById('settings-keep-skipped-thinking'));
 
-                const parsed = assistantText
-                    ? parseAssistantBuffer(assistantText, { trim: true })
-                    : { clean: '', reasoning: '', unclosed: null, thoughts: [] };
-
-                const inlineReasoning = parsed.reasoning;
-                const totalThinking = inlineReasoning
-                    ? (reasoningText ? reasoningText + '\n\n' + inlineReasoning : inlineReasoning)
-                    : reasoningText;
-
-                const displayContent = parsed.clean;
-
-                if (totalThinking) {
+                if (reasoningText) {
                     if (keepSkipped) {
-                        partialContent = `\n[thinking skipped by user - partial reasoning preserved]\n${totalThinking}\n`;
+                        partialContent = `\n[thinking skipped by user - partial reasoning preserved]\n${reasoningText}\n`;
                     } else {
                         partialContent = `\n[thinking skipped by user]\n`;
                     }
                 }
-                if (displayContent) {
-                    partialContent += displayContent;
+                if (assistantText) {
+                    partialContent += assistantText;
                 }
 
                 runCtx.messages.push({
@@ -12739,7 +12579,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
 
             runCtx.messages.push({
                 role: "assistant",
-                content: stripThinkingTags(assistantText) || null,
+                content: assistantText || null,
                 ...(toolCalls.length ? { tool_calls: toolCalls } : {})
             });
             runGen.hasNewContent = true;
@@ -12857,7 +12697,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                 runGen.pendingToolDiv = null;
             }
             if (streamDiv) {
-                attachAssistantCopyAction(streamDiv, stripThinkingTags(assistantText));
+                attachAssistantCopyAction(streamDiv, assistantText);
             }
             
             runGen.genEndTime = performance.now();
@@ -12890,7 +12730,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
 
                 runCtx.messages.push({
                     role: "assistant",
-                    content: stripThinkingTags(assistantText) || "(Attempted a tool call but failed due to truncated JSON)"
+                    content: assistantText || "(Attempted a tool call but failed due to truncated JSON)"
                 });
                 runCtx.messages.push({
                     role: "user",
