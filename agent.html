@@ -6357,7 +6357,15 @@ function renderTabs() {
             tab.appendChild(closeBtn);
             tab.addEventListener('click', () => switchTab(tabId));
         } else if (isAttachment) {
-            const att = state.attachmentStore[tabId.replace('attachment:', '')];
+            const attId = tabId.replace('attachment:', '');
+            let att = state.attachmentStore[attId];
+            if (!att) {
+                const imgEl = document.querySelector(`[data-attachment-id="${attId}"] img`);
+                if (imgEl) {
+                    att = { name: imgEl.alt || 'Attachment', dataUrl: imgEl.src, type: 'image', attachmentId: attId };
+                    state.attachmentStore[attId] = att;
+                }
+            }
             const icon = att?.type === 'image' ? 'image' : 'description';
             const color = att?.type === 'image' ? 'var(--green)' : 'var(--yellow)';
             tab.innerHTML = `<span class="icon" style="font-size: 13px; color: ${color};">${icon}</span><span>${escapeHTML(att?.name || 'attachment')}</span>`;
@@ -6535,10 +6543,24 @@ async function switchTab(tabId) {
         editorModeToggle.style.display = 'none';
         btnTabSave.style.display = 'none';
 
-        const att = state.attachmentStore[tabId.replace('attachment:', '')];
+        let att = state.attachmentStore[tabId.replace('attachment:', '')];
         monacoContainer.style.display = 'none';
         htmlPreviewFrame.style.display = 'none';
         attachmentTextPreview.style.display = 'none';
+
+        if (!att) {
+            // Rebuild the attachment from a still-rendered <img> in chat (e.g. after a page reload).
+            const imgEl = document.querySelector(`[data-attachment-id="${tabId.replace('attachment:', '')}"] img`);
+            if (imgEl) {
+                att = {
+                    name: imgEl.alt || 'Attachment',
+                    dataUrl: imgEl.src,
+                    type: 'image',
+                    attachmentId: tabId.replace('attachment:', '')
+                };
+                state.attachmentStore[att.attachmentId] = att;
+            }
+        }
 
         if (!att) {
             editorBinaryNotice.style.display = 'flex';
@@ -9519,6 +9541,13 @@ window.editPrompt = function(promptId) {
         }
     }
     state.attachedReferences = restoredAttachments;
+    for (const ref of restoredAttachments) {
+        if (ref && (ref.type === 'image' || ref.type === 'paste')) {
+            if (!state.attachmentStore[ref.attachmentId]) {
+                state.attachmentStore[ref.attachmentId] = ref;
+            }
+        }
+    }
     renderAttachmentChips();
 
     promptRow.innerHTML = '';
