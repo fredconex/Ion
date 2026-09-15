@@ -12489,8 +12489,7 @@ async function submitPrompt() {
                         </div>
                     `;
                 } else {
-                    const content = await readFileContent(ref.filepath);
-                    fullPromptForLLM += `File: ${ref.filepath}\n\`\`\`\n${content.slice(0, 3000)}\n\`\`\`\n\n`;
+                    fullPromptForLLM += `File reference: ${ref.filepath} (use the read tool to fetch its content if needed)\n\n`;
                     chatAttachmentsHTML += `
                         <div class="prompt-chip">
                             <span class="icon" style="font-size:12px; color:var(--cyan);">description</span>
