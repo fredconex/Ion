@@ -1831,7 +1831,44 @@
             background: rgba(255, 255, 255, 0.1); color: var(--fg);
         }
         .btn-prompt-action.cancel:hover { color: var(--red); }
-        .chat-prompt-wrap.editing .chat-bubble {
+        .btn-prompt-action.del:hover { color: var(--red); }
+        #msg-delete-modal-overlay {
+            position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
+            z-index: 2000; display: none;
+            align-items: center; justify-content: center;
+        }
+        #msg-delete-modal-overlay.visible { display: flex; }
+        #msg-delete-modal {
+            width: 440px; max-width: calc(100vw - 40px);
+            background: var(--bg-panel); border: 1px solid var(--border);
+            border-radius: 10px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+        }
+        #msg-delete-modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 16px; border-bottom: 1px solid var(--border);
+        }
+        #msg-delete-modal-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+        #msg-delete-modal-body { padding: 16px; }
+        .msg-del-option {
+            display: block; width: 100%; text-align: left; cursor: pointer;
+            background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 8px; padding: 14px; margin-bottom: 12px;
+            color: var(--fg); font-size: 13px; line-height: 1.5;
+        }
+        .msg-del-option:hover { background: var(--bg-hover); border-color: var(--border-highlight); }
+        .msg-del-option .opt-title { font-weight: 700; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+        .msg-del-option .opt-desc { color: var(--dim); font-size: 12px; }
+        .msg-del-option .opt-desc.danger { color: var(--red); }
+        #msg-delete-modal-footer {
+            padding: 12px 16px; border-top: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+        }
+        #msg-delete-cancel-btn {
+            background: transparent; border: 1px solid var(--border); color: var(--fg);
+            border-radius: 6px; padding: 8px 14px; font-size: 12px; cursor: pointer;
+        }
+        #msg-delete-cancel-btn:hover { background: var(--bg-hover); }
             display: inline-grid; grid-template-columns: minmax(0, auto);
             background: transparent !important;
             border-color: rgb(85, 152, 231) !important; vertical-align: top;
@@ -2193,6 +2230,39 @@
             </div>
             <div id="models-modal-footer">
                 <span id="models-modal-footer-hint">Changes save automatically to .agent/models.json</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="msg-delete-modal-overlay">
+        <div id="msg-delete-modal">
+            <div id="msg-delete-modal-header">
+                <div id="msg-delete-modal-title">
+                    <span class="icon" style="font-size:15px;">delete</span>
+                    <span>Delete message</span>
+                </div>
+                <button id="msg-delete-modal-close" class="icon-btn" title="Close">
+                    <span class="icon" style="font-size:16px;">close</span>
+                </button>
+            </div>
+            <div id="msg-delete-modal-body">
+                <button type="button" class="msg-del-option" id="msg-del-only">
+                    <div class="opt-title">
+                        <span class="icon" style="font-size:15px;">delete</span>
+                        <span>Delete message only</span>
+                    </div>
+                    <div class="opt-desc">Removes the prompt from the chat. Any file changes made by this message remain in the workspace.</div>
+                </button>
+                <button type="button" class="msg-del-option" id="msg-del-and-revert">
+                    <div class="opt-title">
+                        <span class="icon" style="font-size:15px;">history</span>
+                        <span>Delete message and revert file changes</span>
+                    </div>
+                    <div class="opt-desc danger">Removes the prompt and restores files to the state they were in before this message. Files created by this message will be deleted.</div>
+                </button>
+            </div>
+            <div id="msg-delete-modal-footer">
+                <button id="msg-delete-cancel-btn">Cancel</button>
             </div>
         </div>
     </div>
@@ -4886,13 +4956,19 @@ function getAllPromptGroups() {
     return order.map(k => byPrompt.get(k)).sort((a, b) => a.ts - b.ts);
 }
 
-window.revertToBeforePrompt = async (promptId, promptLabel) => {
+window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
+    // Accept a single id (string) or an array of ids (for reverting a range of prompts).
+    const idSet = new Set(Array.isArray(promptId) ? promptId : [promptId]);
+    const idList = Array.from(idSet);
+    const matchesAny = (p) => p && p.prompt && idSet.has(p.prompt.id);
+
     const files = getAllTrackedFiles();
     const plan = [];
 
     for (const filepath of files) {
         const timeline = getFileTimeline(filepath);
-        const firstIdx = timeline.findIndex(t => t.prompt && t.prompt.id === promptId);
+        // Cut at the earliest change made by any of the targeted prompts.
+        const firstIdx = timeline.findIndex(matchesAny);
         if (firstIdx === -1) continue;
 
         const before = timeline[firstIdx - 1];
@@ -4915,7 +4991,7 @@ window.revertToBeforePrompt = async (promptId, promptLabel) => {
 
     const summary = plan.map(p => `${p.action === 'delete' ? 'delete' : 'restore'} ${p.filepath}`).join(', ');
     const shortLabel = (promptLabel || 'this prompt').slice(0, 120) + (promptLabel && promptLabel.length > 120 ? '…' : '');
-    if (!confirm(`Revert to right before "${shortLabel}"?\n\nThis will ${summary}. Later changes to these files will be discarded.`)) return;
+    if (!(opts && opts.skipConfirm) && !confirm(`Revert to right before "${shortLabel}"?\n\nThis will ${summary}. Later changes to these files will be discarded.`)) return;
 
     let ok = 0;
     for (const p of plan) {
@@ -4930,7 +5006,7 @@ window.revertToBeforePrompt = async (promptId, promptLabel) => {
             } else {
                 await writeDisk(p.filepath, p.content, { silent: true });
                 const timeline = getFileTimeline(p.filepath);
-                const cutIdx = timeline.findIndex(t => t.prompt && t.prompt.id === promptId);
+                const cutIdx = timeline.findIndex(matchesAny);
                 const keptHistory = timeline.slice(cutIdx > 0 ? 1 : 0, cutIdx > -1 ? cutIdx : undefined)
                     .filter(t => t.kind === 'checkpoint')
                     .map(t => ({ content: t.content, ts: t.ts, prompt: t.prompt }));
@@ -9729,6 +9805,137 @@ window.copyPrompt = function(promptId) {
     });
 };
 
+const msgDeleteModalOverlay = document.getElementById('msg-delete-modal-overlay');
+const msgDeleteModalCloseBtn = document.getElementById('msg-delete-modal-close');
+const msgDeleteOnlyBtn = document.getElementById('msg-del-only');
+const msgDeleteRevertBtn = document.getElementById('msg-del-and-revert');
+const msgDeleteCancelBtn = document.getElementById('msg-delete-cancel-btn');
+
+let _pendingDeletePromptId = null;
+
+function hideMsgDeleteModal() {
+    msgDeleteModalOverlay.classList.remove('visible');
+    _pendingDeletePromptId = null;
+}
+
+async function commitMsgDelete(promptId, revert) {
+    hideMsgDeleteModal();
+
+    const wrap = document.querySelector(`[data-prompt-id="${promptId}"]`);
+    const raw = wrap ? wrap.getAttribute('data-raw') : '';
+    const msgIdx = wrap ? parseInt(wrap.getAttribute('data-msg-idx'), 10) : NaN;
+    const blameId = wrap ? wrap.getAttribute('data-blame-id') : null;
+
+    // Trim all messages below the deleted prompt (like inline edit).
+    let delIdx = state.promptIdToMsgIdx[promptId];
+    if (typeof delIdx !== 'number') {
+        delIdx = isNaN(msgIdx) ? -1 : msgIdx;
+    }
+
+    // Collect the blame ids of every prompt that will be removed (this prompt
+    // plus all later ones), so their file changes can be reverted too.
+    const revertIds = [];
+    if (typeof delIdx === 'number' && delIdx >= 0) {
+        for (const el of document.querySelectorAll('.chat-prompt-wrap[data-blame-id]')) {
+            const i = parseInt(el.getAttribute('data-msg-idx'), 10);
+            if (i >= delIdx) {
+                const bid = el.getAttribute('data-blame-id');
+                if (bid && !revertIds.includes(bid)) revertIds.push(bid);
+            }
+        }
+        state.messages = state.messages.slice(0, delIdx);
+        const s = state.sessions[state.activeSessionId];
+        if (s) s.messages = state.messages;
+        const gen = getGenState(state.activeSessionId);
+        gen.hasNewContent = true;
+        gen.postCompressTokenOverride = null;
+        saveSession(state.activeSessionId);
+    }
+
+    // Remove the prompt's DOM node and every sibling log entry after it.
+    if (wrap) {
+        let node = wrap.closest('.log-entry') || wrap;
+        while (node) {
+            const toRemove = node;
+            node = node.nextElementSibling;
+            toRemove.remove();
+        }
+    }
+    const resumeBanner = document.getElementById('resume-action-box');
+    if (resumeBanner) resumeBanner.remove();
+
+    // Drop any message-index maps for trimmed prompts.
+    delete state.promptIdToMsgIdx[promptId];
+    if (typeof delIdx === 'number' && delIdx >= 0) {
+        for (const key of Object.keys(state.promptIdToMsgIdx)) {
+            if (state.promptIdToMsgIdx[key] >= delIdx) delete state.promptIdToMsgIdx[key];
+        }
+    }
+
+    if (revert) {
+        const ids = revertIds.length ? revertIds : (blameId ? [blameId] : []);
+        if (ids.length) await window.revertToBeforePrompt(ids, raw, { skipConfirm: true });
+    }
+
+    updateTokenStatus(state.lastTokenUsage);
+    state.sessions[state.activeSessionId].terminalHTML = term.innerHTML;
+    updateWelcomeVisibility();
+    showToast(`Message deleted${revert ? ' and file changes reverted' : ''}`, 'success');
+}
+
+window.deletePrompt = function(promptId) {
+    // Only offer "revert file changes" if ANY prompt that will be trimmed has
+    // file edits/checkpoints. Deleting a prompt trims it plus everything below,
+    // so every prompt whose data-msg-idx is >= delIdx is eligible. File timelines
+    // record blame under blameId (prompt_...), not promptId (p_...), so we match
+    // on the blame id carried by each message's data-blame-id attribute.
+    const wrap = document.querySelector(`[data-prompt-id="${promptId}"]`);
+    let delIdx = state.promptIdToMsgIdx[promptId];
+    if (typeof delIdx !== 'number' && wrap) delIdx = parseInt(wrap.getAttribute('data-msg-idx'), 10);
+    const targetIds = new Set();
+    for (const el of document.querySelectorAll('.chat-prompt-wrap[data-blame-id]')) {
+        const i = parseInt(el.getAttribute('data-msg-idx'), 10);
+        if (typeof delIdx === 'number' && i >= delIdx) {
+            const bid = el.getAttribute('data-blame-id');
+            if (bid) targetIds.add(bid);
+        }
+    }
+    if (wrap) {
+        const bid = wrap.getAttribute('data-blame-id');
+        if (bid) targetIds.add(bid);
+    }
+    let hasEdits = false;
+    for (const bid of targetIds) {
+        for (const fp of getAllTrackedFiles()) {
+            const tl = getFileTimeline(fp);
+            if (tl.some((e) => e && e.prompt && e.prompt.id === bid)) { hasEdits = true; break; }
+        }
+        if (hasEdits) break;
+    }
+    if (msgDeleteRevertBtn) msgDeleteRevertBtn.style.display = hasEdits ? '' : 'none';
+    _pendingDeletePromptId = promptId;
+    msgDeleteModalOverlay.classList.add('visible');
+};
+
+msgDeleteOnlyBtn.addEventListener('click', () => {
+    if (_pendingDeletePromptId) commitMsgDelete(_pendingDeletePromptId, false);
+});
+msgDeleteRevertBtn.addEventListener('click', async () => {
+    if (_pendingDeletePromptId) {
+        msgDeleteRevertBtn.disabled = true;
+        try {
+            await commitMsgDelete(_pendingDeletePromptId, true);
+        } finally {
+            msgDeleteRevertBtn.disabled = false;
+        }
+    }
+});
+msgDeleteCancelBtn.addEventListener('click', hideMsgDeleteModal);
+msgDeleteModalCloseBtn.addEventListener('click', hideMsgDeleteModal);
+msgDeleteModalOverlay.addEventListener('click', (e) => {
+    if (e.target === msgDeleteModalOverlay) hideMsgDeleteModal();
+});
+
 function print(html, cls = "", sessionId) {
     const sid = sessionId || state.activeSessionId;
     const isLive = sid === state.activeSessionId;
@@ -12123,7 +12330,7 @@ async function submitPrompt() {
         const blameId = 'prompt_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
         const rawPrompt = escapeHTML(val || "(Referenced items)");
         const attachmentsSnapshot = escapeHTML(JSON.stringify(state.attachedReferences));
-        print(`<div class="chat-attachments">${chatAttachmentsHTML}</div><div class="chat-prompt-wrap" data-prompt-id="${promptId}" data-msg-idx="${nextMsgIdx}" data-raw="${rawPrompt}" data-attachments="${attachmentsSnapshot}" data-blame-id="${blameId}"><div class="mode-divider">${modeBadgeHTML}</div><div class="chat-prompt-row"><div class="chat-bubble"><div class="md-content" style="display:inline-block; vertical-align:top;">${normalizeBlockHTML(formatMarkdownSnippet(val || "(Referenced items)"))}</div></div></div><div class="prompt-actions"><button class="btn-prompt-action edit" title="Edit and regenerate" onclick="window.editPrompt('${promptId}')"><span class="icon" style="font-size:13px;">edit</span></button><button class="btn-prompt-action copy" title="Copy prompt" onclick="window.copyPrompt('${promptId}')"><span class="icon" style="font-size:13px;">content_copy</span></button></div></div>`);
+        print(`<div class="chat-attachments">${chatAttachmentsHTML}</div><div class="chat-prompt-wrap" data-prompt-id="${promptId}" data-msg-idx="${nextMsgIdx}" data-raw="${rawPrompt}" data-attachments="${attachmentsSnapshot}" data-blame-id="${blameId}"><div class="mode-divider">${modeBadgeHTML}</div><div class="chat-prompt-row"><div class="chat-bubble"><div class="md-content" style="display:inline-block; vertical-align:top;">${normalizeBlockHTML(formatMarkdownSnippet(val || "(Referenced items)"))}</div></div></div><div class="prompt-actions"><button class="btn-prompt-action edit" title="Edit and regenerate" onclick="window.editPrompt('${promptId}')"><span class="icon" style="font-size:13px;">edit</span></button><button class="btn-prompt-action copy" title="Copy prompt" onclick="window.copyPrompt('${promptId}')"><span class="icon" style="font-size:13px;">content_copy</span></button><button class="btn-prompt-action del" title="Delete message" onclick="window.deletePrompt('${promptId}')"><span class="icon" style="font-size:13px;">delete</span></button></div></div>`);
 
         state.attachedReferences = [];
         renderAttachmentChips();
