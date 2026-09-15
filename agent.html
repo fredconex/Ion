@@ -311,6 +311,64 @@
         .btn-confirm:hover { background: rgba(255,255,255,0.08); }
         .btn-confirm.primary { background: var(--pink); border-color: var(--pink); color: #fff; }
         .btn-confirm.primary:hover { background: #d05b64; }
+        #cleardata-modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.55); z-index: 400;
+            align-items: center; justify-content: center;
+        }
+        #cleardata-modal {
+            background: var(--bg-panel); border: 1px solid var(--border-highlight);
+            border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+            width: 440px; max-width: 92vw; max-height: 84vh;
+            display: flex; flex-direction: column; animation: fadeIn 0.12s ease-out;
+        }
+        #cleardata-modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        #cleardata-modal-title {
+            font-size: 12px; font-weight: 700; color: var(--red);
+            font-family: var(--font-mono); display: flex; align-items: center; gap: 6px;
+        }
+        #cleardata-modal-close {
+            background: transparent; border: none; color: var(--dim);
+            cursor: pointer; padding: 4px; border-radius: 4px;
+        }
+        #cleardata-modal-close:hover { color: var(--fg); background: rgba(255,255,255,0.06); }
+        #cleardata-modal-body {
+            padding: 14px; overflow-y: auto; flex: 1;
+        }
+        #cleardata-modal-body .cleardata-intro {
+            font-size: 12px; color: var(--dim); line-height: 1.5; margin-bottom: 12px;
+        }
+        .cleardata-option {
+            display: flex; align-items: flex-start; gap: 10px;
+            padding: 10px; border-radius: 8px;
+            border: 1px solid var(--border); margin-bottom: 8px;
+            cursor: pointer; transition: border-color 0.12s, background 0.12s;
+        }
+        .cleardata-option:hover { border-color: var(--border-highlight); background: rgba(255,255,255,0.03); }
+        .cleardata-option input[type="checkbox"] {
+            margin-top: 2px; width: 15px; height: 15px; accent-color: var(--red); cursor: pointer; flex-shrink: 0;
+        }
+        .cleardata-option-text { display: flex; flex-direction: column; gap: 2px; }
+        .cleardata-option-title {
+            font-size: 12px; font-weight: 600; color: var(--fg);
+            display: flex; align-items: center; gap: 6px;
+        }
+        .cleardata-option-title .icon { font-size: 14px; color: var(--dim); }
+        .cleardata-option-desc { font-size: 11px; color: var(--dim); line-height: 1.4; }
+        #cleardata-modal-footer {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: 12px 14px; border-top: 1px solid var(--border); flex-shrink: 0;
+        }
+        #cleardata-select-links { display: flex; gap: 10px; }
+        #cleardata-select-links button {
+            background: transparent; border: none; color: var(--blue);
+            font-size: 11px; font-family: var(--font-mono); cursor: pointer; padding: 0;
+        }
+        #cleardata-select-links button:hover { text-decoration: underline; }
+        #cleardata-modal-btns { display: flex; gap: 8px; }
         #about-modal-overlay {
             display: none; position: fixed; inset: 0;
             background: rgba(0,0,0,0.55); z-index: 400;
@@ -631,24 +689,27 @@
             color: #fff; font-size: 12px; font-weight: 600;
             text-transform: uppercase; letter-spacing: 0.4px;
         }
+        #settings-content { padding: 10px !important; }
+        #danger-zone-footer { padding: 0 10px 10px; flex-shrink: 0; }
         .settings-panel-group {
-            border: 0;
-            border-radius: 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
             overflow: hidden;
-            margin-bottom: 6px;
+            margin-bottom: 10px;
+            background: rgba(255, 255, 255, 0.015);
         }
+        .settings-panel-group:last-child { margin-bottom: 0; }
         .settings-panel-header {
-            border: 1px;
             display: flex;
             align-items: center;
             gap: 6px;
-            padding: 5px 8px;
-            background: rgba(0, 0, 0, 0.2);
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 7px 10px;
+            background: rgba(0, 0, 0, 0.22);
+            border-bottom: 1px solid var(--border);
             font-size: 10px;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.6px;
             color: var(--dim);
             user-select: none;
         }
@@ -667,11 +728,17 @@
             color: var(--dim);
         }
         .settings-panel-body {
-            padding: 8px 10px;
+            padding: 10px;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 12px;
         }
+        .settings-section-label {
+            font-size: 9px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.7px; color: var(--dim); opacity: 0.7;
+            padding: 10px 2px 4px; user-select: none;
+        }
+        .settings-section-label:first-child { padding-top: 2px; }
         .settings-panel-body .settings-field-row {
             margin-bottom: 0;
         }
@@ -2171,6 +2238,65 @@
         </div>
     </div>
 
+    <div id="cleardata-modal-overlay">
+        <div id="cleardata-modal">
+            <div id="cleardata-modal-header">
+                <div id="cleardata-modal-title">
+                    <span class="icon" style="font-size: 14px;">delete</span>
+                    <span>Clear Data</span>
+                </div>
+                <button id="cleardata-modal-close" class="icon-btn" title="Close">
+                    <span class="icon" style="font-size: 16px;">close</span>
+                </button>
+            </div>
+            <div id="cleardata-modal-body">
+                <div class="cleardata-intro">Choose what to clear. This cannot be undone.</div>
+
+                <label class="cleardata-option">
+                    <input type="checkbox" id="cleardata-opt-checkpoints" checked>
+                    <div class="cleardata-option-text">
+                        <span class="cleardata-option-title"><span class="icon">history</span>Checkpoints</span>
+                        <span class="cleardata-option-desc">File baselines and history used to diff and restore changes.</span>
+                    </div>
+                </label>
+
+                <label class="cleardata-option">
+                    <input type="checkbox" id="cleardata-opt-sessions" checked>
+                    <div class="cleardata-option-text">
+                        <span class="cleardata-option-title"><span class="icon">forum</span>Sessions</span>
+                        <span class="cleardata-option-desc">All saved conversation sessions and their history.</span>
+                    </div>
+                </label>
+
+                <label class="cleardata-option">
+                    <input type="checkbox" id="cleardata-opt-models" checked>
+                    <div class="cleardata-option-text">
+                        <span class="cleardata-option-title"><span class="icon">tune</span>Model Settings</span>
+                        <span class="cleardata-option-desc">Configured providers, models, and the currently selected model.</span>
+                    </div>
+                </label>
+
+                <label class="cleardata-option">
+                    <input type="checkbox" id="cleardata-opt-settings" checked>
+                    <div class="cleardata-option-text">
+                        <span class="cleardata-option-title"><span class="icon">settings</span>Settings</span>
+                        <span class="cleardata-option-desc">General preferences, mode prompts, tool permissions, prompt history, caches, and recent folders.</span>
+                    </div>
+                </label>
+            </div>
+            <div id="cleardata-modal-footer">
+                <div id="cleardata-select-links">
+                    <button type="button" id="cleardata-select-all">Select all</button>
+                    <button type="button" id="cleardata-select-none">Select none</button>
+                </div>
+                <div id="cleardata-modal-btns">
+                    <button id="cleardata-cancel" class="btn-confirm">Cancel</button>
+                    <button id="cleardata-confirm" class="btn-confirm primary">Clear Selected</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="about-modal-overlay">
         <div id="about-modal">
             <button id="about-modal-close" class="icon-btn" title="Close">
@@ -2329,8 +2455,10 @@
                     <div class="sidebar-panel-header">
                         <span style="font-size:10px; color:var(--dim); font-weight:700; text-transform:uppercase;">Settings</span>
                     </div>
-                    <div id="settings-content" style="padding: 0; overflow-y: auto; flex: 1;">
-                        
+                    <div id="settings-content" style="overflow-y: auto; flex: 1;">
+
+                        <div class="settings-section-label">Behavior</div>
+
                         <!-- General Panel -->
                         <div class="settings-panel-group">
                             <div class="settings-panel-header">
@@ -2350,25 +2478,6 @@
                                     <div class="duo-switch-row">
                                         <span class="duo-switch-label">Keep skipped thinking in context</span>
                                         <div class="tri-switch duo-switch" id="settings-keep-skipped-thinking">
-                                            <button class="tri-btn off active off" data-val="off">off</button>
-                                            <button class="tri-btn on" data-val="on">on</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Background Glow Panel -->
-                        <div class="settings-panel-group">
-                            <div class="settings-panel-header">
-                                <span class="icon">tonality</span>
-                                <span>Background Glow</span>
-                            </div>
-                            <div class="settings-panel-body">
-                                <div class="settings-field-row">
-                                    <div class="duo-switch-row">
-                                        <span class="duo-switch-label">Enable status glow</span>
-                                        <div class="tri-switch duo-switch" id="settings-glow-enabled">
                                             <button class="tri-btn off active off" data-val="off">off</button>
                                             <button class="tri-btn on" data-val="on">on</button>
                                         </div>
@@ -2404,18 +2513,39 @@
                             </div>
                         </div>
 
+                        <div class="settings-section-label">Appearance</div>
+
+                        <!-- Background Glow Panel -->
+                        <div class="settings-panel-group">
+                            <div class="settings-panel-header">
+                                <span class="icon">tonality</span>
+                                <span>Background Glow</span>
+                            </div>
+                            <div class="settings-panel-body">
+                                <div class="settings-field-row">
+                                    <div class="duo-switch-row">
+                                        <span class="duo-switch-label">Enable status glow</span>
+                                        <div class="tri-switch duo-switch" id="settings-glow-enabled">
+                                            <button class="tri-btn off active off" data-val="off">off</button>
+                                            <button class="tri-btn on" data-val="on">on</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
-                    <div id="danger-zone-footer" style="padding: 0;">
-                        <div class="settings-panel-group" style="border-color: rgba(224, 108, 117, 0.3);">
+                    <div id="danger-zone-footer">
+                        <div class="settings-panel-group" style="border-color: rgba(224, 108, 117, 0.3); margin-bottom: 0;">
                             <div class="settings-panel-header" style="background: rgba(224, 108, 117, 0.08); color: var(--red); border-bottom-color: rgba(224, 108, 117, 0.2);">
-                                <span class="icon" style="color: var(--red);">delete</span>
+                                <span class="icon" style="color: var(--red);">warning</span>
                                 <span>Danger Zone</span>
                             </div>
                             <div class="settings-panel-body">
                                 <div class="settings-field-row">
-                                    <button id="btn-clear-data" class="danger-btn" title="Reset all settings and clear stored data">
+                                    <button id="btn-clear-data" class="danger-btn" title="Choose what stored data to clear">
                                         <span class="icon" style="font-size: 14px;">delete</span>
-                                        <span>Clear All Data</span>
+                                        <span>Clear Data…</span>
                                     </button>
                                 </div>
                             </div>
@@ -2763,32 +2893,62 @@ const AppConfig = {
     }
 };
 
-function confirmClearData() {
-    return window.confirm(
-        'Clear all data?\n\nThis will reset every setting to its default and delete all locally stored data (settings, sessions, baselines, caches, prompt history, models, tools, etc.).\n\nThis cannot be undone.'
-    );
+// localStorage keys grouped by clear-data category. Anything not listed here
+// (e.g. app_config_json) falls under the "settings" bucket by default.
+const CLEARDATA_LS_KEYS = {
+    models: ['models_json', 'selected_model'],
+    settings: [
+        'app_config_json', 'mode_prompts_json', 'tool_files_json', 'tool_lock_state',
+        'tool_deleted_names', 'tool_perm_state', 'prompt-history', 'last_mode',
+        'recent_folders_json'
+    ]
+};
+
+async function clearIDBStore(storeName) {
+    try {
+        const db = await getDB();
+        await new Promise((resolve) => {
+            const tx = db.transaction(storeName, 'readwrite');
+            tx.objectStore(storeName).clear();
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+            tx.onabort = () => resolve();
+        });
+    } catch (e) {}
 }
 
-async function clearAllData() {
-    try {
-        const keys = [];
-        for (let i = 0; i < localStorage.length; i++) {
-            keys.push(localStorage.key(i));
-        }
-        keys.forEach(k => { if (k) localStorage.removeItem(k); });
-    } catch(e) {}
+function clearLocalStorageKeys(keys) {
+    keys.forEach(k => {
+        try { localStorage.removeItem(k); } catch (e) {}
+    });
+}
 
-    try {
-        await new Promise((resolve) => {
-            const req = indexedDB.deleteDatabase(DB_NAME);
-            req.onsuccess = () => resolve();
-            req.onerror = () => resolve();
-            req.onblocked = () => resolve();
-        });
-    } catch(e) {}
+// opts: { checkpoints: bool, sessions: bool, models: bool, settings: bool }
+async function clearSelectedData(opts) {
+    if (opts.checkpoints) {
+        await clearIDBStore(STORE_BASELINES);
+    }
+    if (opts.sessions) {
+        await clearIDBStore(STORE_SESSIONS);
+    }
+    if (opts.models) {
+        clearLocalStorageKeys(CLEARDATA_LS_KEYS.models);
+    }
+    if (opts.settings) {
+        clearLocalStorageKeys(CLEARDATA_LS_KEYS.settings);
+        await clearIDBStore(STORE_CACHE);
+        await clearIDBStore(STORE_HANDLES);
+        AppConfig.reset();
+        applyConfigToUI();
+    }
+}
 
-    AppConfig.reset();
-    applyConfigToUI();
+function openClearDataModal() {
+    document.getElementById('cleardata-modal-overlay').style.display = 'flex';
+}
+
+function closeClearDataModal() {
+    document.getElementById('cleardata-modal-overlay').style.display = 'none';
 }
 
 function configFileText(data) {
@@ -9548,11 +9708,42 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (_ctEl) _ctEl.addEventListener('input', e => AppConfig.set('compress-threshold', e.target.value));
     if (_cpEl) _cpEl.addEventListener('input', e => AppConfig.set('compress-preserve', e.target.value));
 
-    document.getElementById('btn-clear-data').addEventListener('click', async () => {
-        const ok = await confirmClearData();
-        if (!ok) return;
-        await clearAllData();
-        showToast('All data cleared. Reloading…', 'info', 2000);
+    document.getElementById('btn-clear-data').addEventListener('click', () => {
+        openClearDataModal();
+    });
+
+    const cdOverlay = document.getElementById('cleardata-modal-overlay');
+    const cdCheckboxes = {
+        checkpoints: document.getElementById('cleardata-opt-checkpoints'),
+        sessions: document.getElementById('cleardata-opt-sessions'),
+        models: document.getElementById('cleardata-opt-models'),
+        settings: document.getElementById('cleardata-opt-settings')
+    };
+    document.getElementById('cleardata-modal-close').addEventListener('click', closeClearDataModal);
+    document.getElementById('cleardata-cancel').addEventListener('click', closeClearDataModal);
+    cdOverlay.addEventListener('click', (e) => {
+        if (e.target === cdOverlay) closeClearDataModal();
+    });
+    document.getElementById('cleardata-select-all').addEventListener('click', () => {
+        Object.values(cdCheckboxes).forEach(cb => { cb.checked = true; });
+    });
+    document.getElementById('cleardata-select-none').addEventListener('click', () => {
+        Object.values(cdCheckboxes).forEach(cb => { cb.checked = false; });
+    });
+    document.getElementById('cleardata-confirm').addEventListener('click', async () => {
+        const opts = {
+            checkpoints: cdCheckboxes.checkpoints.checked,
+            sessions: cdCheckboxes.sessions.checked,
+            models: cdCheckboxes.models.checked,
+            settings: cdCheckboxes.settings.checked
+        };
+        if (!opts.checkpoints && !opts.sessions && !opts.models && !opts.settings) {
+            closeClearDataModal();
+            return;
+        }
+        closeClearDataModal();
+        await clearSelectedData(opts);
+        showToast('Selected data cleared. Reloading…', 'info', 2000);
         setTimeout(() => location.reload(), 900);
     });
 
