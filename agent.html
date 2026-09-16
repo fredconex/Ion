@@ -222,9 +222,10 @@
             border: 1px solid var(--border-highlight); border-radius: 8px;
             box-shadow: 0 12px 36px rgba(0, 0, 0, 0.85);
             padding: 10px; width: 340px; max-height: 420px;
-            z-index: 101; animation: fadeIn 0.12s ease-out;
+            z-index: 101; animation: fadeInCentered 0.12s ease-out;
         }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeInCentered { from { opacity: 0; transform: translateX(-50%) translateY(-3px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
         .popover-header {
             display: flex; align-items: center; justify-content: space-between;
             padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border);
@@ -6523,7 +6524,7 @@ function hideSessionPopover() {
 
 btnSessionToggle.addEventListener('click', (e) => {
     e.stopPropagation();
-    const isShown = sessionsPopover.style.display === 'block';
+    const isShown = sessionsPopoverOverlay.style.display === 'block';
     if (isShown) hideSessionPopover();
     else showSessionPopover();
 });
@@ -10936,7 +10937,7 @@ function accumulateSessionRunningTime(sessionId) {
         s.runningTimeMs = (s.runningTimeMs || 0) + Math.max(0, elapsed);
     }
     gen.genSessionStartMs = null;
-    if (sessionsPopover && sessionsPopover.style.display === 'block') {
+    if (sessionsPopoverOverlay && sessionsPopoverOverlay.style.display === 'block') {
         renderSessionPopoverList();
     }
 }
@@ -11085,7 +11086,7 @@ document.addEventListener('keydown', (e) => {
             acPopup.style.display = 'none';
             return;
         }
-        if (sessionsPopover.style.display === 'block') {
+        if (sessionsPopoverOverlay.style.display === 'block') {
             hideSessionPopover();
             return;
         }
