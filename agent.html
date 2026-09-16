@@ -23,7 +23,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <style>
         :root {
-            --bg-canvas: #0d0d0d;
+            --bg-canvas: #050505;
             --bg-main: #181818;
             --bg-win-title: #1e1e1e;
             --bg-panel: #1a1a1a;
@@ -50,13 +50,12 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             height: 100vh; width: 100vw;
-            background: var(--bg-canvas);
             background-image:
-                radial-gradient(circle at center, #3a3a3a 0%, transparent 70%),
                 linear-gradient(0deg, rgba(255,255,255,0.02) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
-            background-size: 100% 100%, 24px 24px, 24px 24px;
-            background-position: center, 0 0, 0 0;
+                linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px),
+                radial-gradient(ellipse at center, #262626 0%, #1f1f1f 30%, #161616 60%, #030303 100%);
+            background-size: 24px 24px, 24px 24px, 100% 100%;
+            background-position: 0 0, 0 0, center;
             display: flex; align-items: center; justify-content: center;
             font-family: var(--font-mono); font-size: 13px;
             color: var(--fg); overflow: hidden;
