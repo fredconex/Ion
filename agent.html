@@ -10681,7 +10681,7 @@ function renderToolCallBox(toolName, args, resultOutput, isDone = false, isError
     const gen = getGenState(sid);
     stopRunningToolBox(existingBox);
     const box = existingBox || document.createElement('div');
-    const isExpanded = isDone || isError;
+    const isExpanded = isDone;
     box.className = `tool-box ${isExpanded ? 'done-box' : 'collapsed'} ${isError ? 'error-box' : ''}`;
     
     let summaryText = "";
