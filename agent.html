@@ -804,6 +804,7 @@
             color: var(--fg); font-size: 11px; font-weight: 600;
             font-family: var(--font-mono); overflow: hidden;
             text-overflow: ellipsis; white-space: nowrap;
+            flex: 1; min-width: 0;
         }
         .ct-item-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
         .ct-item-badge {
@@ -3593,6 +3594,15 @@ function isRestorableAgentFile(path) {
         return Object.prototype.hasOwnProperty.call(seeded, toolNameFromPath(path));
     }
     return true;
+}
+
+function isToolModified(name) {
+    const fp = toolFilePath(name);
+    const current = registry.files[fp];
+    if (current === undefined) return false;
+    const seeded = seedBuiltinToolSources();
+    if (!Object.prototype.hasOwnProperty.call(seeded, name)) return true;
+    return current !== seeded[name];
 }
 
 function toolNameFromPath(path) {
@@ -7365,7 +7375,7 @@ function contextItemApplies(scope, node) {
 
     if (scope === 'file') return node.kind !== 'directory';
     if (scope === 'changed') return node.kind !== 'directory' && state.modifiedFiles.has(node.path);
-    if (scope === 'restorable') return node.kind !== 'directory' && isRestorableAgentFile(node.path);
+    if (scope === 'restorable') return node.kind !== 'directory' && isRestorableAgentFile(node.path) && (!isToolFilePath(node.path) || isToolModified(toolNameFromPath(node.path)));
     if (scope === 'renameable') return !isAgentPath(node.path);
     if (scope === 'deletable') return !isAgentPath(node.path) || isDeletableAgentFile(node.path);
     return true;
@@ -8995,28 +9005,28 @@ function buildToolRow(tool) {
     let badge = '';
     if (tool.error) {
         badge = `<span class="ct-item-badge broken" title="${escapeHTML(tool.error)}">broken</span>`;
-    } else if (tool.builtin) {
-        badge = `<span class="ct-item-badge builtin" title="Built-in tool">builtin</span>`;
     }
 
     const modesLabel = (tool.modes || []).map(m => MODE_LABELS[m] || m).join(', ') || 'no modes';
     const titleAttr = tool.error ? tool.error : `${tool.description || ''}\nModes: ${modesLabel}`;
 
     row.innerHTML = `
+        <button class="ct-icon-btn lock-btn ${tool.locked ? 'locked' : ''}" data-lock-tool="${escapeHTML(tool.name)}" title="${tool.locked ? 'Locked - the model cannot modify this tool file. Click to unlock.' : 'Unlocked - the model can modify this tool file. Click to lock.'}">
+            <span class="icon" style="font-size:15px;">${tool.locked ? 'lock' : 'lock_open'}</span>
+        </button>
         <span class="ct-item-name" title="${escapeHTML(titleAttr)}" data-open-tool="${escapeHTML(tool.name)}" style="cursor:pointer;">${escapeHTML(tool.name)}${badge}</span>
         <div class="ct-item-actions">
-            <button class="ct-icon-btn lock-btn ${tool.locked ? 'locked' : ''}" data-lock-tool="${escapeHTML(tool.name)}" title="${tool.locked ? 'Locked - the model cannot modify this tool file. Click to unlock.' : 'Unlocked - the model can modify this tool file. Click to lock.'}">
-                <span class="icon" style="font-size:15px;">${tool.locked ? 'lock' : 'lock_open'}</span>
-            </button>
+            ${isRestorableAgentFile(toolFilePath(tool.fileName || tool.name))
+                ? (isToolModified(tool.name)
+                    ? `<button class="ct-icon-btn" data-reset-tool="${escapeHTML(tool.name)}" title="Restore to built-in default"><span class="icon" style="font-size:15px;">restart_alt</span></button>`
+                    : `<button class="ct-icon-btn" aria-hidden="true" style="visibility:hidden;" tabindex="-1"><span class="icon" style="font-size:15px;">restart_alt</span></button>`)
+                : `<button class="ct-icon-btn danger" data-delete-tool="${escapeHTML(tool.name)}" title="Delete this tool"><span class="icon" style="font-size:15px;">delete</span></button>`
+            }
             <div class="tri-switch" data-tool="${escapeHTML(tool.name)}">
                 <button class="tri-btn never ${tool.permission === 'never' ? 'active never' : ''}" data-val="never">never</button>
                 <button class="tri-btn ask ${tool.permission === 'ask' ? 'active ask' : ''}" data-val="ask">ask</button>
                 <button class="tri-btn always ${tool.permission === 'always' ? 'active always' : ''}" data-val="always">always</button>
             </div>
-            ${isRestorableAgentFile(toolFilePath(tool.fileName || tool.name))
-                ? `<button class="ct-icon-btn" data-reset-tool="${escapeHTML(tool.name)}" title="Restore to built-in default"><span class="icon" style="font-size:15px;">restart_alt</span></button>`
-                : `<button class="ct-icon-btn danger" data-delete-tool="${escapeHTML(tool.name)}" title="Delete this tool"><span class="icon" style="font-size:15px;">delete</span></button>`
-            }
         </div>
     `;
 
