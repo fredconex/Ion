@@ -3270,7 +3270,7 @@ function seedBuiltinToolSources() {
             description: 'Search the web via DuckDuckGo and return the top results (title, url, snippet).',
             parameters: { type: "object", properties: { query: { type: "string", description: "Search query" } }, required: ["query"] },
             modes: ['plan', 'ask', 'code'],
-            permission: 'ask'
+            permission: 'never'
         }, `
     const res = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(args.query));
     if (!res.ok) return \`ERROR: DuckDuckGo request failed (HTTP \${res.status})\`;
@@ -3312,7 +3312,7 @@ function seedBuiltinToolSources() {
             description: 'Fetch a web page or file by URL and return its text content. Tries a direct request first, then falls back to a public read-only CORS proxy for sites that block cross-origin requests (browsers cannot bypass CORS otherwise).',
             parameters: { type: "object", properties: { url: { type: "string", description: "Full URL, including https://" }, raw: { type: "boolean", description: "If true, return the raw response body (e.g. JSON/HTML) instead of extracting readable text from HTML. Default false." } }, required: ["url"] },
             modes: ['plan', 'ask', 'code'],
-            permission: 'ask'
+            permission: 'never'
         }, `
     // Validate URL and filter out local paths, non-HTTP protocols, and localhost
     let parsedUrl;

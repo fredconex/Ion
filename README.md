@@ -48,8 +48,8 @@ Ion operates entirely within the client-side browser sandbox:
 | | `rename` | Renames files within the permitted directory | Ask |
 | **Search** | `find` | Matches files by name pattern or file extension | Always |
 | | `grep` | Regular expression and plain-text search across files | Always |
-| **Web** | `duckduckgo_search` | Queries DuckDuckGo for live documentation and snippets | Ask |
-| | `fetch_url` | Extracts text from URLs directly or through proxy fallbacks | Ask |
+| **Web** | `duckduckgo_search` | Queries DuckDuckGo for live documentation and snippets | Never |
+| | `fetch_url` | Extracts text from URLs directly or through proxy fallbacks | Never |
 
 ---
 
