@@ -16,8 +16,11 @@
           core feature; the real mitigation for that risk is the per-tool permission prompts,
           not CSP.
         - object-src 'none' and base-uri 'self' close off two common bypass vectors.
+        - frame-ancestors is intentionally NOT set here: it is ignored when delivered via a
+          <meta> element (it must come from a real HTTP response header). If you need it,
+          serve this page with a Content-Security-Policy header instead.
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net blob: data: 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: http: data: blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net blob: data: 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: http: data: blob:; object-src 'none'; base-uri 'self';">
     <title>Ion - Untitled Session</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 6L3 12L7 18' stroke='%2356b6c2' stroke-width='2'/%3E%3Cpath d='M13 4L8 12H16L11 20' stroke='%23a855f7' stroke-width='2'/%3E%3Cpath d='M17 6L21 12L17 18' stroke='%2356b6c2' stroke-width='2'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
@@ -2831,7 +2834,7 @@
     <div id="model-picker-list"></div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.55.1/min/vs/loader.js" integrity="sha384-YEteyAKbjYSLDrpbBY0aFgK1CrQHo0Erb5XT/MU5FYvkb3SmPSZSisW7LOYTKvTx" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.55.1/min/vs/loader.js" integrity="sha384-jwxunh5pHKFzi60XobDcwOM7qnk4lSGpdBU/hNn9pUGp+ZUpaHJqadNLRF2k+jPu" crossorigin="anonymous"></script>
 <script>
 const PLAN_FILE = '.agent_plan.md';
 const CUSTOM_TOOLS_DIR = '.agent';
