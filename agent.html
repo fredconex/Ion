@@ -1520,12 +1520,27 @@
         #editor-binary-notice {
             display: none; flex-direction: column; align-items: center;
             justify-content: center; height: 100%; gap: 12px;
-            color: var(--dim); font-size: 13px;
+            color: var(--dim); font-size: 13px; position: relative;
         }
         #editor-image-preview {
             max-width: 80%; max-height: 60%; border-radius: 8px;
             border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            transform-origin: center center; transition: transform 0.1s ease;
         }
+        #image-zoom-bar {
+            display: none; align-items: center; gap: 4px;
+            position: absolute; top: 10px; right: 10px; z-index: 2;
+        }
+        #image-zoom-bar .img-zoom-btn {
+            background: var(--bg-input); color: var(--fg);
+            border: 1px solid var(--border); padding: 2px 6px;
+            border-radius: 5px; cursor: pointer; font-family: inherit;
+            font-size: 12px; font-weight: 600; display: inline-flex;
+            align-items: center; gap: 4px; transition: all 0.15s ease;
+        }
+        #image-zoom-bar .img-zoom-btn:hover { background: var(--border); border-color: var(--magenta); color: var(--magenta); }
+        #img-scale-label { min-width: 52px; justify-content: center; cursor: pointer; title: "Click to reset to 100%"; }
+        #editor-binary-msg { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); max-width: 90%; text-align: center; }
         #html-preview-frame {
             display: none; width: 100%; height: 100%;
             border: none; background: #ffffff; color-scheme: light;
@@ -2730,6 +2745,15 @@
                 </div>
                 <div id="monaco-editor-container"></div>
                 <div id="editor-binary-notice">
+                    <div id="image-zoom-bar">
+                        <button id="img-zoom-out" class="img-zoom-btn" title="Zoom out">
+                            <span class="icon" style="font-size:13px;">remove</span>
+                        </button>
+                        <button id="img-scale-label" class="img-zoom-btn" title="Click to reset to 100%">100%</button>
+                        <button id="img-zoom-in" class="img-zoom-btn" title="Zoom in">
+                            <span class="icon" style="font-size:13px;">add</span>
+                        </button>
+                    </div>
                     <img id="editor-image-preview" style="display:none;" />
                     <span id="editor-binary-msg">Binary file</span>
                 </div>
@@ -6630,6 +6654,42 @@ const monacoContainer = document.getElementById('monaco-editor-container');
 const editorBinaryNotice = document.getElementById('editor-binary-notice');
 const editorImagePreview = document.getElementById('editor-image-preview');
 const editorBinaryMsg = document.getElementById('editor-binary-msg');
+
+const imageZoomBar = document.getElementById('image-zoom-bar');
+const imgScaleLabel = document.getElementById('img-scale-label');
+const imgZoomIn = document.getElementById('img-zoom-in');
+const imgZoomOut = document.getElementById('img-zoom-out');
+
+const IMG_ZOOM_MIN = 0.2;
+const IMG_ZOOM_MAX = 4;
+const IMG_ZOOM_STEP_PCT = 20;
+let imgZoom = 1;
+
+function setImgZoom(z, animate) {
+    imgZoom = Math.max(IMG_ZOOM_MIN, Math.min(IMG_ZOOM_MAX, z));
+    if (animate) editorImagePreview.style.transition = 'transform 0.1s ease';
+    editorImagePreview.style.transform = `scale(${imgZoom})`;
+    imgScaleLabel.textContent = Math.round(imgZoom * 100) + '%';
+}
+
+function showImgZoomBar(show) {
+    imageZoomBar.style.display = show ? 'flex' : 'none';
+    if (show) setImgZoom(1, false);
+}
+
+function imgZoomBy(delta) {
+    setImgZoom(imgZoom + (delta > 0 ? IMG_ZOOM_STEP_PCT / 100 : -IMG_ZOOM_STEP_PCT / 100), true);
+}
+
+imgZoomIn.addEventListener('click', () => imgZoomBy(1));
+imgZoomOut.addEventListener('click', () => imgZoomBy(-1));
+imgScaleLabel.addEventListener('click', () => setImgZoom(1, true));
+
+editorBinaryNotice.addEventListener('wheel', (e) => {
+    if (editorImagePreview.style.display === 'none') return;
+    e.preventDefault();
+    imgZoomBy(e.deltaY < 0 ? 1 : -1);
+}, { passive: false });
 const attachmentTextPreview = document.getElementById('attachment-text-preview');
 const htmlPreviewFrame = document.getElementById('html-preview-frame');
 
@@ -6873,11 +6933,13 @@ async function switchTab(tabId) {
         if (!att) {
             editorBinaryNotice.style.display = 'flex';
             editorImagePreview.style.display = 'none';
+            showImgZoomBar(false);
             editorBinaryMsg.innerText = 'This attachment is no longer available.';
         } else if (att.type === 'image') {
             editorBinaryNotice.style.display = 'flex';
             editorImagePreview.src = att.dataUrl;
             editorImagePreview.style.display = 'block';
+            showImgZoomBar(true);
             editorBinaryMsg.innerText = att.name;
         } else {
             editorBinaryNotice.style.display = 'none';
@@ -6899,6 +6961,7 @@ async function switchTab(tabId) {
             htmlPreviewFrame.style.display = 'none';
             editorBinaryNotice.style.display = 'flex';
             editorImagePreview.style.display = 'none';
+            showImgZoomBar(false);
             editorBinaryMsg.innerText = `Binary file (${formatFileSize(meta.size || 0)}) - cannot be displayed in text editor.`;
             editorModeToggle.style.display = 'none';
             btnTabSave.style.display = 'none';
@@ -6915,6 +6978,7 @@ async function switchTab(tabId) {
                 editorBinaryNotice.style.display = 'flex';
                 editorImagePreview.src = url;
                 editorImagePreview.style.display = 'block';
+                showImgZoomBar(true);
                 editorBinaryMsg.innerText = `${tabId.split('/').pop()} (${formatFileSize(file.size)})`;
                 editorModeToggle.style.display = 'none';
                 btnTabSave.style.display = 'none';
