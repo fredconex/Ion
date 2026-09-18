@@ -404,6 +404,66 @@
             cursor: pointer; padding: 4px; border-radius: 4px;
         }
         #about-modal-close:hover { color: var(--fg); background: rgba(255,255,255,0.06); }
+        #newtool-modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.55); z-index: 400;
+            align-items: center; justify-content: center;
+        }
+        #newtool-modal {
+            background: var(--bg-panel); border: 1px solid var(--border-highlight);
+            border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+            width: 420px; max-width: 92vw;
+            display: flex; flex-direction: column; animation: fadeIn 0.12s ease-out;
+        }
+        #newtool-modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        #newtool-modal-title {
+            font-size: 12px; font-weight: 700; color: var(--cyan);
+            font-family: var(--font-mono); display: flex; align-items: center; gap: 6px;
+        }
+        #newtool-modal-close {
+            background: transparent; border: none; color: var(--dim);
+            cursor: pointer; padding: 4px; border-radius: 4px;
+        }
+        #newtool-modal-close:hover { color: var(--fg); background: rgba(255,255,255,0.06); }
+        #newtool-modal-body { padding: 14px; }
+        #newtool-modal-body .settings-field-row label { margin-bottom: 0; }
+        #newtool-dropzone {
+            margin-top: 14px;
+            border: 1.5px dashed var(--border-highlight); border-radius: 8px;
+            padding: 18px 12px; text-align: center; cursor: pointer;
+            display: flex; flex-direction: column; align-items: center; gap: 6px;
+            transition: all 0.15s ease; background: rgba(255,255,255,0.015);
+        }
+        #newtool-dropzone:hover { border-color: var(--dim); background: rgba(255,255,255,0.03); }
+        #newtool-dropzone.dragover { border-color: var(--cyan); background: rgba(86, 182, 194, 0.08); }
+        #newtool-dropzone .icon { font-size: 22px; color: var(--dim); }
+        #newtool-dropzone.dragover .icon { color: var(--cyan); }
+        #newtool-dropzone-text { font-size: 11.5px; color: var(--dim); line-height: 1.5; }
+        #newtool-dropzone-text strong { color: var(--fg); font-weight: 600; }
+        #newtool-dropzone-hint { font-size: 10px; color: var(--dim); opacity: 0.75; }
+        #newtool-file-picked {
+            display: none; margin-top: 8px; align-items: center; gap: 6px;
+            font-size: 11px; color: var(--green); font-family: var(--font-mono);
+            padding: 6px 8px; background: rgba(152, 195, 121, 0.1);
+            border: 1px solid rgba(152, 195, 121, 0.3); border-radius: 6px;
+        }
+        #newtool-file-picked .icon { font-size: 14px; color: var(--green); }
+        #newtool-file-picked .newtool-file-clear {
+            margin-left: auto; background: transparent; border: none;
+            color: var(--dim); cursor: pointer; padding: 2px; border-radius: 4px;
+            display: flex; align-items: center;
+        }
+        #newtool-file-picked .newtool-file-clear:hover { color: var(--red); }
+        #newtool-modal-error {
+            display: none; font-size: 11px; color: var(--red); margin-top: 8px; line-height: 1.4;
+        }
+        #newtool-modal-footer {
+            display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+            padding: 12px 14px; border-top: 1px solid var(--border); flex-shrink: 0;
+        }
         #models-modal-overlay {
             display: none; position: fixed; inset: 0;
             background: rgba(0,0,0,0.55); z-index: 400;
@@ -2459,6 +2519,46 @@
         </div>
     </div>
 
+    <div id="newtool-modal-overlay">
+        <div id="newtool-modal">
+            <div id="newtool-modal-header">
+                <div id="newtool-modal-title">
+                    <span class="icon" style="font-size: 14px;">engineering</span>
+                    <span>New Tool</span>
+                </div>
+                <button id="newtool-modal-close" class="icon-btn" title="Close">
+                    <span class="icon" style="font-size: 16px;">close</span>
+                </button>
+            </div>
+            <div id="newtool-modal-body">
+                <div class="settings-field-row">
+                    <label for="newtool-name-input">Tool name</label>
+                    <input type="text" id="newtool-name-input" placeholder="e.g. get_weather" autocomplete="off" spellcheck="false">
+                </div>
+
+                <div id="newtool-dropzone" tabindex="0">
+                    <span class="icon">upload_file</span>
+                    <div id="newtool-dropzone-text"><strong>Drop a .js file</strong> here or click to browse</div>
+                    <div id="newtool-dropzone-hint">The tool name and code will be filled in automatically</div>
+                    <input type="file" id="newtool-file-input" accept=".js,text/javascript" style="display:none">
+                </div>
+                <div id="newtool-file-picked">
+                    <span class="icon">description</span>
+                    <span id="newtool-file-picked-name"></span>
+                    <button type="button" class="newtool-file-clear" title="Remove file">
+                        <span class="icon" style="font-size:14px;">close</span>
+                    </button>
+                </div>
+
+                <div id="newtool-modal-error"></div>
+            </div>
+            <div id="newtool-modal-footer">
+                <button id="newtool-cancel" class="btn-confirm">Cancel</button>
+                <button id="newtool-create" class="btn-confirm primary">Create</button>
+            </div>
+        </div>
+    </div>
+
     <div id="models-modal-overlay">
         <div id="models-modal">
             <div id="models-modal-header">
@@ -3232,11 +3332,34 @@ function toolFilePath(name) {
     return `${TOOLS_DIR}/${name}.js`;
 }
 
+// Returns the tool file's source with the `TOOL_META = {...}` declaration
+// stripped out, keeping the `handler` function AND any top-level helper
+// functions/consts the file declares alongside it. This is what actually
+// runs in the tool worker, so helpers can call other helpers freely.
 function extractHandlerBody(source) {
-    const m = source.match(/async\s+function\s+handler\s*\(\s*args\s*,\s*api\s*\)\s*\{([\s\S]*)\}\s*$/);
-    if (m) return m[1];
-    const idx = source.search(/async\s+function\s+handler/);
-    return idx === -1 ? source : source.slice(idx);
+    const startMatch = source.match(/(?:const|let|var)\s+TOOL_META\s*=\s*/);
+    if (!startMatch) return source;
+    let i = startMatch.index + startMatch[0].length;
+    if (source[i] !== '{') return source;
+    let depth = 0, inStr = null, escaped = false;
+    for (; i < source.length; i++) {
+        const ch = source[i];
+        if (inStr) {
+            if (escaped) { escaped = false; }
+            else if (ch === '\\') { escaped = true; }
+            else if (ch === inStr) { inStr = null; }
+            continue;
+        }
+        if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; continue; }
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+            depth--;
+            if (depth === 0) { i++; break; }
+        }
+    }
+    // Also swallow a trailing semicolon after the object literal, if present.
+    if (source[i] === ';') i++;
+    return source.slice(0, startMatch.index) + source.slice(i);
 }
 
 function buildToolFileSource(meta, handlerBody) {
@@ -3784,36 +3907,98 @@ function refreshAgentFileTab(path, content) {
     clearFileDirty(path);
 }
 
-function deleteToolFile(name) {
-    const tool = toolRegistry[name];
+async function deleteToolFile(name, fileName) {
+    // `name` is the registry key (TOOL_META.name); `fileName` is the on-disk file
+    // name. Callers may pass either, so if the key doesn't match directly,
+    // resolve the tool by its file name.
+    const tool = toolRegistry[name] || Object.values(toolRegistry).find(t => t.fileName === name);
     if (!tool) return false;
-    const fp = toolFilePath(tool.fileName || name);
+
+    const toolName = tool.name;                  // key used in registry / lock / perm / persisted state
+    const fileKey  = tool.fileName || toolName;  // key used for registry.files / disk path
+    const fp       = toolFilePath(fileKey);
+
     delete registry.files[fp];
     delete registry.meta[fp];
     const lockState = loadToolLockState();
-    delete lockState[name];
+    delete lockState[toolName];
     saveToolLockState(lockState);
     const permState = loadToolPermState();
-    delete permState[name];
+    delete permState[toolName];
     saveToolPermState(permState);
-    forgetPersistedToolFile(name);
-    markToolDeleted(name);
+    forgetPersistedToolFile(toolName);
+    markToolDeleted(toolName);
+    // Tool files are normally virtual (localStorage-backed), but if a real
+    // folder is open and this tool's file actually exists on disk (e.g. it
+    // was picked up from an existing .agent/tools directory), remove it
+    // there too so it doesn't linger and reappear on the next workspace sync.
+    if (rootHandle) {
+        try {
+            const parts = fp.split('/').filter(Boolean);
+            const targetName = parts.pop();
+            let parentHandle = rootHandle;
+            for (const p of parts) {
+                parentHandle = await parentHandle.getDirectoryHandle(p);
+            }
+            await parentHandle.removeEntry(targetName);
+        } catch (e) {
+            // No matching file on disk (purely virtual tool) - nothing to do.
+        }
+    }
     rebuildToolRegistryFromFiles();
     return true;
 }
 
-function createToolFile(name) {
+function createToolFile(name, sourceOverride) {
     if (!name || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) return { ok: false, error: 'Tool name must be letters, numbers, or underscore, and cannot start with a number.' };
     if (toolRegistry[name]) return { ok: false, error: `A tool named "${name}" already exists.` };
-    const source = buildToolFileSource({
-        name,
-        description: 'Describe what this tool does and when the model should use it.',
-        parameters: { type: "object", properties: {}, required: [] },
-        modes: ['plan', 'ask', 'code'],
-        permission: 'ask'
-    }, `
+    let source = sourceOverride;
+    if (typeof source !== 'string' || !source.trim()) {
+        source = buildToolFileSource({
+            name,
+            description: 'Describe what this tool does and when the model should use it.',
+            parameters: { type: "object", properties: {}, required: [] },
+            modes: ['plan', 'ask', 'code'],
+            permission: 'ask'
+        }, `
     return "Not implemented yet.";
 `);
+    } else {
+        // If the provided source has no TOOL_META (e.g. a plain handler function,
+        // possibly with helpers, pasted/dropped without the wrapper), wrap it so
+        // it's a valid tool file rather than nesting it inside another handler.
+        const meta = parseToolMeta(source);
+        if (!meta || !meta.name) {
+            const metaObj = {
+                name,
+                description: 'Describe what this tool does and when the model should use it.',
+                parameters: { type: "object", properties: {}, required: [] },
+                modes: ['plan', 'ask', 'code'],
+                permission: 'ask',
+                toolBox: 1
+            };
+            const metaJson = JSON.stringify(metaObj, null, 4);
+            const hasHandler = /(?:^|\W)(?:async\s+)?function\s+handler\s*\(/.test(source);
+            source = `// ${name} - tool definition.
+const TOOL_META = ${metaJson};
+
+${source.trim() || 'async function handler(args, api) {\n    return "Not implemented yet.";\n}'}
+`;
+            if (!hasHandler) {
+                // No handler function found in the dropped file at all - append a stub
+                // so the tool is at least valid; the rest of the file (helpers, etc.)
+                // stays intact and callable from within it.
+                source += `
+async function handler(args, api) {
+    return "Not implemented yet.";
+}
+`;
+            }
+        } else if (meta.name !== name) {
+            // Keep the file name the user chose/confirmed authoritative.
+            source = source.replace(/(TOOL_META\s*=\s*\{[\s\S]*?name\s*:\s*)(["'`])([\s\S]*?)\2/, `$1$2${name}$2`);
+        }
+    }
     const fp = toolFilePath(name);
     registry.files[fp] = source;
     registry.meta[fp] = { kind: 'file', size: source.length, isBinary: false, virtual: true };
@@ -7803,14 +7988,19 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
             if (!confirm(`Delete ${node.name}?`)) return;
             if (isToolFilePath(node.path)) {
                 const toolName = node.path.split('/').pop().replace('.js', '');
-                if (isToolLocked(toolName)) {
-                    showToast(`"${toolName}" is locked. Unlock it first to delete.`, 'error');
+                const tool = Object.values(toolRegistry).find(t => t.fileName === toolName);
+                if (!tool) {
+                    showToast(`Tool "${toolName}" not found in registry.`, 'error');
                     return;
                 }
-                deleteToolFile(toolName);
+                if (tool.locked) {
+                    showToast(`"${tool.name}" is locked. Unlock it first to delete.`, 'error');
+                    return;
+                }
+                const deleted = await deleteToolFile(tool.name, tool.fileName);
                 renderExplorerTree();
                 renderToolsList();
-                showToast(`Deleted "${toolName}"`, 'success');
+                showToast(deleted ? `Deleted "${tool.name}"` : `Could not delete "${tool.name}"`, deleted ? 'success' : 'error');
             } else {
                 await deleteFileOrDirectory(node.path);
                 closeTab(node.path);
@@ -9348,13 +9538,13 @@ function buildToolRow(tool) {
 
     const deleteBtn = row.querySelector('[data-delete-tool]');
     if (deleteBtn) {
-        deleteBtn.addEventListener('click', (e) => {
+        deleteBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
             if (tool.locked) {
                 showToast(`"${tool.name}" is locked. Unlock it first to delete.`, 'error');
                 return;
             }
-            deleteToolFile(tool.name);
+            await deleteToolFile(tool.name);
             renderExplorerTree();
             renderToolsList();
             showToast(`Deleted "${tool.name}"`, 'success');
@@ -9453,20 +9643,10 @@ function renderToolsList() {
     addBtn.id = 'btn-new-tool-inline';
     addBtn.title = 'New Tool';
     addBtn.innerHTML = '<span class="icon" style="font-size:15px;">add</span>';
-    addBtn.addEventListener('click', async () => {
-        const name = (prompt('New tool name (letters, numbers, underscore):') || '').trim();
-        if (!name) return;
-        const result = createToolFile(name);
-        if (!result.ok) {
-            showToast(result.error, 'error');
-            return;
-        }
-        renderExplorerTree();
-        renderToolsList();
-        await openFileTab(result.path);
+    addBtn.addEventListener('click', () => {
         settingsPopover.style.display = 'none';
         btnSettingsToggle.classList.remove('active');
-        showToast(`Created ${result.path}`, 'success');
+        openNewToolModal();
     });
     customLabelRow.appendChild(addBtn);
 
@@ -12473,8 +12653,14 @@ async function runTool(runId, toolMeta, args) {
         getMaxReadLines: () => callApi(runId, 'getMaxReadLines', [])
     };
     try {
-        const handler = new Function('args', 'api', 'return (async () => {\\n' + toolMeta.code + '\\n})();');
-        const output = await handler(args, api);
+        // toolMeta.code is the full tool file (minus the TOOL_META declaration),
+        // so it may declare top-level helper functions/consts in addition to the
+        // handler itself. Evaluate it as a factory that returns the handler,
+        // giving those helpers a shared scope they can call each other from.
+        const factory = new Function('args', 'api',
+            toolMeta.code + '\\nreturn (typeof handler === "function") ? handler(args, api) : (() => { throw new Error("Tool file does not define an async function handler(args, api)."); })();'
+        );
+        const output = await factory(args, api);
         self.postMessage({ type: 'done', runId, output: output === undefined ? '(no output)' : String(output) });
     } catch (e) {
         self.postMessage({ type: 'done', runId, error: e.message || String(e) });
@@ -13693,6 +13879,154 @@ document.getElementById('about-modal-close').addEventListener('click', () => {
 document.getElementById('about-modal-overlay').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) {
         e.currentTarget.style.display = 'none';
+    }
+});
+
+// --- New Tool modal (name entry + drag/drop .js import) ---
+const newToolModalOverlay = document.getElementById('newtool-modal-overlay');
+const newToolNameInput = document.getElementById('newtool-name-input');
+const newToolDropzone = document.getElementById('newtool-dropzone');
+const newToolFileInput = document.getElementById('newtool-file-input');
+const newToolFilePicked = document.getElementById('newtool-file-picked');
+const newToolFilePickedName = document.getElementById('newtool-file-picked-name');
+const newToolErrorEl = document.getElementById('newtool-modal-error');
+const newToolCreateBtn = document.getElementById('newtool-create');
+
+let newToolDroppedSource = null; // raw text content of the dropped/picked .js file
+let newToolNameAutoFilled = false; // whether the name field was auto-filled from a file (vs typed by the user)
+
+function newToolShowError(msg) {
+    if (!msg) {
+        newToolErrorEl.style.display = 'none';
+        newToolErrorEl.textContent = '';
+        return;
+    }
+    newToolErrorEl.textContent = msg;
+    newToolErrorEl.style.display = 'block';
+}
+
+function newToolClearFile() {
+    newToolDroppedSource = null;
+    newToolFileInput.value = '';
+    newToolFilePicked.style.display = 'none';
+    newToolFilePickedName.textContent = '';
+    newToolShowError('');
+}
+
+function openNewToolModal() {
+    newToolNameInput.value = '';
+    newToolNameAutoFilled = false;
+    newToolClearFile();
+    newToolModalOverlay.style.display = 'flex';
+    setTimeout(() => newToolNameInput.focus(), 0);
+}
+
+function closeNewToolModal() {
+    newToolModalOverlay.style.display = 'none';
+}
+
+// Derive a valid tool name from a file's TOOL_META.name (preferred) or its filename.
+function deriveToolNameFromFile(fileName, source) {
+    const meta = parseToolMeta(source || '');
+    if (meta && meta.name && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(meta.name)) return meta.name;
+    let base = (fileName || '').replace(/\.js$/i, '');
+    base = base.replace(/[^a-zA-Z0-9_]/g, '_');
+    if (/^[0-9]/.test(base)) base = '_' + base;
+    return base;
+}
+
+async function handleNewToolFile(file) {
+    newToolShowError('');
+    if (!file) return;
+    if (!/\.js$/i.test(file.name)) {
+        newToolShowError('Please drop a .js file.');
+        return;
+    }
+    let text;
+    try {
+        text = await file.text();
+    } catch (e) {
+        newToolShowError('Could not read that file.');
+        return;
+    }
+    newToolDroppedSource = text;
+    newToolFilePickedName.textContent = file.name;
+    newToolFilePicked.style.display = 'flex';
+
+    // Auto-fill the name field unless the user has already typed a custom name.
+    if (!newToolNameInput.value.trim() || newToolNameAutoFilled) {
+        newToolNameInput.value = deriveToolNameFromFile(file.name, text);
+        newToolNameAutoFilled = true;
+    }
+}
+
+newToolDropzone.addEventListener('click', () => newToolFileInput.click());
+newToolDropzone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); newToolFileInput.click(); }
+});
+newToolFileInput.addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) handleNewToolFile(file);
+});
+['dragenter', 'dragover'].forEach(evt => {
+    newToolDropzone.addEventListener(evt, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        newToolDropzone.classList.add('dragover');
+    });
+});
+['dragleave', 'dragend'].forEach(evt => {
+    newToolDropzone.addEventListener(evt, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        newToolDropzone.classList.remove('dragover');
+    });
+});
+newToolDropzone.addEventListener('drop', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    newToolDropzone.classList.remove('dragover');
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) handleNewToolFile(file);
+});
+
+document.querySelector('#newtool-file-picked .newtool-file-clear').addEventListener('click', () => {
+    newToolClearFile();
+});
+
+newToolNameInput.addEventListener('input', () => {
+    newToolNameAutoFilled = false;
+    newToolShowError('');
+});
+
+newToolCreateBtn.addEventListener('click', async () => {
+    const name = newToolNameInput.value.trim();
+    if (!name) {
+        newToolShowError('Please enter a tool name.');
+        newToolNameInput.focus();
+        return;
+    }
+    const result = createToolFile(name, newToolDroppedSource);
+    if (!result.ok) {
+        newToolShowError(result.error);
+        return;
+    }
+    closeNewToolModal();
+    renderExplorerTree();
+    renderToolsList();
+    await openFileTab(result.path);
+    showToast(`Created ${result.path}`, 'success');
+});
+
+newToolNameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); newToolCreateBtn.click(); }
+});
+
+document.getElementById('newtool-modal-close').addEventListener('click', closeNewToolModal);
+document.getElementById('newtool-cancel').addEventListener('click', closeNewToolModal);
+newToolModalOverlay.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeNewToolModal();
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && newToolModalOverlay.style.display === 'flex') {
+        closeNewToolModal();
     }
 });
 </script>
