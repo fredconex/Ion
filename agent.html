@@ -7310,13 +7310,34 @@ async function switchTab(tabId) {
     }
 }
 
+function withStorageShim(html) {
+    const shim = `<script>
+      (function(){
+        try { localStorage.getItem('x'); return; } catch(e) {}
+        var mem = Object.create(null);
+        var fake = {
+          getItem: function(k){ return Object.prototype.hasOwnProperty.call(mem,k) ? mem[k] : null; },
+          setItem: function(k,v){ mem[k] = String(v); },
+          removeItem: function(k){ delete mem[k]; },
+          clear: function(){ for (var k in mem) delete mem[k]; },
+          key: function(i){ return Object.keys(mem)[i] || null; },
+          get length(){ return Object.keys(mem).length; }
+        };
+        try {
+          Object.defineProperty(window, 'localStorage', { value: fake, configurable: true });
+          Object.defineProperty(window, 'sessionStorage', { value: fake, configurable: true });
+        } catch(e) { /* fall through: some content may still read the real one and fail */ }
+      })();
+    <\/script>`;
+    // Insert immediately after <head> if present, else prepend.
+    if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, m => m + shim);
+    return shim + html;
+}
+
 function updateHtmlPreview() {
     if (!state.currentEditorPath) return;
     const content = monacoEditor ? monacoEditor.getValue() : (registry.files[state.currentEditorPath] || '');
-    htmlPreviewFrame.srcdoc = '';
-    requestAnimationFrame(() => {
-        htmlPreviewFrame.srcdoc = content;
-    });
+    htmlPreviewFrame.srcdoc = withStorageShim(content);
 }
 
 function showEditorSaveError(message) {
