@@ -1165,11 +1165,11 @@
             background: rgba(86, 182, 194, 0.15); border-color: var(--cyan); color: var(--cyan);
         }
         .btn-tab-action.dirty { border-color: var(--yellow); color: var(--yellow); }
-        #terminal-view {
+        #chat-view {
             flex-grow: 1; display: flex; flex-direction: column;
             overflow: hidden; position: relative; background: var(--bg-main);
         }
-        #terminal-container {
+        #chat-container {
             flex-grow: 1; position: relative; display: flex;
             flex-direction: column; overflow: hidden; background: var(--bg-main);
         }
@@ -1261,12 +1261,12 @@
         .chat-bubble.flash-highlight {
             animation: promptGlowPulse 1.1s ease-in-out 1;
         }
-        #terminal {
+        #chat {
             flex-grow: 1; padding: 14px 20px; overflow-y: auto;
             white-space: pre-wrap; line-height: 1.55;
             background: var(--bg-main); word-break: break-word; overflow-wrap: anywhere;
         }
-        #terminal > * + * { margin-top: 2px; }
+        #chat > * + * { margin-top: 2px; }
         #welcome-msg { text-align: left; padding: 0; }
         .chat-prompt-row {
             display: flex; align-items: baseline; justify-content: flex-end;
@@ -1282,13 +1282,13 @@
             white-space: pre-wrap; word-break: break-word;
             overflow-wrap: anywhere; overflow-y: hidden; min-height: 1.55em;
         }
-        #terminal > .log-entry.md-content {
+        #chat > .log-entry.md-content {
             display: inline-block; max-width: 85%;
             background: rgba(255, 255, 255, 0.028);
             border: 1px solid rgba(255, 255, 255, 0.05);
             border-radius: 10px; padding: 6px 12px; margin: 2px 0;
         }
-        #terminal > .log-entry.md-content:empty { display: none; }
+        #chat > .log-entry.md-content:empty { display: none; }
         .mode-chat-chip {
             display: inline-flex; align-items: center; gap: 4px;
             border-radius: 6px; padding: 1px 7px; font-size: 11px;
@@ -2224,9 +2224,9 @@
             .editor-tab { height: 24px; font-size: 10px; padding: 0 6px 0 8px; gap: 4px; }
             .editor-tab .tab-icon { font-size: 12px; }
             .tab-close { width: 14px; height: 14px; font-size: 11px; }
-            #terminal { padding: 10px 12px; font-size: 12px; }
+            #chat { padding: 10px 12px; font-size: 12px; }
             .chat-bubble { max-width: 88%; padding: 5px 10px; }
-            #terminal > .log-entry.md-content { max-width: 92%; }
+            #chat > .log-entry.md-content { max-width: 92%; }
             .thought-body { font-size: 11px; padding: 4px 8px; max-height: 180px; }
             #bottom-dock-area { flex-direction: column; gap: 4px; }
             #prompt-area { padding: 6px; }
@@ -2255,10 +2255,10 @@
             .win-title span { font-size: 12px; }
             .session-pill-btn { max-width: 160px; }
             .titlebar-folder-btn { max-width: 120px; }
-            #terminal { padding: 12px 16px; }
+            #chat { padding: 12px 16px; }
             #prompt { font-size: 13px; }
             .chat-bubble { max-width: 80%; }
-            #terminal > .log-entry.md-content { max-width: 88%; }
+            #chat > .log-entry.md-content { max-width: 88%; }
             .thought-body { max-height: 220px; }
         }
         @media (min-width: 601px) and (max-width: 1100px) {
@@ -2868,9 +2868,9 @@
         <div id="main-pane">
             <div id="tabs-bar">
                 <div id="tabs-list-container">
-                    <div class="editor-tab active" data-tab="terminal" id="tab-terminal">
-                        <span class="icon" style="font-size: 13px;">terminal</span>
-                        <span>terminal</span>
+                    <div class="editor-tab active" data-tab="chat" id="tab-chat">
+                        <span class="icon" style="font-size: 13px;">chat</span>
+                        <span>chat</span>
                     </div>
                 </div>
 
@@ -2892,9 +2892,9 @@
                 </div>
             </div>
 
-            <div id="terminal-view">
-                <div id="terminal-container">
-                    <div id="terminal"></div>
+            <div id="chat-view">
+                <div id="chat-container">
+                    <div id="chat"></div>
                     <div id="prompt-rail" class="prompt-rail"></div>
                 </div>
             </div>
@@ -3229,8 +3229,8 @@ const state = {
     isRunning: false,
     retryStatusActive: false,
     isSaving: false,
-    openTabs: ['terminal'],
-    activeTab: 'terminal',
+    openTabs: ['chat'],
+    activeTab: 'chat',
     currentEditorPath: null,
     currentDiffFilepath: null,
     diffSideBySide: true,
@@ -4320,7 +4320,7 @@ const SLASH_COMMANDS = [
     { cmd: '/compact', desc: 'Compress conversation history to free up context' },
     { cmd: '/new', desc: 'Create a new blank session' },
     { cmd: '/session', desc: 'Open session list popover' },
-    { cmd: '/clear', desc: 'Reset session: clear messages, terminal, and modified files' },
+    { cmd: '/clear', desc: 'Reset session: clear messages, chat, and modified files' },
     { cmd: '/restore', desc: 'Discard all modified files to original' },
     { cmd: '/help', desc: 'Show commands and keyboard shortcuts' }
 ];
@@ -4693,7 +4693,7 @@ const FILE_ICON_MAP = {
     svg: { icon: 'image', color: 'var(--cyan)' },
     gguf: { icon: 'deployed_code', color: 'var(--cyan)' },
     bin: { icon: 'deployed_code', color: 'var(--dim)' },
-    exe: { icon: 'terminal', color: 'var(--fg)' },
+    exe: { icon: 'chat', color: 'var(--fg)' },
     res: { icon: 'folder_zip', color: 'var(--red)' },
     gitignore: { icon: 'source_environment', color: 'var(--cyan)' }
 };
@@ -4814,7 +4814,7 @@ function initMonaco() {
                         endLine: sel.endLineNumber,
                         code: selectedCode
                     });
-                    switchTab('terminal');
+                    switchTab('chat');
                 }
             });
 
@@ -5069,7 +5069,7 @@ window.addEventListener('keydown', (e) => {
 
         if (state.activeTab && state.activeTab.startsWith('filediff:')) {
             saveDiffModifiedFile();
-        } else if (state.activeTab && state.activeTab !== 'terminal') {
+        } else if (state.activeTab && state.activeTab !== 'chat') {
             saveEditorFile();
         }
         return false;
@@ -6382,7 +6382,7 @@ async function selectInitialSession() {
             : sessionIds[0];
         let activeRecord = await loadSessionRecordFromDB(wsKey, activeId);
         if (!activeRecord) {
-            activeRecord = { id: activeId, title: 'Untitled Session', createdAt: Date.now(), updatedAt: Date.now(), runningTimeMs: 0, messages: [], terminalHTML: '' };
+            activeRecord = { id: activeId, title: 'Untitled Session', createdAt: Date.now(), updatedAt: Date.now(), runningTimeMs: 0, messages: [], chatHTML: '' };
         }
         state.sessions = { [activeId]: activeRecord };
         state.sessionIds = sessionIds;
@@ -6407,7 +6407,7 @@ async function selectInitialSession() {
                 updatedAt: Date.now(),
                 runningTimeMs: 0,
                 messages: [],
-                terminalHTML: ''
+                chatHTML: ''
             }
         };
         state.sessionIds = [defaultId];
@@ -6460,7 +6460,7 @@ async function saveSession(sessionId) {
     if (state.sessions[id]) {
         state.sessions[id].messages = ctx.messages;
         if (isLive) {
-            state.sessions[id].terminalHTML = term.innerHTML;
+            state.sessions[id].chatHTML = term.innerHTML;
             state.sessions[id].openTabs = state.openTabs;
             state.sessions[id].activeTab = state.activeTab;
         }
@@ -6489,7 +6489,7 @@ async function saveSession(sessionId) {
             patch.title = state.sessions[id].title;
         }
         if (isLive) {
-            patch.terminalHTML = state.sessions[id].terminalHTML;
+            patch.chatHTML = state.sessions[id].chatHTML;
             patch.openTabs = state.sessions[id].openTabs;
             patch.activeTab = state.sessions[id].activeTab;
             patch.linesModified = state.sessions[id].linesModified;
@@ -6602,8 +6602,8 @@ async function restoreActiveSessionContent() {
 
     await loadCheckpointForSession(state.activeSessionId);
 
-    if (current.terminalHTML) {
-        term.innerHTML = current.terminalHTML;
+    if (current.chatHTML) {
+        term.innerHTML = current.chatHTML;
         removeAllSkipThinkingButtons();
         rehydrateToolErrorTooltips();
     } else {
@@ -6616,14 +6616,14 @@ async function restoreActiveSessionContent() {
     updateStatusInfo();
     updateWelcomeVisibility();
 
-    const savedTabs = Array.isArray(current.openTabs) && current.openTabs.length ? current.openTabs : ['terminal'];
+    const savedTabs = Array.isArray(current.openTabs) && current.openTabs.length ? current.openTabs : ['chat'];
     state.openTabs = savedTabs.slice();
-    const savedActiveTab = current.activeTab && savedTabs.includes(current.activeTab) ? current.activeTab : 'terminal';
+    const savedActiveTab = current.activeTab && savedTabs.includes(current.activeTab) ? current.activeTab : 'chat';
     try {
         await switchTab(savedActiveTab);
     } catch(e) {
-        state.openTabs = ['terminal'];
-        await switchTab('terminal');
+        state.openTabs = ['chat'];
+        await switchTab('chat');
     }
 }
 
@@ -6684,9 +6684,9 @@ async function createNewSession(title) {
         updatedAt: Date.now(),
         runningTimeMs: 0,
         messages: [],
-        terminalHTML: '',
-        openTabs: ['terminal'],
-        activeTab: 'terminal',
+        chatHTML: '',
+        openTabs: ['chat'],
+        activeTab: 'chat',
         systemPrompt: null
     };
 
@@ -6793,9 +6793,9 @@ async function clearAllSessions() {
             updatedAt: Date.now(),
             runningTimeMs: 0,
             messages: [],
-            terminalHTML: '',
-            openTabs: ['terminal'],
-            activeTab: 'terminal'
+            chatHTML: '',
+            openTabs: ['chat'],
+            activeTab: 'chat'
         }
     };
     state.sessionIds = [newId];
@@ -6943,7 +6943,7 @@ document.addEventListener('click', (e) => {
 });
 
 const tabsListContainer = document.getElementById('tabs-list-container');
-const terminalView = document.getElementById('terminal-view');
+const chatView = document.getElementById('chat-view');
 const editorView = document.getElementById('editor-view');
 const btnTabSave = document.getElementById('btn-tab-save');
 const editorModeToggle = document.getElementById('editor-mode-toggle');
@@ -7002,9 +7002,9 @@ function renderTabs() {
         const isPlan = tabId === PLAN_FILE;
         tab.className = `editor-tab ${isFileDiff ? 'diff-tab' : ''} ${isPlan ? 'plan-tab' : ''} ${state.activeTab === tabId ? 'active' : ''}`;
         
-        if (tabId === 'terminal') {
-            tab.innerHTML = `<span class="icon" style="font-size: 13px;">terminal</span><span>terminal</span>`;
-            tab.addEventListener('click', () => switchTab('terminal'));
+        if (tabId === 'chat') {
+            tab.innerHTML = `<span class="icon" style="font-size: 13px;">chat</span><span>chat</span>`;
+            tab.addEventListener('click', () => switchTab('chat'));
         } else if (isFileDiff) {
             const rest = tabId.replace('filediff:', '');
             const parts = rest.split('::');
@@ -7088,7 +7088,7 @@ tabsListContainer.addEventListener('auxclick', (e) => {
     const tab = e.target.closest('.editor-tab');
     if (!tab) return;
     const tabId = tab.getAttribute('data-tab-id');
-    if (!tabId || tabId === 'terminal') return;
+    if (!tabId || tabId === 'chat') return;
     e.preventDefault();
     closeTab(tabId);
 });
@@ -7161,7 +7161,7 @@ async function closeTab(tabId) {
     }
     state.openTabs = state.openTabs.filter(t => t !== tabId);
     if (state.activeTab === tabId) {
-        switchTab(state.openTabs[state.openTabs.length - 1] || 'terminal');
+        switchTab(state.openTabs[state.openTabs.length - 1] || 'chat');
     } else {
         renderTabs();
         saveActiveSession();
@@ -7184,15 +7184,15 @@ async function switchTab(tabId) {
     updateExplorerSelection();
     saveActiveSession();
 
-    if (tabId === 'terminal') {
+    if (tabId === 'chat') {
         editorView.style.display = 'none';
         diffView.style.display = 'none';
-        terminalView.style.display = 'flex';
+        chatView.style.display = 'flex';
         editorModeToggle.style.display = 'none';
         btnTabSave.style.display = 'none';
         focusPrompt();
     } else if (tabId.startsWith('filediff:')) {
-        terminalView.style.display = 'none';
+        chatView.style.display = 'none';
         editorView.style.display = 'none';
         diffView.style.display = 'flex';
         editorModeToggle.style.display = 'none';
@@ -7203,7 +7203,7 @@ async function switchTab(tabId) {
         const checkpointRange = (parts.length === 3) ? { from: parseInt(parts[1], 10), to: parseInt(parts[2], 10) } : null;
         renderFileDiffView(fp, checkpointRange);
     } else if (tabId.startsWith('attachment:')) {
-        terminalView.style.display = 'none';
+        chatView.style.display = 'none';
         diffView.style.display = 'none';
         editorView.style.display = 'flex';
         state.currentEditorPath = null;
@@ -7246,7 +7246,7 @@ async function switchTab(tabId) {
             attachmentTextPreview.textContent = att.content;
         }
     } else {
-        terminalView.style.display = 'none';
+        chatView.style.display = 'none';
         diffView.style.display = 'none';
         editorView.style.display = 'flex';
         state.currentEditorPath = tabId;
@@ -8114,7 +8114,7 @@ async function syncWorkspace(silent = true) {
 
         await saveWorkspaceCacheToDB(rootHandle.name, registry.meta);
 
-        if (state.activeTab && state.activeTab !== 'terminal' && !state.activeTab.startsWith('filediff:')) {
+        if (state.activeTab && state.activeTab !== 'chat' && !state.activeTab.startsWith('filediff:')) {
             const fp = state.activeTab;
             const meta = newMeta[fp];
             if (meta && meta.kind === 'file' && !meta.isBinary) {
@@ -8286,7 +8286,7 @@ function selectAutocompleteItem(item) {
     }
 }
 
-const term = document.getElementById('terminal');
+const term = document.getElementById('chat');
 const input = document.getElementById('cmd');
 
 // --- Prompt rail (right-side scroll markers) ---
@@ -8385,7 +8385,7 @@ function ensureJumpBtn() {
             term.scrollTop = term.scrollHeight;
             state.userScrolledUp = false;
         });
-        document.getElementById('terminal-container').appendChild(jumpBtn);
+        document.getElementById('chat-container').appendChild(jumpBtn);
     }
     return jumpBtn;
 }
@@ -8500,7 +8500,7 @@ function updatePromptRail() {
 
 // Observe new prompts being added.
 //
-// Watch only direct children of #terminal (no subtree). During streaming,
+// Watch only direct children of #chat (no subtree). During streaming,
 // `reorderSpinnerToBottom()` appends `spinEl` on every ~50ms render tick,
 // which fires a childList mutation every frame. The callback below is
 // rAF-coalesced, but the *rebuild* is gated on the prompt-wrap count so
@@ -8533,7 +8533,7 @@ if (term) {
 }
 
 function focusPrompt() {
-    if (state.activeTab === 'terminal' && document.activeElement !== input) {
+    if (state.activeTab === 'chat' && document.activeElement !== input) {
         input.focus();
     }
 }
@@ -9999,7 +9999,7 @@ async function compressContext(sessionId, { silent = false, manual = false } = {
         finalizeCompressionBox(liveBox, entry);
     } else if (!isLive) {
         const s = state.sessions[sid];
-        if (s) s.terminalHTML = (s.terminalHTML || '') + buildCompressionBoxHTML(entry);
+        if (s) s.chatHTML = (s.chatHTML || '') + buildCompressionBoxHTML(entry);
     }
 
     if (state.sessions[sid]) {
@@ -10604,7 +10604,7 @@ async function commitMsgDelete(promptId, revert) {
     }
 
     updateTokenStatus(state.lastTokenUsage);
-    state.sessions[state.activeSessionId].terminalHTML = term.innerHTML;
+    state.sessions[state.activeSessionId].chatHTML = term.innerHTML;
     updateWelcomeVisibility();
     showToast(`Message deleted${revert ? ' and file changes reverted' : ''}`, 'success');
 }
@@ -10669,7 +10669,7 @@ function print(html, cls = "", sessionId) {
     if (!isLive) {
         const s = state.sessions[sid];
         if (s) {
-            s.terminalHTML = (s.terminalHTML || '') + `<div class="log-entry ${cls}">${normalizeBlockHTML(html)}</div>`;
+            s.chatHTML = (s.chatHTML || '') + `<div class="log-entry ${cls}">${normalizeBlockHTML(html)}</div>`;
         }
         return null;
     }
@@ -10702,7 +10702,7 @@ function updateWelcomeVisibility() {
             div.className = 'log-entry dim';
             div.id = 'welcome-msg';
             div.innerHTML = `
-                <div><span class="welcome-title">Code Agent Terminal</span> - Ready.</div>
+                <div><span class="welcome-title">Code Agent Chat</span> - Ready.</div>
                 <div class="welcome-list">
                     <div>- <b class="yellow">Plan</b>: Creates step-by-step implementation plan in <code class="yellow">.agent_plan.md</code> with zero code edits until approved.</div>
                     <div>- <b class="cyan">Ask</b>: Safe read-only mode to explore, explain, and query codebase.</div>
@@ -11954,7 +11954,7 @@ function closeTabNoConfirm(tabId) {
     if (!state.openTabs.includes(tabId)) return;
     state.openTabs = state.openTabs.filter(t => t !== tabId);
     if (state.activeTab === tabId) {
-        const prevTab = state.openTabs[state.openTabs.length - 1] || 'terminal';
+        const prevTab = state.openTabs[state.openTabs.length - 1] || 'chat';
         switchTab(prevTab);
     }
     if (tabId.startsWith('file:') || tabId.startsWith('filediff:')) {
@@ -13092,7 +13092,7 @@ async function submitPrompt() {
 - <span class="cyan">/compact</span> — Compress conversation history to free up context<br>
 - <span class="cyan">/new</span> — Create a fresh session<br>
 - <span class="cyan">/session</span> — Open top session menu<br>
-- <span class="cyan">/clear</span> — Reset session (clears messages, terminal, modified files)<br>
+- <span class="cyan">/clear</span> — Reset session (clears messages, chat, modified files)<br>
 - <span class="cyan">/restore</span> — Discard all modified files to original baseline<br>
 - <span class="cyan">@&lt;file&gt;</span> — Reference file context in prompt<br>
 - <span class="yellow">ESC</span> — Cancel current generation</div>`, "dim");
