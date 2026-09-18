@@ -1339,6 +1339,68 @@
         .tool-group-header:hover { background: var(--bg-hover); }
         .tool-group-header .icon-chevron { font-size: 14px; color: var(--dim); transition: transform 0.15s ease; }
         .tool-group.collapsed .tool-group-header .icon-chevron { transform: rotate(-90deg); }
+        .tool-group.failed .tool-group-header { background: rgba(229, 192, 123, 0.08); }
+        .tool-group.failed .tool-group-header:hover { background: rgba(229, 192, 123, 0.15); }
+        .tool-group-fail-indicator {
+            color: var(--yellow);
+            margin-left: auto;
+            font-size: 14px;
+            cursor: pointer;
+            position: relative;
+            flex-shrink: 0;
+        }
+        .tool-group-fail-indicator:hover {
+            background: rgba(229, 192, 123, 0.15);
+            border-radius: 4px;
+        }
+        .tool-group-fail-tooltip {
+            position: absolute;
+            top: calc(100% + 4px);
+            right: -4px;
+            z-index: 1000;
+            display: none;
+            box-sizing: border-box;
+            max-width: min(360px, calc(100vw - 40px));
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 5px 8px;
+            pointer-events: none;
+            font-family: var(--font-mono);
+            font-size: 11.5px;
+            color: var(--fg);
+        }
+        .tool-group-fail-tooltip.visible { display: block; }
+        .tool-group-fail-tooltip .tip-item {
+            line-height: 1.4;
+            margin-bottom: 3px;
+            color: var(--dim);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .tool-group-fail-tooltip .tip-item:last-child { margin-bottom: 0; }
+        .tool-group-fail-tooltip .tip-tool-name { color: var(--yellow); }
+        .tool-group-body > .tool-box { margin-left: 16px; }
+        .tool-error-tooltip {
+            position: fixed;
+            z-index: 1000;
+            display: none;
+            box-sizing: border-box;
+            max-width: min(360px, calc(100vw - 24px));
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 5px 8px;
+            pointer-events: none;
+            font-family: var(--font-mono);
+            font-size: 11.5px;
+            color: var(--fg);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .tool-error-tooltip.visible { display: block; }
         .tool-box {
             margin: 0; border: none; border-radius: 4px;
             background: transparent; overflow: hidden;
@@ -6358,6 +6420,7 @@ async function restoreActiveSessionContent() {
     if (current.terminalHTML) {
         term.innerHTML = current.terminalHTML;
         removeAllSkipThinkingButtons();
+        rehydrateToolErrorTooltips();
     } else {
         term.innerHTML = '';
     }
@@ -10778,6 +10841,101 @@ function stopRunningToolBox(box) {
     }
 }
 
+let _sharedToolErrorTip = null;
+function getSharedToolErrorTip() {
+    if (_sharedToolErrorTip) return _sharedToolErrorTip;
+    const tip = document.createElement('div');
+    tip.className = 'tool-error-tooltip';
+    document.body.appendChild(tip);
+    _sharedToolErrorTip = tip;
+    return tip;
+}
+function buildToolErrorTooltip(iconEl, detail) {
+    const tip = getSharedToolErrorTip();
+    const d = truncateFailureDetail(detail);
+    iconEl.addEventListener('mouseenter', () => {
+        tip.textContent = d || '(no details)';
+        const r = iconEl.getBoundingClientRect();
+        tip.style.left = '0px';
+        tip.style.top = '0px';
+        tip.classList.add('visible');
+        const w = tip.offsetWidth, h = tip.offsetHeight;
+        let left = r.right - w + 4;
+        let top = r.bottom + 4;
+        if (left < 12) left = 12;
+        if (top + h > window.innerHeight - 12) top = window.innerHeight - h - 12;
+        tip.style.left = left + 'px';
+        tip.style.top = top + 'px';
+    });
+    iconEl.addEventListener('mouseleave', () => {
+        tip.classList.remove('visible');
+    });
+}
+
+function rehydrateToolErrorTooltips() {
+    document.querySelectorAll('.tool-box.error-box').forEach(box => {
+        const iconEl = box.querySelector('.tool-error-icon');
+        if (!iconEl || iconEl._tipRehydrated) return;
+        const outEl = box.querySelector('.tool-box-body .tool-output-text');
+        let detail = outEl ? outEl.textContent : '';
+        detail = detail.replace(/^\s*\[result\]\s*/i, '');
+        iconEl._tipRehydrated = true;
+        buildToolErrorTooltip(iconEl, detail);
+    });
+    document.querySelectorAll('.tool-group.failed .tool-group-fail-indicator').forEach(indicator => {
+        if (indicator._tipRehydrated) return;
+        indicator._tipRehydrated = true;
+        indicator.addEventListener('mouseenter', () => {
+            const tip = indicator.querySelector('.tool-group-fail-tooltip');
+            if (tip) tip.classList.add('visible');
+        });
+        indicator.addEventListener('mouseleave', () => {
+            const tip = indicator.querySelector('.tool-group-fail-tooltip');
+            if (tip) tip.classList.remove('visible');
+        });
+    });
+}
+
+function truncateFailureDetail(detail) {
+    if (typeof detail !== 'string') return '';
+    let s = detail.replace(/\s+/g, ' ').trim();
+    if (!s) return '';
+    return s.length > 120 ? s.slice(0, 117) + '…' : s;
+}
+
+function markToolGroupFailed(container, toolName, detail) {
+    if (!container) return;
+    const header = container.querySelector('.tool-group-header');
+    if (!header) return;
+    if (!container.classList.contains('failed')) container.classList.add('failed');
+    const failures = container._toolGroupFailures || (container._toolGroupFailures = []);
+    failures.push({ tool: toolName || 'tool', detail: truncateFailureDetail(detail) });
+
+    let indicator = header.querySelector('.tool-group-fail-indicator');
+    if (!indicator) {
+        indicator = document.createElement('span');
+        indicator.className = 'icon tool-group-fail-indicator';
+        indicator.textContent = 'error';
+        header.appendChild(indicator);
+        indicator.addEventListener('mouseenter', () => {
+            const tip = indicator.querySelector('.tool-group-fail-tooltip');
+            if (tip) tip.classList.add('visible');
+        });
+        indicator.addEventListener('mouseleave', () => {
+            const tip = indicator.querySelector('.tool-group-fail-tooltip');
+            if (tip) tip.classList.remove('visible');
+        });
+    }
+
+    let itemsHtml = '';
+    failures.forEach(f => {
+        itemsHtml += `<div class="tip-item"><span class="tip-tool-name">${escapeHTML(f.tool)}</span> ${escapeHTML(f.detail || '(no details)')}</div>`;
+    });
+    const oldTip = indicator.querySelector('.tool-group-fail-tooltip');
+    if (oldTip) oldTip.remove();
+    indicator.insertAdjacentHTML('beforeend', `<div class="tool-group-fail-tooltip">${itemsHtml}</div>`);
+}
+
 function safeRenderToolCallBox(toolName, args, resultOutput, isDone = false, isError = false, container = null, existingBox = null, sessionId) {
     const sid = sessionId || state.activeSessionId;
     if (sid !== state.activeSessionId) {
@@ -10812,12 +10970,16 @@ function safeRenderToolCallBox(toolName, args, resultOutput, isDone = false, isE
                     ${toolIOIndicatorHTML(toolName)}
                     <span class="tool-badge custom-tool">${escapeHTML(toolName || 'tool')}</span>
                     <span class="tool-summary">(display error)</span>
-                    <span class="icon" style="font-size:14px; color:var(--red); margin-left:auto;">error</span>
+                    <span class="icon tool-error-icon" style="font-size:14px; color:var(--red); margin-left:auto;">error</span>
                 </div>
                 <div class="tool-box-body">
                     <div class="tool-output-text error-output-text">${escapeHTML(String(resultOutput ?? '(no output)'))}</div>
                 </div>
             `);
+            if (isError) {
+                const iconEl = box.querySelector('.tool-error-icon');
+                if (iconEl) buildToolErrorTooltip(iconEl, resultOutput);
+            }
             if (!existingBox) {
                 const gen = getGenState(sid);
                 const target = container ? (container.querySelector('.tool-group-body') || container) : term;
@@ -10984,12 +11146,16 @@ function renderToolCallBox(toolName, args, resultOutput, isDone = false, isError
             ${toolIOIndicatorHTML(toolName)}
             <span class="tool-badge ${isBuiltinBadge ? toolName : 'custom-tool'}">${escapeHTML(toolName)}</span>
             <span class="tool-summary">${escapeHTML(summaryText)}</span>
-            <span class="icon" style="font-size:14px; color:${statusColor}; margin-left:auto;">${statusIcon}</span>
+            <span class="icon ${isError ? 'tool-error-icon' : ''}" style="font-size:14px; color:${statusColor}; margin-left:auto;">${statusIcon}</span>
         </div>
         <div class="tool-box-body">
             ${innerContentHTML}
         </div>
     `);
+    if (isError) {
+        const iconEl = box.querySelector('.tool-error-icon');
+        if (iconEl) buildToolErrorTooltip(iconEl, resultOutput);
+    }
 
     const target = container ? (container.querySelector('.tool-group-body') || container) : term;
     if (existingBox && existingBox.isConnected) {
@@ -13339,6 +13505,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                     if (!validation.valid) {
                         const errMsg = `ERROR: Invalid arguments for tool "${call.function.name}":\n- ${validation.errors.join('\n- ')}`;
                         safeRenderToolCallBox(call.function.name, args, errMsg, false, true, toolGroupContainer, null, runSessionId);
+                        markToolGroupFailed(toolGroupContainer, call.function.name, errMsg);
                         runCtx.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: errMsg });
                         runGen.hasNewContent = true;
                         saveSession(runSessionId);
@@ -13362,6 +13529,8 @@ async function runTask(task, blameId, imageUrls, sessionId) {
 
                     const resStr = String(resObj.output);
                     const resIsError = resStr.startsWith('ERROR:');
+
+                    if (resIsError) markToolGroupFailed(toolGroupContainer, call.function.name, resStr);
 
                     if (!usesToolBox) {
                         if (resStr.trim()) {
