@@ -2304,7 +2304,7 @@
                 </label>
 
                 <label class="cleardata-option">
-                    <input type="checkbox" id="cleardata-opt-models" checked>
+                    <input type="checkbox" id="cleardata-opt-models">
                     <div class="cleardata-option-text">
                         <span class="cleardata-option-title"><span class="icon">tune</span>Model Settings</span>
                         <span class="cleardata-option-desc">Configured providers, models, and the currently selected model.</span>
@@ -2312,10 +2312,18 @@
                 </label>
 
                 <label class="cleardata-option">
+                    <input type="checkbox" id="cleardata-opt-custom-tools">
+                    <div class="cleardata-option-text">
+                        <span class="cleardata-option-title"><span class="icon">engineering</span>Custom Tools</span>
+                        <span class="cleardata-option-desc">Your custom tool definitions and their permissions/lock states.</span>
+                    </div>
+                </label>
+
+                <label class="cleardata-option">
                     <input type="checkbox" id="cleardata-opt-settings" checked>
                     <div class="cleardata-option-text">
                         <span class="cleardata-option-title"><span class="icon">settings</span>Settings</span>
-                        <span class="cleardata-option-desc">General preferences, mode prompts, tool permissions, prompt history, caches, and recent folders.</span>
+                        <span class="cleardata-option-desc">General preferences, mode prompts, prompt history, caches, and recent folders.</span>
                     </div>
                 </label>
             </div>
@@ -2941,9 +2949,9 @@ const AppConfig = {
 // (e.g. app_config_json) falls under the "settings" bucket by default.
 const CLEARDATA_LS_KEYS = {
     models: ['models_json', 'selected_model'],
+    customTools: ['tool_files_json', 'tool_lock_state', 'tool_deleted_names', 'tool_perm_state'],
     settings: [
-        'app_config_json', 'mode_prompts_json', 'tool_files_json', 'tool_lock_state',
-        'tool_deleted_names', 'tool_perm_state', 'prompt-history', 'last_mode',
+        'app_config_json', 'mode_prompts_json', 'prompt-history', 'last_mode',
         'recent_folders_json'
     ]
 };
@@ -2967,7 +2975,7 @@ function clearLocalStorageKeys(keys) {
     });
 }
 
-// opts: { checkpoints: bool, sessions: bool, models: bool, settings: bool }
+// opts: { checkpoints: bool, sessions: bool, models: bool, customTools: bool, settings: bool }
 async function clearSelectedData(opts) {
     if (opts.checkpoints) {
         await clearIDBStore(STORE_BASELINES);
@@ -2977,6 +2985,9 @@ async function clearSelectedData(opts) {
     }
     if (opts.models) {
         clearLocalStorageKeys(CLEARDATA_LS_KEYS.models);
+    }
+    if (opts.customTools) {
+        clearLocalStorageKeys(CLEARDATA_LS_KEYS.customTools);
     }
     if (opts.settings) {
         clearLocalStorageKeys(CLEARDATA_LS_KEYS.settings);
@@ -9831,6 +9842,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         checkpoints: document.getElementById('cleardata-opt-checkpoints'),
         sessions: document.getElementById('cleardata-opt-sessions'),
         models: document.getElementById('cleardata-opt-models'),
+        customTools: document.getElementById('cleardata-opt-custom-tools'),
         settings: document.getElementById('cleardata-opt-settings')
     };
     document.getElementById('cleardata-modal-close').addEventListener('click', closeClearDataModal);
@@ -9849,9 +9861,10 @@ window.addEventListener('DOMContentLoaded', async () => {
             checkpoints: cdCheckboxes.checkpoints.checked,
             sessions: cdCheckboxes.sessions.checked,
             models: cdCheckboxes.models.checked,
+            customTools: cdCheckboxes.customTools.checked,
             settings: cdCheckboxes.settings.checked
         };
-        if (!opts.checkpoints && !opts.sessions && !opts.models && !opts.settings) {
+        if (!opts.checkpoints && !opts.sessions && !opts.models && !opts.customTools && !opts.settings) {
             closeClearDataModal();
             return;
         }
