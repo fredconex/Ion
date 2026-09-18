@@ -1860,6 +1860,31 @@
             position: relative; background: var(--bg-input);
             border: 1px solid var(--border); border-radius: 10px; padding: 4px;
         }
+        #prompt-attach {
+            font-weight: bold; user-select: none;
+            background: transparent; border: none; padding: 0;
+            cursor: pointer; font-family: inherit; display: flex;
+            align-items: center; justify-content: center;
+            width: 32px; min-height: 32px; border-radius: 5px;
+            flex-shrink: 0; color: var(--cyan); position: relative;
+            transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        }
+        #prompt-attach:hover { background: rgba(86, 182, 194, 0.15); }
+        .attach-menu {
+            position: absolute; left: 0; bottom: calc(100% + 4px);
+            display: flex; flex-direction: column; gap: 2px;
+            background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 8px; padding: 4px; z-index: 1000;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+            min-width: 140px;
+        }
+        .attach-menu-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 7px 10px; border-radius: 6px; cursor: pointer;
+            font-size: 13px; color: var(--fg);
+        }
+        .attach-menu-item:hover { background: rgba(86, 182, 194, 0.15); }
+        .attach-menu-item .icon { flex-shrink: 0; }
         #prompt-symbol {
             font-weight: bold; font-size: 16px; user-select: none;
             background: transparent; border: none; padding: 0;
@@ -2844,6 +2869,21 @@
                     <div id="prompt-attachments"></div>
 
                     <div id="prompt-input-row">
+                        <button id="prompt-attach" type="button" title="Attach files or images">
+                            <span class="icon" style="font-size:16px;">add</span>
+                        </button>
+                        <div id="attach-menu" class="attach-menu" style="display:none;">
+                            <div class="attach-menu-item" data-attach-type="doc">
+                                <span class="icon" style="font-size:16px; color:var(--yellow);">description</span>
+                                <span>Documents</span>
+                            </div>
+                            <div class="attach-menu-item" data-attach-type="image">
+                                <span class="icon" style="font-size:16px; color:var(--green);">image</span>
+                                <span>Images</span>
+                            </div>
+                        </div>
+                        <input type="file" id="prompt-attach-input" multiple accept="image/*" style="display:none;" />
+                        <input type="file" id="prompt-attach-doc-input" multiple accept=".txt,.md,.json,.js,.html,.css,.csv,.log,.py,.rs,.java,.go,.sh,.yml,.yaml,.xml,.ts,.tsx,.jsx,.ini,.toml,.srt,.vtt" style="display:none;" />
                         <div id="autocomplete-popup"></div>
                         <textarea id="cmd" placeholder="Ask agent or type / for commands, @ for files..." rows="1" spellcheck="false" autofocus></textarea>
                         <button id="prompt-symbol" class="magenta" type="button" title="Send prompt">&gt;</button>
@@ -6963,6 +7003,7 @@ async function switchTab(tabId) {
         editorView.style.display = 'flex';
         state.currentEditorPath = tabId;
         hideEditorSaveError();
+        attachmentTextPreview.style.display = 'none';
 
         const isImage = /\.(png|jpg|jpeg|gif|ico|svg|webp)$/i.test(tabId);
         const meta = registry.meta[tabId];
@@ -7143,6 +7184,80 @@ function removeReference(idx) {
     renderAttachmentChips();
     focusPrompt();
 }
+
+async function handleAttachFile(file) {
+    const ext = (file.name.match(/\.([a-zA-Z0-9]+)$/)?.[1] || '').toLowerCase();
+    const isImage = file.type && file.type.startsWith('image/');
+    const isText = file.type && file.type.startsWith('text/') || ['txt','md','json','js','html','css','csv','log','py','rs','java','go','sh','yml','yaml','xml','ts','tsx','jsx','ini','toml','srt','vtt'].includes(ext);
+    try {
+        if (isImage) {
+            const dataUrl = await toPngDataUrl(file);
+            pastedImageCounter++;
+            attachReference({
+                type: 'image',
+                name: file.name || `attached-image-${pastedImageCounter}.${ext || 'png'}`,
+                dataUrl,
+                mimeType: 'image/png'
+            });
+        } else if (isText) {
+            const text = await file.text();
+            pastedTextCounter++;
+            attachReference({
+                type: 'paste',
+                name: file.name || `attached-text-${pastedTextCounter}.txt`,
+                content: text,
+                lineCount: text.split('\n').length
+            });
+        } else {
+            showToast(`Unsupported file type: ${file.name}`, 'error');
+        }
+    } catch (err) {
+        showToast(`Could not read file: ${err.message}`, 'error');
+    }
+}
+
+(function () {
+    const attachBtn = document.getElementById('prompt-attach');
+    const attachMenu = document.getElementById('attach-menu');
+    const attachInput = document.getElementById('prompt-attach-input');
+    const attachDocInput = document.getElementById('prompt-attach-doc-input');
+    if (!attachBtn || !attachMenu || !attachInput) return;
+
+    const closeMenu = () => { attachMenu.style.display = 'none'; };
+    attachBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        attachMenu.style.display = attachMenu.style.display === 'flex' ? 'none' : 'flex';
+    });
+    document.addEventListener('click', (e) => {
+        if (attachMenu.contains(e.target)) return;
+        if (e.target === attachBtn || attachBtn.contains(e.target)) return;
+        closeMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeMenu();
+    });
+
+    const processFiles = async (input) => {
+        const files = Array.from(input.files);
+        input.value = '';
+        closeMenu();
+        for (const f of files) {
+            await handleAttachFile(f);
+        }
+    };
+    attachInput.addEventListener('change', () => processFiles(attachInput));
+    if (attachDocInput) attachDocInput.addEventListener('change', () => processFiles(attachDocInput));
+
+    attachMenu.querySelectorAll('.attach-menu-item').forEach((item) => {
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const type = item.getAttribute('data-attach-type');
+            if (type === 'image') attachInput.click();
+            else attachDocInput.click();
+            closeMenu();
+        });
+    });
+})();
 
 function renderAttachmentChips() {
     promptAttachments.innerHTML = '';
@@ -7917,6 +8032,35 @@ function readFileAsDataURL(file) {
     });
 }
 
+/**
+ * Re-encode a file (image) as a PNG data-URL so the model receives PNG regardless of the
+ * original format (JPEG, WebP, GIF, etc.).
+ */
+async function toPngDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth || img.width;
+                canvas.height = img.naturalHeight || img.height;
+                if (!canvas.width || !canvas.height) {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                }
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                resolve(canvas.toDataURL('image/png'));
+            };
+            img.onerror = () => reject(new Error('Failed to load image'));
+            img.src = reader.result;
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+    });
+}
+
 input.addEventListener('paste', async (e) => {
     const items = e.clipboardData && e.clipboardData.items;
     if (!items) return;
@@ -7927,14 +8071,14 @@ input.addEventListener('paste', async (e) => {
         const file = imageItem.getAsFile();
         if (!file) return;
         try {
-            const dataUrl = await readFileAsDataURL(file);
+            const dataUrl = await toPngDataUrl(file);
             pastedImageCounter++;
             const ext = (file.type.split('/')[1] || 'png').split('+')[0];
             attachReference({
                 type: 'image',
                 name: file.name && file.name !== 'image.png' ? file.name : `pasted-image-${pastedImageCounter}.${ext}`,
                 dataUrl,
-                mimeType: file.type
+                mimeType: 'image/png'
             });
         } catch (err) {
             showToast(`Could not read pasted image: ${err.message}`, 'error');
