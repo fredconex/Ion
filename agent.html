@@ -10476,6 +10476,11 @@ function commitInlineEdit(promptId) {
     const editSid = state.activeSessionId;
     if (state.sessions[editSid]) {
         state.sessions[editSid].messages = state.messages;
+        if (msgIdx === 0) {
+            state.sessions[editSid]._titleGenerated = false;
+            state.sessions[editSid].title = 'Untitled Session';
+            updateSessionPillLabel();
+        }
     }
     const editGen = getGenState(editSid);
     editGen.hasNewContent = true;
