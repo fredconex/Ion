@@ -412,8 +412,9 @@
         #newtool-modal {
             background: var(--bg-panel); border: 1px solid var(--border-highlight);
             border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,0.9);
-            width: 420px; max-width: 92vw;
+            width: 680px; max-width: 94vw;
             display: flex; flex-direction: column; animation: fadeIn 0.12s ease-out;
+            max-height: 88vh;
         }
         #newtool-modal-header {
             display: flex; align-items: center; justify-content: space-between;
@@ -460,6 +461,87 @@
         #newtool-modal-error {
             display: none; font-size: 11px; color: var(--red); margin-top: 8px; line-height: 1.4;
         }
+        #newtool-modal-body { overflow-y: auto; }
+        #newtool-columns {
+            display: flex; align-items: stretch; gap: 14px;
+        }
+        #newtool-col-local, #newtool-col-browse {
+            flex: 1; min-width: 0; display: flex; flex-direction: column;
+        }
+        #newtool-col-divider {
+            width: 1px; background: var(--border); flex-shrink: 0;
+        }
+        #newtool-col-header {
+            display: flex; align-items: center; gap: 6px;
+            margin-bottom: 10px; color: var(--dim);
+            font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.03em;
+        }
+        #newtool-col-header .icon { font-size: 13px; }
+        #newtool-browse-toolbar {
+            display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+        }
+        #newtool-browse-search {
+            flex: 1; background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 6px; padding: 6px 8px; color: var(--fg);
+            font-family: var(--font-mono); font-size: 11.5px; outline: none;
+        }
+        #newtool-browse-search:focus { border-color: var(--border-highlight); }
+        #newtool-browse-refresh {
+            width: 28px; height: 28px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px;
+            color: var(--dim); cursor: pointer;
+        }
+        #newtool-browse-refresh:hover { color: var(--fg); border-color: var(--border-highlight); }
+        #newtool-browse-refresh .icon { font-size: 15px; }
+        #newtool-browse-refresh.spinning .icon { animation: spin 0.8s linear infinite; }
+        #newtool-browse-list {
+            height: 220px; overflow-y: auto;
+            border: 1px solid var(--border); border-radius: 8px;
+            background: rgba(255,255,255,0.015);
+            display: flex; flex-direction: column;
+        }
+        .newtool-browse-row {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 10px; cursor: grab;
+            border-bottom: 1px solid var(--border);
+            font-family: var(--font-mono); font-size: 11.5px; color: var(--fg);
+            transition: opacity 0.15s ease;
+        }
+        .newtool-browse-row:last-child { border-bottom: none; }
+        .newtool-browse-row:hover { background: rgba(86, 182, 194, 0.08); }
+        .newtool-browse-row.selected { background: rgba(86, 182, 194, 0.14); }
+        .newtool-browse-row.dragging { opacity: 0.4; cursor: grabbing; }
+        .newtool-browse-row .icon { font-size: 15px; color: var(--dim); flex-shrink: 0; }
+        .newtool-browse-row.selected .icon { color: var(--cyan); }
+        .newtool-browse-row.installed { cursor: default; }
+        .newtool-browse-row.installed .icon { color: var(--green); }
+        .newtool-browse-row.installed .newtool-browse-row-name { color: var(--dim); }
+        .newtool-browse-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .newtool-browse-row-size { font-size: 10px; color: var(--dim); flex-shrink: 0; }
+        #newtool-browse-status {
+            display: flex; align-items: center; justify-content: center;
+            gap: 8px; padding: 20px 10px; color: var(--dim); font-size: 11.5px;
+            text-align: center; flex-direction: column;
+        }
+        #newtool-browse-status .icon { font-size: 20px; }
+        #newtool-browse-preview {
+            display: none; margin-top: 10px; border: 1px solid var(--border); border-radius: 8px;
+            overflow: hidden;
+        }
+        #newtool-browse-preview-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 6px 10px; background: rgba(255,255,255,0.03);
+            border-bottom: 1px solid var(--border);
+            font-size: 10.5px; color: var(--dim); font-family: var(--font-mono);
+        }
+        #newtool-browse-preview-code {
+            margin: 0; padding: 8px 10px; max-height: 110px; overflow: auto;
+            font-family: var(--font-mono); font-size: 11px; color: var(--fg);
+            white-space: normal; line-height: 1.5;
+        }
+        #newtool-browse-preview-code.dim-placeholder { color: var(--dim); font-style: italic; }
         #newtool-modal-footer {
             display: flex; align-items: center; justify-content: flex-end; gap: 8px;
             padding: 12px 14px; border-top: 1px solid var(--border); flex-shrink: 0;
@@ -2502,7 +2584,7 @@
             </div>
 
             <div class="about-name">Ion</div>
-            <span class="about-version">v0.1.7</span>
+            <span class="about-version">v0.1.8</span>
 
             <hr class="about-divider">
 
@@ -2531,23 +2613,56 @@
                 </button>
             </div>
             <div id="newtool-modal-body">
-                <div class="settings-field-row">
-                    <label for="newtool-name-input">Tool name</label>
-                    <input type="text" id="newtool-name-input" placeholder="e.g. get_weather" autocomplete="off" spellcheck="false">
-                </div>
+                <div id="newtool-columns">
+                    <div id="newtool-col-browse">
+                        <div id="newtool-col-header">
+                            <span class="icon" style="font-size:13px;">code</span>
+                            <span>Browse GitHub</span>
+                        </div>
+                        <div id="newtool-browse-toolbar">
+                            <input type="text" id="newtool-browse-search" placeholder="Filter tools..." autocomplete="off" spellcheck="false">
+                            <button type="button" id="newtool-browse-refresh" title="Refresh">
+                                <span class="icon">refresh</span>
+                            </button>
+                        </div>
+                        <div id="newtool-browse-list"></div>
+                        <div id="newtool-browse-preview">
+                            <div id="newtool-browse-preview-header">
+                                <span id="newtool-browse-preview-name"></span>
+                                <a id="newtool-browse-preview-link" href="#" target="_blank" rel="noopener noreferrer" title="View on GitHub" style="color: var(--dim); display:flex; align-items:center;">
+                                    <span class="icon" style="font-size:13px;">open_in_new</span>
+                                </a>
+                            </div>
+                            <div id="newtool-browse-preview-code"></div>
+                        </div>
+                    </div>
 
-                <div id="newtool-dropzone" tabindex="0">
-                    <span class="icon">upload_file</span>
-                    <div id="newtool-dropzone-text"><strong>Drop a .js file</strong> here or click to browse</div>
-                    <div id="newtool-dropzone-hint">The tool name and code will be filled in automatically</div>
-                    <input type="file" id="newtool-file-input" accept=".js,text/javascript" style="display:none">
-                </div>
-                <div id="newtool-file-picked">
-                    <span class="icon">description</span>
-                    <span id="newtool-file-picked-name"></span>
-                    <button type="button" class="newtool-file-clear" title="Remove file">
-                        <span class="icon" style="font-size:14px;">close</span>
-                    </button>
+                    <div id="newtool-col-divider"></div>
+
+                    <div id="newtool-col-local">
+                        <div id="newtool-col-header">
+                            <span class="icon" style="font-size:13px;">edit_note</span>
+                            <span>Local</span>
+                        </div>
+                        <div class="settings-field-row">
+                            <label for="newtool-name-input">Tool name</label>
+                            <input type="text" id="newtool-name-input" placeholder="e.g. my_tool" autocomplete="off" spellcheck="false">
+                        </div>
+
+                        <div id="newtool-dropzone" tabindex="0">
+                            <span class="icon">upload_file</span>
+                            <div id="newtool-dropzone-text"><strong>Drop a .js file</strong> here, drag a tool from the list, or click to browse</div>
+                            <div id="newtool-dropzone-hint">The tool name and code will be filled in automatically</div>
+                            <input type="file" id="newtool-file-input" accept=".js,text/javascript" style="display:none">
+                        </div>
+                        <div id="newtool-file-picked">
+                            <span class="icon">description</span>
+                            <span id="newtool-file-picked-name"></span>
+                            <button type="button" class="newtool-file-clear" title="Remove file">
+                                <span class="icon" style="font-size:14px;">close</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div id="newtool-modal-error"></div>
@@ -3525,151 +3640,10 @@ function seedBuiltinToolSources() {
     if (err) return err;
     return \`Renamed \${args.filepath} to \${args.new_name}\`;
 `),
-
-        duckduckgo_search: buildToolFileSource({
-            name: 'duckduckgo_search',
-            description: 'Search the web via DuckDuckGo and return the top results (title, url, snippet).',
-            parameters: { type: "object", properties: { query: { type: "string", description: "Search query" } }, required: ["query"] },
-            modes: ['plan', 'ask', 'code'],
-            permission: 'never'
-        }, `
-    const res = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(args.query));
-    if (!res.ok) return \`ERROR: DuckDuckGo request failed (HTTP \${res.status})\`;
-    const html = await res.text();
-
-    function decodeEntities(s) {
-        return s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-                .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
-    }
-    function stripTags(s) {
-        return decodeEntities(s.replace(/<[^>]*>/g, '')).trim();
-    }
-
-    const results = [];
-    const blockRe = /<div[^>]*class="[^"]*\\bresult\\b[^"]*"[\\s\\S]*?(?=<div[^>]*class="[^"]*\\bresult\\b[^"]*"|$)/g;
-    const linkRe = /<a[^>]*class="[^"]*\\bresult__a\\b[^"]*"[^>]*href="([^"]*)"[^>]*>([\\s\\S]*?)<\\/a>/;
-    const snippetRe = /<a[^>]*class="[^"]*\\bresult__snippet\\b[^"]*"[^>]*>([\\s\\S]*?)<\\/a>/;
-
-    let block;
-    while ((block = blockRe.exec(html)) !== null && results.length < 8) {
-        const chunk = block[0];
-        const linkMatch = linkRe.exec(chunk);
-        if (!linkMatch) continue;
-        let url = linkMatch[1];
-        const m = url.match(/uddg=([^&]+)/);
-        if (m) url = decodeURIComponent(m[1]);
-        const title = stripTags(linkMatch[2]);
-        const snippetMatch = snippetRe.exec(chunk);
-        const snippet = snippetMatch ? stripTags(snippetMatch[1]) : '';
-        if (title) results.push({ title, url, snippet });
-    }
-
-    if (!results.length) return "(no results)";
-    return results.map((r, i) => \`\${i + 1}. \${r.title}\\n\${r.url}\\n\${r.snippet}\`).join('\\n\\n');
-`),
-
-        fetch_url: buildToolFileSource({
-            name: 'fetch_url',
-            description: 'Fetch a web page or file by URL and return its text content. Tries a direct request first, then falls back to a public read-only CORS proxy for sites that block cross-origin requests (browsers cannot bypass CORS otherwise).',
-            parameters: { type: "object", properties: { url: { type: "string", description: "Full URL, including https://" }, raw: { type: "boolean", description: "If true, return the raw response body (e.g. JSON/HTML) instead of extracting readable text from HTML. Default false." } }, required: ["url"] },
-            modes: ['plan', 'ask', 'code'],
-            permission: 'never'
-        }, `
-    // Validate URL and filter out local paths, non-HTTP protocols, and localhost
-    let parsedUrl;
-    try {
-        parsedUrl = new URL(args.url);
-    } catch {
-        return \`ERROR: Invalid URL "\${args.url}". Only valid http:// and https:// URLs are supported (local file paths are not allowed).\`;
-    }
-
-    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-        return \`ERROR: Unsupported protocol "\${parsedUrl.protocol}". Local files (like file://) cannot be fetched; only http:// and https:// URLs are allowed.\`;
-    }
-
-    const hostname = parsedUrl.hostname.toLowerCase();
-    const isLocalHost = hostname === 'localhost' ||
-                        hostname === '127.0.0.1' ||
-                        hostname === '0.0.0.0' ||
-                        hostname === '::1' ||
-                        hostname.endsWith('.local');
-    if (isLocalHost) {
-        return \`ERROR: Localhost requests (\${parsedUrl.hostname}) are not supported.\`;
-    }
-
-    const MAX_CHARS = 15000;
-    const TIMEOUT_MS = 12000;
-
-    function extractReadableText(html) {
-        let text = html
-            .replace(/<!--[\\s\\S]*?-->/g, ' ')
-            .replace(/<(script|style|noscript|svg|head)[^>]*>[\\s\\S]*?<\\/\\1>/gi, ' ')
-            .replace(/<br\\s*\\/?>/gi, '\\n')
-            .replace(/<\\/(p|div|li|tr|h[1-6])>/gi, '\\n')
-            .replace(/<[^>]+>/g, ' ');
-        text = text
-            .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-            .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
-        return text.replace(/[ \\t]+/g, ' ').replace(/\\n{3,}/g, '\\n\\n').trim();
-    }
-
-    async function tryFetch(url, label) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-        try {
-            const res = await fetch(url, { signal: controller.signal });
-            if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
-            const contentType = res.headers.get('content-type') || '';
-            const text = await res.text();
-            if (!text || !text.trim()) throw new Error('empty response');
-            return { text, contentType, label };
-        } catch (e) {
-            if (e.name === 'AbortError') throw new Error(\`timed out after \${TIMEOUT_MS / 1000}s\`);
-            throw new Error(e.message === 'Failed to fetch' ? 'blocked (network/CORS error)' : e.message);
-        } finally {
-            clearTimeout(timer);
-        }
-    }
-
-    const attempts = [
-        { url: parsedUrl.href, label: 'direct' },
-        { url: 'https://r.jina.ai/' + parsedUrl.href, label: 'r.jina.ai' },
-        { url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent(parsedUrl.href), label: 'allorigins.win' },
-        { url: 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(parsedUrl.href), label: 'codetabs.com' },
-        { url: 'https://corsproxy.io/?url=' + encodeURIComponent(parsedUrl.href), label: 'corsproxy.io' }
-    ];
-
-    let result = null;
-    const errors = [];
-    for (const attempt of attempts) {
-        try {
-            result = await tryFetch(attempt.url, attempt.label);
-            break;
-        } catch (e) {
-            errors.push(\`\${attempt.label}: \${e.message}\`);
-        }
-    }
-
-    if (!result) {
-        return \`ERROR: Could not fetch \${parsedUrl.href} - direct request and all proxy fallbacks failed:\\n\${errors.join('\\n')}\\n\\n(Public proxies have no uptime guarantee and can rate-limit or block certain sites/regions. If this keeps happening for the same URL, the site itself may be actively blocking proxy IP ranges.)\`;
-    }
-
-    let output = result.text;
-    const isHtml = result.contentType.includes('html') || /^\\s*<!doctype html|^\\s*<html/i.test(output);
-    if (isHtml && !args.raw) {
-        output = extractReadableText(output);
-    }
-
-    const truncated = output.length > MAX_CHARS;
-    if (truncated) output = output.slice(0, MAX_CHARS);
-
-    return \`[fetched via \${result.label}]\\n\\n\${output}\${truncated ? \`\\n\\n...[truncated, \${result.text.length} total chars]\` : ''}\`;
-`)
     };
 }
 
 const BUILTIN_TOOL_NAMES = ['read', 'edit', 'write', 'grep', 'find', 'rename'];
-const DEFAULT_CUSTOM_TOOL_NAMES = ['duckduckgo_search', 'fetch_url'];
 
 const TOOL_IO_READ_ONLY = new Set(['read', 'grep', 'find']);
 const TOOL_IO_WRITE = new Set(['edit', 'write', 'rename']);
@@ -3788,10 +3762,11 @@ function registerToolsVirtualFiles() {
     const seeded = seedBuiltinToolSources();
 
     Object.keys(persisted).forEach(name => {
+        if (wasToolEverDeleted(name)) return;
         registry.files[toolFilePath(name)] = persisted[name];
     });
 
-    BUILTIN_TOOL_NAMES.concat(DEFAULT_CUSTOM_TOOL_NAMES).forEach(name => {
+    BUILTIN_TOOL_NAMES.forEach(name => {
         const fp = toolFilePath(name);
         if (registry.files[fp] === undefined && persisted[name] === undefined && !wasToolEverDeleted(name)) {
             registry.files[fp] = seeded[name];
@@ -3929,6 +3904,12 @@ async function deleteToolFile(name, fileName) {
     saveToolPermState(permState);
     forgetPersistedToolFile(toolName);
     markToolDeleted(toolName);
+    // fileKey can differ from toolName (e.g. TOOL_META.name mismatched the
+    // on-disk file name) - clear both so the file can't resurrect via either key.
+    if (fileKey !== toolName) {
+        forgetPersistedToolFile(fileKey);
+        markToolDeleted(fileKey);
+    }
     // Tool files are normally virtual (localStorage-backed), but if a real
     // folder is open and this tool's file actually exists on disk (e.g. it
     // was picked up from an existing .agent/tools directory), remove it
@@ -9697,7 +9678,16 @@ function renderToolsList() {
 
     customPanel.appendChild(customLabelRow);
 
-    customTools.forEach(tool => customPanel.appendChild(buildToolRow(tool)));
+    if (customTools.length === 0) {
+        const customNote = document.createElement('div');
+        customNote.className = 'ct-empty-note';
+        customNote.style.marginLeft = '8px';
+        customNote.style.marginBottom = '6px';
+        customNote.innerText = 'Hmm feels empty here,\nClick on "+" to add custom tools';
+        customPanel.appendChild(customNote);
+    } else {
+        customTools.forEach(tool => customPanel.appendChild(buildToolRow(tool)));
+    }
     toolsListEl.appendChild(customPanel);
 
     if (!builtinTools.length && !customTools.length) {
@@ -12940,8 +12930,6 @@ function describeToolAction(name, args) {
         case 'grep': return `Search pattern "${args.pattern || ''}"`;
         case 'find': return `Find files "${args.pattern || ''}"`;
         case 'rename': return `Rename ${args.filepath || ''} to ${args.new_name || ''}`;
-        case 'duckduckgo_search': return `Search DuckDuckGo for "${args.query || ''}"`;
-        case 'fetch_url': return `Fetch ${args.url || ''}`;
         default: {
             const firstVal = Object.values(args)[0];
             const preview = typeof firstVal === 'string' ? firstVal.slice(0, 70) : JSON.stringify(args).slice(0, 60);
@@ -14027,6 +14015,7 @@ document.getElementById('about-modal-overlay').addEventListener('click', (e) => 
 const newToolModalOverlay = document.getElementById('newtool-modal-overlay');
 const newToolNameInput = document.getElementById('newtool-name-input');
 const newToolDropzone = document.getElementById('newtool-dropzone');
+const newToolDropzoneText = document.getElementById('newtool-dropzone-text');
 const newToolFileInput = document.getElementById('newtool-file-input');
 const newToolFilePicked = document.getElementById('newtool-file-picked');
 const newToolFilePickedName = document.getElementById('newtool-file-picked-name');
@@ -14035,6 +14024,212 @@ const newToolCreateBtn = document.getElementById('newtool-create');
 
 let newToolDroppedSource = null; // raw text content of the dropped/picked .js file
 let newToolNameAutoFilled = false; // whether the name field was auto-filled from a file (vs typed by the user)
+
+// --- Browse GitHub tab (custom_tools directory) ---
+const GITHUB_TOOLS_REPO = 'fredconex/Ion-tools';   // owner/repo
+const GITHUB_TOOLS_BRANCH = 'main';          // branch to browse
+const GITHUB_TOOLS_PATH = '';    // directory containing .js tools
+
+const newToolBrowseList = document.getElementById('newtool-browse-list');
+const newToolBrowseSearch = document.getElementById('newtool-browse-search');
+const newToolBrowseRefresh = document.getElementById('newtool-browse-refresh');
+const newToolBrowsePreview = document.getElementById('newtool-browse-preview');
+const newToolBrowsePreviewName = document.getElementById('newtool-browse-preview-name');
+const newToolBrowsePreviewLink = document.getElementById('newtool-browse-preview-link');
+const newToolBrowsePreviewCode = document.getElementById('newtool-browse-preview-code');
+
+let newToolBrowseFiles = null;      // cached listing: [{name, download_url, html_url, size}]
+let newToolBrowseSelected = null;   // currently selected entry
+let newToolDraggedGithubEntry = null; // entry currently being dragged onto the dropzone
+
+function newToolBrowseSetStatus(html) {
+    newToolBrowseList.innerHTML = `<div id="newtool-browse-status">${html}</div>`;
+}
+
+async function loadGithubToolsList(forceRefresh) {
+    newToolBrowseSelected = null;
+    newToolBrowsePreview.style.display = 'none';
+    newToolBrowseRefresh.classList.add('spinning');
+    newToolBrowseSetStatus('<span class="icon">hourglass_top</span><span>Loading tools from GitHub…</span>');
+    try {
+        const apiUrl = `https://api.github.com/repos/${GITHUB_TOOLS_REPO}/contents/${encodeURIComponent(GITHUB_TOOLS_PATH)}?ref=${encodeURIComponent(GITHUB_TOOLS_BRANCH)}`;
+        const resp = await fetch(apiUrl, { headers: { 'Accept': 'application/vnd.github+json' } });
+        if (!resp.ok) {
+            if (resp.status === 404) {
+                newToolBrowseFiles = [];
+                newToolBrowseSetStatus(`<span class="icon">folder_off</span><span>No <code>${GITHUB_TOOLS_PATH}/</code> directory found in ${GITHUB_TOOLS_REPO}.</span>`);
+                return;
+            }
+            if (resp.status === 403) {
+                newToolBrowseFiles = null;
+                newToolBrowseSetStatus('<span class="icon">warning</span><span>GitHub rate limit hit. Try again in a bit.</span>');
+                return;
+            }
+            throw new Error(`GitHub API responded ${resp.status}`);
+        }
+        const data = await resp.json();
+        newToolBrowseFiles = (Array.isArray(data) ? data : [])
+            .filter(entry => entry.type === 'file' && /\.js$/i.test(entry.name))
+            .sort((a, b) => a.name.localeCompare(b.name));
+        renderGithubToolsList();
+    } catch (e) {
+        newToolBrowseFiles = null;
+        newToolBrowseSetStatus(`<span class="icon">error</span><span>Could not reach GitHub: ${(e && e.message) ? e.message : 'network error'}</span>`);
+    } finally {
+        newToolBrowseRefresh.classList.remove('spinning');
+    }
+}
+
+function isGithubEntryInstalled(entry) {
+    // Prefer an accurate check using the parsed TOOL_META.name if we've already
+    // fetched this file (e.g. it was previewed); otherwise fall back to matching
+    // by on-disk file name, which covers the common case where they line up.
+    if (entry._source) {
+        const name = deriveToolNameFromFile(entry.name, entry._source);
+        return !!toolRegistry[name];
+    }
+    const fileKey = entry.name.replace(/\.js$/i, '');
+    return Object.values(toolRegistry).some(t => (t.fileName || t.name) === fileKey);
+}
+
+function renderGithubToolsList() {
+    if (!newToolBrowseFiles) return;
+    const filter = (newToolBrowseSearch.value || '').trim().toLowerCase();
+    const files = filter
+        ? newToolBrowseFiles.filter(f => f.name.toLowerCase().includes(filter))
+        : newToolBrowseFiles;
+
+    if (!files.length) {
+        newToolBrowseSetStatus(filter
+            ? '<span class="icon">search_off</span><span>No tools match that filter.</span>'
+            : `<span class="icon">folder_off</span><span>No .js tools found in <code>${GITHUB_TOOLS_PATH}/</code>.</span>`);
+        return;
+    }
+
+    newToolBrowseList.innerHTML = '';
+    files.forEach(entry => {
+        const row = document.createElement('div');
+        row.className = 'newtool-browse-row';
+        const installed = isGithubEntryInstalled(entry);
+        row.draggable = !installed;
+        if (newToolBrowseSelected && newToolBrowseSelected.name === entry.name) row.classList.add('selected');
+        if (installed) row.classList.add('installed');
+        row.innerHTML = `
+            <span class="icon">${installed ? 'check_circle' : 'drag_indicator'}</span>
+            <span class="newtool-browse-row-name">${entry.name}</span>
+            <span class="newtool-browse-row-size">${installed ? 'Installed' : formatBytes(entry.size)}</span>
+        `;
+        row.addEventListener('click', () => selectGithubTool(entry));
+        row.addEventListener('dragstart', (e) => {
+            newToolDraggedGithubEntry = entry;
+            e.dataTransfer.effectAllowed = 'copy';
+            e.dataTransfer.setData('text/plain', entry.name);
+            row.classList.add('dragging');
+        });
+        row.addEventListener('dragend', () => {
+            row.classList.remove('dragging');
+            newToolDraggedGithubEntry = null;
+        });
+        newToolBrowseList.appendChild(row);
+    });
+}
+
+function formatBytes(n) {
+    if (typeof n !== 'number') return '';
+    if (n < 1024) return `${n} B`;
+    return `${(n / 1024).toFixed(1)} KB`;
+}
+
+async function selectGithubTool(entry) {
+    newToolBrowseSelected = entry;
+    // A GitHub selection takes priority over any local dropzone pick.
+    newToolClearFile();
+    renderGithubToolsList();
+    newToolUpdateCreateLabel();
+    newToolShowError('');
+    newToolBrowsePreview.style.display = 'block';
+    newToolBrowsePreviewName.textContent = entry.name;
+    newToolBrowsePreviewLink.href = entry.html_url || '#';
+    newToolBrowsePreviewCode.className = 'dim-placeholder';
+    newToolBrowsePreviewCode.textContent = 'Loading…';
+    try {
+        const resp = await fetch(entry.download_url);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const text = await resp.text();
+        entry._source = text; // cache for install
+        const meta = parseToolMeta(text);
+        const desc = meta && (meta.description || '').trim();
+        newToolBrowsePreviewCode.className = desc ? '' : 'dim-placeholder';
+        newToolBrowsePreviewCode.textContent = desc || (meta ? 'No description provided.' : 'No TOOL_META found in this file.');
+    } catch (e) {
+        newToolBrowsePreviewCode.className = 'dim-placeholder';
+        newToolBrowsePreviewCode.textContent = `Could not load file: ${(e && e.message) ? e.message : 'network error'}`;
+    }
+}
+
+newToolBrowseSearch.addEventListener('input', () => renderGithubToolsList());
+newToolBrowseRefresh.addEventListener('click', () => loadGithubToolsList(true));
+
+async function installGithubEntry(entry) {
+    let source = entry._source;
+    if (typeof source !== 'string') {
+        try {
+            const resp = await fetch(entry.download_url);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            source = await resp.text();
+            entry._source = source;
+        } catch (e) {
+            newToolShowError(`Could not download that tool: ${(e && e.message) ? e.message : 'network error'}`);
+            return false;
+        }
+    }
+    const name = deriveToolNameFromFile(entry.name, source);
+    const result = createToolFile(name, source);
+    if (!result.ok) {
+        newToolShowError(result.error);
+        return false;
+    }
+    renderExplorerTree();
+    renderToolsList();
+    showToast(`Installed ${entry.name} as ${result.path}`, 'success');
+    renderGithubToolsList();
+    return true;
+}
+
+async function installSelectedGithubTool() {
+    const entry = newToolBrowseSelected;
+    if (!entry) {
+        newToolShowError('Select a tool from the list first.');
+        return;
+    }
+    const ok = await installGithubEntry(entry);
+    if (!ok) return;
+    closeNewToolModal();
+}
+
+async function handleDroppedGithubEntry(entry) {
+    newToolShowError('');
+    if (isGithubEntryInstalled(entry)) {
+        newToolShowError(`"${entry.name}" is already installed.`);
+        return;
+    }
+    let source = entry._source;
+    if (typeof source !== 'string') {
+        newToolDropzoneText.textContent = 'Downloading…';
+        try {
+            const resp = await fetch(entry.download_url);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            source = await resp.text();
+            entry._source = source;
+        } catch (e) {
+            newToolShowError(`Could not download that tool: ${(e && e.message) ? e.message : 'network error'}`);
+            newToolDropzoneText.innerHTML = '<strong>Drop a .js file</strong> here, drag a tool from the list, or click to browse';
+            return;
+        }
+        newToolDropzoneText.innerHTML = '<strong>Drop a .js file</strong> here, drag a tool from the list, or click to browse';
+    }
+    handleNewToolFile(new File([source], entry.name, { type: 'text/javascript' }));
+}
 
 function newToolShowError(msg) {
     if (!msg) {
@@ -14052,14 +14247,29 @@ function newToolClearFile() {
     newToolFilePicked.style.display = 'none';
     newToolFilePickedName.textContent = '';
     newToolShowError('');
+    newToolUpdateCreateLabel();
+}
+
+function newToolUpdateCreateLabel() {
+    newToolCreateBtn.textContent = (!newToolDroppedSource && newToolBrowseSelected) ? 'Install' : 'Create';
 }
 
 function openNewToolModal() {
     newToolNameInput.value = '';
     newToolNameAutoFilled = false;
     newToolClearFile();
+    newToolBrowseSelected = null;
+    newToolBrowsePreview.style.display = 'none';
+    newToolBrowseSearch.value = '';
+    newToolShowError('');
+    newToolUpdateCreateLabel();
     newToolModalOverlay.style.display = 'flex';
     setTimeout(() => newToolNameInput.focus(), 0);
+    if (!newToolBrowseFiles) {
+        loadGithubToolsList();
+    } else {
+        renderGithubToolsList();
+    }
 }
 
 function closeNewToolModal() {
@@ -14093,6 +14303,11 @@ async function handleNewToolFile(file) {
     newToolDroppedSource = text;
     newToolFilePickedName.textContent = file.name;
     newToolFilePicked.style.display = 'flex';
+    // A local file takes priority over any GitHub selection.
+    newToolBrowseSelected = null;
+    newToolBrowsePreview.style.display = 'none';
+    renderGithubToolsList();
+    newToolUpdateCreateLabel();
 
     // Auto-fill the name field unless the user has already typed a custom name.
     if (!newToolNameInput.value.trim() || newToolNameAutoFilled) {
@@ -14125,7 +14340,13 @@ newToolDropzone.addEventListener('drop', (e) => {
     e.preventDefault(); e.stopPropagation();
     newToolDropzone.classList.remove('dragover');
     const file = e.dataTransfer.files && e.dataTransfer.files[0];
-    if (file) handleNewToolFile(file);
+    if (file) {
+        handleNewToolFile(file);
+        return;
+    }
+    if (newToolDraggedGithubEntry) {
+        handleDroppedGithubEntry(newToolDraggedGithubEntry);
+    }
 });
 
 document.querySelector('#newtool-file-picked .newtool-file-clear').addEventListener('click', () => {
@@ -14138,6 +14359,10 @@ newToolNameInput.addEventListener('input', () => {
 });
 
 newToolCreateBtn.addEventListener('click', async () => {
+    if (!newToolDroppedSource && newToolBrowseSelected) {
+        await installSelectedGithubTool();
+        return;
+    }
     const name = newToolNameInput.value.trim();
     if (!name) {
         newToolShowError('Please enter a tool name.');
@@ -14152,7 +14377,12 @@ newToolCreateBtn.addEventListener('click', async () => {
     closeNewToolModal();
     renderExplorerTree();
     renderToolsList();
-    await openFileTab(result.path);
+    if (!newToolDroppedSource) {
+        // Only auto-open the editor for a brand-new blank tool (nothing to
+        // review yet). A dropped .js file already has content, so leave the
+        // user on whatever tab they were on instead of yanking them into it.
+        await openFileTab(result.path);
+    }
     showToast(`Created ${result.path}`, 'success');
 });
 
