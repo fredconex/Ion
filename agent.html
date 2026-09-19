@@ -961,6 +961,35 @@
         .ct-item-badge.builtin { background: rgba(158,206,106,0.15); color: var(--green, #9ece6a); }
         .ct-item-badge.broken { background: rgba(224,108,117,0.15); color: var(--red, #e06c75); }
         .ct-empty-note { font-size: 10.5px; color: var(--dim); padding: 4px 0 8px; }
+        .ct-item-wrap { display: flex; flex-direction: column; border-bottom: 1px solid rgba(255, 255, 255, 0.03); }
+        .ct-item-wrap .ct-item-row { border-bottom: none; }
+        .ct-icon-btn.settings-toggle.active { color: var(--cyan); }
+        .ct-tool-settings-panel {
+            display: flex; flex-direction: column; gap: 8px;
+            padding: 8px 8px 10px 24px; margin-top: -2px;
+            background: rgba(0, 0, 0, 0.175);
+            border-top: 1px solid rgba(0, 0, 0, 0.4);
+            border-radius: 0 0 6px 6px;
+        }
+        .ct-item-wrap.expanded {
+            background: rgba(0, 0, 0, 0.12);
+            border-radius: 6px;
+            border-bottom: none;
+        }
+        .ct-tool-setting-row {
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        }
+        .ct-tool-setting-label { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+        .ct-tool-setting-label .name { font-size: 10.5px; color: var(--fg); font-weight: 600; }
+        .ct-tool-setting-label .desc { font-size: 9.5px; color: var(--dim); }
+        .ct-tool-setting-row input[type="number"],
+        .ct-tool-setting-row input[type="text"],
+        .ct-tool-setting-row select {
+            width: 110px; flex-shrink: 0; background: var(--bg-input);
+            border: 1px solid var(--border); border-radius: 5px;
+            color: var(--fg); font-family: var(--font-mono); font-size: 11px;
+            padding: 3px 6px;
+        }
         .tri-switch {
             display: inline-flex; background: var(--bg-main);
             border: 1px solid var(--border); border-radius: 6px;
@@ -2807,10 +2836,6 @@
                             </div>
                             <div class="settings-panel-body">
                                 <div class="settings-field-row">
-                                    <label>Max Read Lines:</label>
-                                    <input type="number" id="settings-read-lines" value="500" min="1" max="100000">
-                                </div>
-                                <div class="settings-field-row">
                                     <label>Thinking Timeout (seconds, -1 = disabled):</label>
                                     <input type="number" id="settings-thinking-timeout" value="-1" min="-1" max="3600">
                                 </div>
@@ -3257,7 +3282,7 @@ const AppConfig = {
 // localStorage keys grouped by clear-data category; unlisted keys default to "settings".
 const CLEARDATA_LS_KEYS = {
     models: ['models_json', 'selected_model'],
-    customTools: ['tool_files_json', 'tool_lock_state', 'tool_deleted_names', 'tool_perm_state'],
+    customTools: ['tool_files_json', 'tool_lock_state', 'tool_deleted_names', 'tool_perm_state', 'tool_settings_state'],
     settings: [
         'app_config_json', 'mode_prompts_json', 'prompt-history', 'last_mode',
         'recent_folders_json'
@@ -3412,6 +3437,62 @@ function parseToolMeta(source) {
     }
 }
 
+const TOOL_SETTING_TYPES = ['number', 'text', 'boolean', 'select'];
+
+// Validates/normalizes a TOOL_META.settings entry. Returns null if the entry is unusable
+// (missing key, bad type, select with no options) so it can be dropped rather than crash a tool.
+function normalizeToolSetting(raw) {
+    if (!raw || typeof raw !== 'object' || typeof raw.key !== 'string' || !raw.key) return null;
+    const type = TOOL_SETTING_TYPES.includes(raw.type) ? raw.type : 'text';
+    const entry = {
+        key: raw.key,
+        label: typeof raw.label === 'string' && raw.label ? raw.label : raw.key,
+        type,
+        description: typeof raw.description === 'string' ? raw.description : ''
+    };
+    if (type === 'number') {
+        entry.default = Number.isFinite(Number(raw.default)) ? Number(raw.default) : 0;
+        if (raw.min !== undefined && Number.isFinite(Number(raw.min))) entry.min = Number(raw.min);
+        if (raw.max !== undefined && Number.isFinite(Number(raw.max))) entry.max = Number(raw.max);
+    } else if (type === 'boolean') {
+        entry.default = !!raw.default;
+    } else if (type === 'select') {
+        entry.options = Array.isArray(raw.options) ? raw.options.filter(o => typeof o === 'string' && o) : [];
+        if (!entry.options.length) return null;
+        entry.default = entry.options.includes(raw.default) ? raw.default : entry.options[0];
+    } else {
+        entry.default = typeof raw.default === 'string' ? raw.default : (raw.default !== undefined ? String(raw.default) : '');
+    }
+    return entry;
+}
+
+function normalizeToolSettingsList(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    const seen = new Set();
+    for (const r of raw) {
+        const s = normalizeToolSetting(r);
+        if (s && !seen.has(s.key)) { seen.add(s.key); out.push(s); }
+    }
+    return out;
+}
+
+// Coerces a stored/raw value to match a setting's declared type, falling back to its default.
+function coerceToolSettingValue(settingDef, value) {
+    if (!settingDef) return value;
+    if (settingDef.type === 'number') {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return settingDef.default;
+        let v = n;
+        if (settingDef.min !== undefined) v = Math.max(settingDef.min, v);
+        if (settingDef.max !== undefined) v = Math.min(settingDef.max, v);
+        return v;
+    }
+    if (settingDef.type === 'boolean') return !!value;
+    if (settingDef.type === 'select') return settingDef.options.includes(value) ? value : settingDef.default;
+    return (typeof value === 'string') ? value : settingDef.default;
+}
+
 let toolRegistry = {};
 
 function toolFilePath(name) {
@@ -3452,8 +3533,10 @@ function buildToolFileSource(meta, handlerBody) {
         parameters: meta.parameters || { type: "object", properties: {} },
         modes: Array.isArray(meta.modes) ? meta.modes : ['plan', 'ask', 'code'],
         permission: ['never', 'ask', 'always'].includes(meta.permission) ? meta.permission : 'ask',
-        toolBox: Number(meta.toolBox) === 0 ? 0 : 1
+        toolBox: Number(meta.toolBox) === 0 ? 0 : 1,
+        settings: Array.isArray(meta.settings) ? meta.settings : undefined
     };
+    if (metaObj.settings === undefined) delete metaObj.settings;
     const metaJson = JSON.stringify(metaObj, null, 4).replace(/\n/g, '\n');
     return `// ${meta.name} - tool definition.
 const TOOL_META = ${metaJson};
@@ -3471,7 +3554,10 @@ function seedBuiltinToolSources() {
             description: 'Read lines or full contents of a file. If the requested range is larger than the configured line limit, the content is evenly sampled across the range instead of truncated.',
             parameters: { type: "object", properties: { filepath: { type: "string" }, start_line: { type: "integer" }, end_line: { type: "integer" } }, required: ["filepath"] },
             modes: ['plan', 'ask', 'code'],
-            permission: 'always'
+            permission: 'always',
+            settings: [
+                { key: 'maxLines', label: 'Max Read Lines', type: 'number', default: 500, min: 1, max: 100000, description: 'Largest number of lines returned in one read; larger ranges are evenly sampled.' }
+            ]
         }, `
     if (await api.isBinary(args.filepath)) {
         return \`ERROR: \${args.filepath} is a binary file and cannot be read as text.\`;
@@ -3483,7 +3569,7 @@ function seedBuiltinToolSources() {
     const lines = txt.split('\\n');
     const totalLines = lines.length;
     const s = Math.max(1, args.start_line || 1);
-    const maxLines = await api.getMaxReadLines();
+    const maxLines = await api.getSetting('maxLines');
     const requestedEnd = Math.min(totalLines, args.end_line || totalLines);
     const requestedLineCount = Math.max(0, requestedEnd - s + 1);
 
@@ -3554,14 +3640,17 @@ function seedBuiltinToolSources() {
             description: 'Search for regex or text string across files with line numbers.',
             parameters: { type: "object", properties: { pattern: { type: "string" }, path: { type: "string", description: "Optional subfolder or filename filter" }, case_sensitive: { type: "boolean" } }, required: ["pattern"] },
             modes: ['plan', 'ask', 'code'],
-            permission: 'always'
+            permission: 'always',
+            settings: [
+                { key: 'maxMatches', label: 'Max Matches', type: 'number', default: 500, min: 1, max: 100000, description: 'Largest number of matching lines returned before results are truncated.' }
+            ]
         }, `
     let res = [];
     let flags = args.case_sensitive ? '' : 'i';
     let re;
     try { re = new RegExp(args.pattern, flags); } catch(e) { re = new RegExp(args.pattern.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$&'), flags); }
 
-    const maxLines = await api.getMaxReadLines();
+    const maxLines = await api.getSetting('maxMatches');
     const allFiles = await api.listFiles();
     const binaryFlags = await Promise.all(allFiles.map(f => api.isBinary(f)));
     const filesToSearch = allFiles.filter((f, i) => !binaryFlags[i]);
@@ -3656,12 +3745,13 @@ function forgetPersistedToolFile(name) {
 }
 
 function toolMetaError(name, msg) {
-    return { name, description: '', parameters: { type: "object", properties: {} }, modes: [], permission: 'never', toolBox: 1, code: '', locked: true, builtin: false, error: msg };
+    return { name, description: '', parameters: { type: "object", properties: {} }, modes: [], permission: 'never', toolBox: 1, code: '', locked: true, builtin: false, error: msg, settings: [], settingsValues: {} };
 }
 
 function rebuildToolRegistryFromFiles() {
     const lockState = loadToolLockState();
     const permState = loadToolPermState();
+    const settingsState = loadToolSettingsState();
     const next = {};
     Object.keys(registry.files).forEach(fp => {
         if (!fp.startsWith(TOOLS_DIR + '/') || !fp.endsWith('.js')) return;
@@ -3676,6 +3766,19 @@ function rebuildToolRegistryFromFiles() {
             return;
         }
         const defaultPermission = ['never', 'ask', 'always'].includes(meta.permission) ? meta.permission : 'ask';
+        const settingsDefs = normalizeToolSettingsList(meta.settings);
+        const storedValues = settingsState[meta.name] || {};
+        const settingsValues = {};
+        settingsDefs.forEach(def => {
+            if (storedValues[def.key] !== undefined) {
+                settingsValues[def.key] = coerceToolSettingValue(def, storedValues[def.key]);
+            } else if (meta.name === 'read' && def.key === 'maxLines' && AppConfig.get('read-lines') !== undefined) {
+                // One-time migration: carry over the old global "Max Read Lines" setting.
+                settingsValues[def.key] = coerceToolSettingValue(def, AppConfig.get('read-lines'));
+            } else {
+                settingsValues[def.key] = def.default;
+            }
+        });
         next[meta.name] = {
             name: meta.name,
             description: meta.description || '',
@@ -3683,6 +3786,8 @@ function rebuildToolRegistryFromFiles() {
             modes: Array.isArray(meta.modes) ? meta.modes : ['plan', 'ask', 'code'],
             permission: permState[meta.name] !== undefined ? permState[meta.name] : defaultPermission,
             toolBox: Number(meta.toolBox) === 0 ? 0 : 1,
+            settings: settingsDefs,
+            settingsValues,
             code: extractHandlerBody(source),
             builtin: isBuiltin,
             locked: lockState[meta.name] !== undefined ? lockState[meta.name] : isBuiltin,
@@ -8558,7 +8663,6 @@ input.addEventListener('input', () => {
 
 const settingsPopover = document.getElementById('settings-popover');
 const btnSettingsToggle = document.getElementById('btn-settings-toggle');
-const readLinesInput = document.getElementById('settings-read-lines');
 
 // --- Top-of-prompt model select dropdown (custom: native <select> can't render bold model + dim provider per row) ---
 const modelSelectBtn = document.getElementById('model-select-btn');
@@ -9423,7 +9527,75 @@ const toolsListEl = document.getElementById('tools-list');
 const PERMISSION_LABELS = { never: 'never', ask: 'ask', always: 'always' };
 const MODE_LABELS = { plan: 'Plan', ask: 'Ask', code: 'Code' };
 
+// Renders one input row for a tool-declared setting, wired to read/write it via
+// getToolSettingValue/setToolSettingValue. Returns an HTMLElement.
+function buildToolSettingRow(tool, def) {
+    const row = document.createElement('div');
+    row.className = 'ct-tool-setting-row';
+    const value = getToolSettingValue(tool.name, def.key);
+
+    let controlHTML;
+    if (def.type === 'boolean') {
+        controlHTML = `<div class="tri-switch duo-switch" data-setting-bool="${escapeHTML(def.key)}">
+            <button class="tri-btn off ${!value ? 'active off' : ''}" data-val="off">off</button>
+            <button class="tri-btn on ${value ? 'active on' : ''}" data-val="on">on</button>
+        </div>`;
+    } else if (def.type === 'select') {
+        controlHTML = `<select data-setting-input="${escapeHTML(def.key)}">
+            ${def.options.map(o => `<option value="${escapeHTML(o)}" ${o === value ? 'selected' : ''}>${escapeHTML(o)}</option>`).join('')}
+        </select>`;
+    } else if (def.type === 'number') {
+        const minAttr = def.min !== undefined ? ` min="${def.min}"` : '';
+        const maxAttr = def.max !== undefined ? ` max="${def.max}"` : '';
+        controlHTML = `<input type="number" data-setting-input="${escapeHTML(def.key)}" value="${escapeHTML(String(value))}"${minAttr}${maxAttr}>`;
+    } else {
+        controlHTML = `<input type="text" data-setting-input="${escapeHTML(def.key)}" value="${escapeHTML(String(value))}">`;
+    }
+
+    row.innerHTML = `
+        <div class="ct-tool-setting-label" title="${escapeHTML(def.description || '')}">
+            <span class="name">${escapeHTML(def.label)}</span>
+            ${def.description ? `<span class="desc">${escapeHTML(def.description)}</span>` : ''}
+        </div>
+        ${controlHTML}
+    `;
+
+    const boolSwitch = row.querySelector('[data-setting-bool]');
+    if (boolSwitch) {
+        boolSwitch.querySelectorAll('.tri-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOn = btn.getAttribute('data-val') === 'on';
+                setToolSettingValue(tool.name, def.key, isOn);
+                setDuoSwitch(boolSwitch, isOn);
+            });
+        });
+    }
+    const input = row.querySelector('[data-setting-input]');
+    if (input) {
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('change', (e) => {
+            setToolSettingValue(tool.name, def.key, e.target.value);
+        });
+    }
+
+    return row;
+}
+
+function collapseToolPanel(wrap) {
+    const panel = wrap.querySelector('.ct-tool-settings-panel');
+    const toggleBtn = wrap.querySelector('[data-toggle-tool-settings]');
+    if (panel && panel.style.display !== 'none') {
+        panel.style.display = 'none';
+        wrap.classList.remove('expanded');
+        if (toggleBtn) toggleBtn.classList.remove('active');
+    }
+}
+
 function buildToolRow(tool) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ct-item-wrap';
+
     const row = document.createElement('div');
     row.className = 'ct-item-row';
 
@@ -9434,13 +9606,18 @@ function buildToolRow(tool) {
 
     const modesLabel = (tool.modes || []).map(m => MODE_LABELS[m] || m).join(', ') || 'no modes';
     const titleAttr = tool.error ? tool.error : `${tool.description || ''}\nModes: ${modesLabel}`;
+    const hasSettings = Array.isArray(tool.settings) && tool.settings.length > 0;
 
     row.innerHTML = `
         <button class="ct-icon-btn lock-btn ${tool.locked ? 'locked' : ''}" data-lock-tool="${escapeHTML(tool.name)}" title="${tool.locked ? 'Locked - the model cannot modify this tool file. Click to unlock.' : 'Unlocked - the model can modify this tool file. Click to lock.'}">
             <span class="icon" style="font-size:15px;">${tool.locked ? 'lock' : 'lock_open'}</span>
         </button>
-        <span class="ct-item-name" title="${escapeHTML(titleAttr)}" data-open-tool="${escapeHTML(tool.name)}" style="cursor:pointer;">${escapeHTML(tool.name)}${badge}</span>
+        <span class="ct-item-name" title="${escapeHTML(titleAttr)}" data-open-tool="${escapeHTML(tool.name)}"${hasSettings ? ' style="cursor:pointer;"' : ''}>${escapeHTML(tool.name)}${badge}</span>
         <div class="ct-item-actions">
+            ${hasSettings
+                ? `<button class="ct-icon-btn settings-toggle" data-toggle-tool-settings="${escapeHTML(tool.name)}" title="Tool settings"><span class="icon" style="font-size:15px;">tune</span></button>`
+                : ''
+            }
             ${isRestorableAgentFile(toolFilePath(tool.fileName || tool.name))
                 ? (isToolModified(tool.name)
                     ? `<button class="ct-icon-btn" data-reset-tool="${escapeHTML(tool.name)}" title="Restore to built-in default"><span class="icon" style="font-size:15px;">restart_alt</span></button>`
@@ -9457,9 +9634,22 @@ function buildToolRow(tool) {
 
     row.querySelector('[data-open-tool]').addEventListener('click', (e) => {
         e.stopPropagation();
-        openFileTab(toolFilePath(tool.fileName || tool.name));
-        settingsPopover.style.display = 'none';
-        btnSettingsToggle.classList.remove('active');
+        if (!hasSettings) return;
+        const panel = wrap.querySelector('.ct-tool-settings-panel');
+        const toggleBtn = row.querySelector('[data-toggle-tool-settings]');
+        if (panel) {
+            const open = panel.style.display !== 'none';
+            if (open) {
+                collapseToolPanel(wrap);
+            } else {
+                toolsListEl.querySelectorAll('.ct-item-wrap').forEach(w => {
+                    if (w !== wrap) collapseToolPanel(w);
+                });
+                panel.style.display = 'flex';
+                wrap.classList.add('expanded');
+                if (toggleBtn) toggleBtn.classList.add('active');
+            }
+        }
     });
 
     row.querySelector('[data-lock-tool]').addEventListener('click', (e) => {
@@ -9504,7 +9694,33 @@ function buildToolRow(tool) {
         });
     }
 
-    return row;
+    wrap.appendChild(row);
+
+    if (hasSettings) {
+        const panel = document.createElement('div');
+        panel.className = 'ct-tool-settings-panel';
+        panel.style.display = 'none';
+        tool.settings.forEach(def => panel.appendChild(buildToolSettingRow(tool, def)));
+        wrap.appendChild(panel);
+
+        row.querySelector('[data-toggle-tool-settings]').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const btn = e.currentTarget;
+            const open = panel.style.display !== 'none';
+            if (open) {
+                collapseToolPanel(wrap);
+            } else {
+                toolsListEl.querySelectorAll('.ct-item-wrap').forEach(w => {
+                    if (w !== wrap) collapseToolPanel(w);
+                });
+                panel.style.display = 'flex';
+                wrap.classList.add('expanded');
+                btn.classList.add('active');
+            }
+        });
+    }
+
+    return wrap;
 }
 
 function loadToolPermState() {
@@ -9523,6 +9739,37 @@ function setToolPermission(name, val) {
     const permState = loadToolPermState();
     permState[name] = val;
     saveToolPermState(permState);
+}
+
+// Per-tool custom settings (declared by each tool's TOOL_META.settings), stored as
+// { [toolName]: { [settingKey]: value } }.
+function loadToolSettingsState() {
+    try {
+        const stored = JSON.parse(localStorage.getItem('tool_settings_state') || '{}');
+        return (stored && typeof stored === 'object') ? stored : {};
+    } catch(e) { return {}; }
+}
+function saveToolSettingsState(state) {
+    localStorage.setItem('tool_settings_state', JSON.stringify(state));
+}
+function setToolSettingValue(toolName, key, val) {
+    const tool = toolRegistry[toolName];
+    if (!tool) return;
+    const def = (tool.settings || []).find(s => s.key === key);
+    const coerced = coerceToolSettingValue(def, val);
+    if (!tool.settingsValues) tool.settingsValues = {};
+    tool.settingsValues[key] = coerced;
+    const state = loadToolSettingsState();
+    if (!state[toolName]) state[toolName] = {};
+    state[toolName][key] = coerced;
+    saveToolSettingsState(state);
+}
+function getToolSettingValue(toolName, key) {
+    const tool = toolRegistry[toolName];
+    if (!tool) return undefined;
+    if (tool.settingsValues && tool.settingsValues[key] !== undefined) return tool.settingsValues[key];
+    const def = (tool.settings || []).find(s => s.key === key);
+    return def ? def.default : undefined;
 }
 
 function setDuoSwitch(el, isOn) {
@@ -9706,7 +9953,6 @@ function applyWindowMode(mode) {
 }
 
 function applyConfigToUI() {
-    readLinesInput.value = AppConfig.get('read-lines', '500');
     document.getElementById('settings-thinking-timeout').value = AppConfig.get('thinking-timeout', '-1');
     setDuoSwitch(document.getElementById('settings-keep-skipped-thinking'), AppConfig.get('keep-skipped-thinking') === "true");
     setDuoSwitch(document.getElementById('settings-glow-enabled'), AppConfig.get('glow-enabled', 'true') !== 'false');
@@ -10139,7 +10385,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     const hist = localStorage.getItem('prompt-history');
     if (hist) { try { state.promptHistory = JSON.parse(hist); } catch(e) {} }
 
-    readLinesInput.addEventListener('input', e => AppConfig.set('read-lines', e.target.value));
     document.getElementById('settings-thinking-timeout').addEventListener('input', e => AppConfig.set('thinking-timeout', e.target.value));
     initDuoSwitch('settings-keep-skipped-thinking', isOn => AppConfig.set('keep-skipped-thinking', isOn ? "true" : "false"));
     initDuoSwitch('settings-glow-enabled', isOn => {
@@ -12664,7 +12909,9 @@ async function runTool(runId, toolMeta, args) {
         isSensitiveFile: (fp) => callApi(runId, 'isSensitiveFile', [fp]),
         applySearchReplace: (original, searchBlock, replaceBlock) => applySearchReplace(original, searchBlock, replaceBlock),
         cleanupText: (text) => cleanupText(text),
-        getMaxReadLines: () => callApi(runId, 'getMaxReadLines', [])
+        // Reads a value the tool declared in TOOL_META.settings (by key), as configured by the user
+        // in Settings for this specific tool. Falls back to that setting's declared default.
+        getSetting: (key) => callApi(runId, 'getSetting', [key])
     };
     try {
         // toolMeta.code may declare top-level helpers; evaluate as a factory so they share scope with handler.
@@ -12737,7 +12984,9 @@ const TOOL_API_METHODS = {
     fileExists: async (toolName, [fp]) => !!registry.meta[fp] && !isSecurityProtectedPath(fp) && !isSensitiveUserFile(fp) && !shouldHideFromTools(fp),
     isBinary: async (toolName, [fp]) => !!registry.meta[fp]?.isBinary,
     isSensitiveFile: async (toolName, [fp]) => isSensitiveUserFile(fp),
-    getMaxReadLines: async () => Math.max(1, parseInt(document.getElementById('settings-read-lines').value, 10) || 500)
+    // Generic per-tool settings lookup: reads TOOL_META.settings-declared values, configured
+    // per tool in Settings > Tools, falling back to that setting's declared default.
+    getSetting: async (toolName, [key]) => getToolSettingValue(toolName, key)
 };
 
 function getToolWorker() {
@@ -12796,7 +13045,7 @@ function runToolInWorker(toolName, toolMeta, args, sessionId) {
         worker.postMessage({
             type: 'run',
             runId,
-            toolMeta: { mode: state.mode, planFile: PLAN_FILE, code: toolMeta.code },
+            toolMeta: { mode: state.mode, planFile: PLAN_FILE, code: toolMeta.code, toolName },
             args
         });
     });
