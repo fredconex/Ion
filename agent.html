@@ -3244,7 +3244,8 @@ const state = {
     activeSessionId: 'sess_' + Math.random().toString(36).substring(2, 9),
     sessions: {},
     modifiedFiles: new Set(),
-    linesModified: 0,
+    linesAdded: 0,
+    linesRemoved: 0,
     lastTokenUsage: null,
     actualGenTokenCount: null,
     expandedFolders: new Set(),
@@ -5445,6 +5446,7 @@ window.revertFileToCheckpoint = async (filepath, timelineIndex) => {
         } else {
             state.modifiedFiles.add(filepath);
         }
+        recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
 
         await persistCheckpoint();
         renderChangesPanel();
@@ -5568,6 +5570,7 @@ window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
         }
     }
 
+    recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
     await persistCheckpoint();
     renderChangesPanel();
     renderExplorerTree();
@@ -5845,6 +5848,7 @@ window.discardFile = async (filepath) => {
         state.modifiedFiles.delete(filepath);
         delete registry.fileHistory[filepath];
         registry.currentBlame[filepath] = registry.baselineBlame[filepath] || null;
+        recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
         await persistCheckpoint();
         renderChangesPanel();
         renderExplorerTree();
@@ -5893,7 +5897,8 @@ window.restoreAllModifiedFiles = async () => {
         }
     }
     state.modifiedFiles.clear();
-    state.linesModified = 0;
+    state.linesAdded = 0;
+    state.linesRemoved = 0;
     await persistCheckpoint();
     renderChangesPanel();
     renderExplorerTree();
@@ -6479,7 +6484,8 @@ async function saveSession(sessionId) {
         state.sessions[id].updatedAt = Date.now();
         state.sessions[id].modifiedFiles = Array.from(ctx.modifiedFiles);
         if (isLive) {
-            state.sessions[id].linesModified = state.linesModified;
+            state.sessions[id].linesAdded = state.linesAdded;
+            state.sessions[id].linesRemoved = state.linesRemoved;
             state.sessions[id].lastTokenUsage = state.lastTokenUsage || null;
             state.sessions[id].systemPrompt = state.cachedSystemPrompt || null;
         }
@@ -6504,7 +6510,8 @@ async function saveSession(sessionId) {
             patch.chatHTML = state.sessions[id].chatHTML;
             patch.openTabs = state.sessions[id].openTabs;
             patch.activeTab = state.sessions[id].activeTab;
-            patch.linesModified = state.sessions[id].linesModified;
+            patch.linesAdded = state.sessions[id].linesAdded;
+            patch.linesRemoved = state.sessions[id].linesRemoved;
             patch.lastTokenUsage = state.sessions[id].lastTokenUsage;
             patch.systemPrompt = state.sessions[id].systemPrompt;
         }
@@ -6601,7 +6608,8 @@ async function restoreActiveSessionContent() {
     if (!current) return;
 
     state.messages = current.messages || [];
-    state.linesModified = current.linesModified || 0;
+    state.linesAdded = current.linesAdded || 0;
+    state.linesRemoved = current.linesRemoved || 0;
     state.lastTokenUsage = current.lastTokenUsage || null;
     state.cachedSystemPrompt = current.systemPrompt || null;
     updateTokenStatus(state.lastTokenUsage);
@@ -6724,7 +6732,8 @@ async function deleteSession(sessionId, e) {
         state.cachedSystemPrompt = null;
         term.innerHTML = '';
         resetScrollState();
-        state.linesModified = 0;
+        state.linesAdded = 0;
+        state.linesRemoved = 0;
         state.sessions[sessionId]._titleGenerated = false;
         state.sessions[sessionId].title = 'Untitled Session';
         state.sessions[sessionId].runningTimeMs = 0;
@@ -6821,7 +6830,8 @@ async function clearAllSessions() {
     registry.baselineBlame = {};
     registry.compressionHistory = [];
     state.modifiedFiles.clear();
-    state.linesModified = 0;
+    state.linesAdded = 0;
+    state.linesRemoved = 0;
     state.messages = [];
     state.cachedSystemPrompt = null;
     term.innerHTML = '';
@@ -7685,6 +7695,8 @@ async function deleteFileOrDirectory(path) {
     delete registry.files[path];
     state.modifiedFiles.delete(path);
     delete registry.fileHistory[path];
+    recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
+    updateStatusInfo();
     await persistCheckpoint();
 }
 
@@ -11890,7 +11902,8 @@ async function setWorkspace(handle) {
     registry.baselineBlame = {};
     registry.compressionHistory = [];
     state.modifiedFiles.clear();
-    state.linesModified = 0;
+    state.linesAdded = 0;
+    state.linesRemoved = 0;
 
     await AppConfig.loadFromDisk();
     applyConfigToUI();
@@ -11931,7 +11944,8 @@ function closeWorkspace() {
     registry.baselineBlame = {};
     registry.compressionHistory = [];
     state.modifiedFiles.clear();
-    state.linesModified = 0;
+    state.linesAdded = 0;
+    state.linesRemoved = 0;
     state.messages = [];
     state.cachedSystemPrompt = null;
     term.innerHTML = '';
@@ -12014,6 +12028,77 @@ if (btnExitWorkspace) {
     });
 }
 
+// Computes added/removed line counts between two texts using an LCS-based
+// line diff (Myers-style DP). Capped for very large files to avoid O(n*m)
+// blowups; falls back to a simple length-delta heuristic beyond the cap.
+function computeLineDiffCounts(beforeText, afterText) {
+    if (beforeText === afterText) return { added: 0, removed: 0 };
+    // ''.split('\n') yields [''], a phantom single "line" — treat empty text as zero lines
+    // so a brand-new or fully-deleted file doesn't count as an extra +1/-1.
+    const a = beforeText === '' ? [] : beforeText.split('\n');
+    const b = afterText === '' ? [] : afterText.split('\n');
+    const n = a.length, m = b.length;
+    const LCS_LINE_CAP = 4000;
+    if (n * m > LCS_LINE_CAP * LCS_LINE_CAP || n > LCS_LINE_CAP * 4 || m > LCS_LINE_CAP * 4) {
+        // Too large for exact LCS; approximate from the net line-count delta.
+        const delta = m - n;
+        return delta >= 0 ? { added: delta, removed: 0 } : { added: 0, removed: -delta };
+    }
+    // Standard LCS length table.
+    const dp = new Array(n + 1);
+    for (let i = 0; i <= n; i++) dp[i] = new Uint32Array(m + 1);
+    for (let i = 1; i <= n; i++) {
+        for (let j = 1; j <= m; j++) {
+            dp[i][j] = (a[i - 1] === b[j - 1]) ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+        }
+    }
+    const lcsLen = dp[n][m];
+    return { added: m - lcsLen, removed: n - lcsLen };
+}
+
+// Recomputes total +added/-removed line counts from scratch: for every file
+// currently tracked as modified, diff its session baseline (content the first
+// time this session touched it) against its live content right now. This is
+// idempotent and self-correcting — unlike accumulating a delta on every call
+// to trackModification, it can't drift when a prompt is edited/resubmitted,
+// a change is reverted, or a file is rewritten to the same content, since
+// those cases all update ctx.modifiedFiles / baseline.originalFiles /
+// registry.files rather than firing an inverse "undo" event.
+function recomputeLineStats(ctx, sid, filePath, currentContent) {
+    // Cache each modified file's live content as we go, so files touched
+    // earlier in this session (but not this call) still contribute their
+    // last-known content rather than being skipped.
+    if (!ctx.baseline._lastKnownContent) ctx.baseline._lastKnownContent = {};
+    if (filePath !== undefined) {
+        if (currentContent === undefined) {
+            delete ctx.baseline._lastKnownContent[filePath];
+        } else {
+            ctx.baseline._lastKnownContent[filePath] = currentContent;
+        }
+    }
+
+    let totalAdded = 0, totalRemoved = 0;
+    for (const fp of ctx.modifiedFiles) {
+        const before = ctx.baseline.originalFiles[fp];
+        const after = ctx.isLive && registry.files[fp] !== undefined
+            ? registry.files[fp]
+            : ctx.baseline._lastKnownContent[fp];
+        const beforeText = before !== undefined ? before : '';
+        const afterText = after !== undefined ? after : '';
+        const { added, removed } = computeLineDiffCounts(beforeText, afterText);
+        totalAdded += added;
+        totalRemoved += removed;
+    }
+    if (state.sessions[sid]) {
+        state.sessions[sid].linesAdded = totalAdded;
+        state.sessions[sid].linesRemoved = totalRemoved;
+    }
+    if (ctx.isLive) {
+        state.linesAdded = totalAdded;
+        state.linesRemoved = totalRemoved;
+    }
+}
+
 async function trackModification(filePath, beforeContent, afterContent, isRevert, sessionId) {
     const sid = sessionId || state.activeSessionId;
     const ctx = sessionCtx(sid);
@@ -12067,15 +12152,7 @@ async function trackModification(filePath, beforeContent, afterContent, isRevert
         ctx.modifiedFiles.add(filePath);
     }
 
-    const beforeLines = (beforeContent || '').split('\n').length;
-    const afterLines = (afterContent || '').split('\n').length;
-    const linesDelta = Math.abs(afterLines - beforeLines);
-    if (state.sessions[sid]) {
-        state.sessions[sid].linesModified = (state.sessions[sid].linesModified || 0) + linesDelta;
-    }
-    if (ctx.isLive) {
-        state.linesModified += linesDelta;
-    }
+    recomputeLineStats(ctx, sid, filePath, afterContent);
 
     await persistCheckpoint(sid);
 
@@ -12087,12 +12164,20 @@ async function trackModification(filePath, beforeContent, afterContent, isRevert
 
 function updateStatusInfo() {
     const modCount = state.modifiedFiles.size;
-    const lines = state.linesModified;
+    const added = state.linesAdded || 0;
+    const removed = state.linesRemoved || 0;
     const statusInfoEl = document.getElementById('status-info');
     if (modCount > 0) {
-        statusInfoEl.innerText = `${modCount} modified` + (lines ? `, ${lines} lines` : '');
+        let html = escapeHTML(`${modCount} modified`);
+        if (added || removed) {
+            html += ', ';
+            if (added) html += `<span style="color: var(--green);">+${added}</span>`;
+            if (added && removed) html += ' ';
+            if (removed) html += `<span style="color: var(--red);">-${removed}</span>`;
+        }
+        statusInfoEl.innerHTML = html;
     } else {
-        statusInfoEl.innerText = '';
+        statusInfoEl.innerHTML = '';
     }
 }
 
@@ -13073,7 +13158,8 @@ async function submitPrompt() {
                 state.messages = [];
                 state.cachedSystemPrompt = null;
                 state.modifiedFiles.clear();
-                state.linesModified = 0;
+                state.linesAdded = 0;
+                state.linesRemoved = 0;
                 state.lastTokenUsage = null;
                 getGenState(state.activeSessionId).postCompressTokenOverride = null;
                 updateTokenStatus(null);
