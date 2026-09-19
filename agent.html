@@ -12902,6 +12902,7 @@ async function runTool(runId, toolMeta, args) {
         mode: toolMeta.mode,
         planFile: toolMeta.planFile,
         readFile: (fp) => callApi(runId, 'readFile', [fp]),
+        readFileBytes: (fp) => callApi(runId, 'readFileBytes', [fp]),
         writeFile: (fp, content) => callApi(runId, 'writeFile', [fp, content]),
         renameFile: (oldPath, newPath) => callApi(runId, 'renameFile', [oldPath, newPath]),
         listFiles: () => callApi(runId, 'listFiles', []),
@@ -12949,6 +12950,45 @@ const TOOL_API_METHODS = {
         }
         const res = await writeDisk(fp, content, { fromLLMTool: true, sessionId });
         return (res && res.output) ? res.output : null;
+    },
+    readFileBytes: async (toolName, [fp]) => {
+        const MAX_BYTES = 64 * 1024 * 1024; // 64 MB
+        if (isSecurityProtectedPath(fp)) {
+            return `ERROR: ${fp} is a protected path and cannot be read by a tool call.`;
+        }
+        if (isSensitiveUserFile(fp)) {
+            return `ERROR: ${fp} is a private user settings file and cannot be read by a tool call.`;
+        }
+        if (shouldHideFromTools(fp)) {
+            return `ERROR: ${fp} has .agent extension and is hidden from tool access. You can enable access in Settings > Explorer > Show .agent files to tools.`;
+        }
+        if (isAgentPath(fp) && !isToolFilePath(fp) && !isVirtualAgentFile(fp)) {
+            return `ERROR: ${fp} is inside .agent and cannot be read by a tool call.`;
+        }
+        try {
+            if (isVirtualAgentFile(fp) || isToolFilePath(fp)) {
+                const text = registry.files[fp] !== undefined
+                    ? registry.files[fp]
+                    : (await readFileContent(fp));
+                return new TextEncoder().encode(text || '');
+            }
+            if (!registry.meta[fp]) return `ERROR: ${fp} not found`;
+            if (!rootHandle) {
+                const text = registry.files[fp];
+                if (text === undefined) return `ERROR: ${fp} not found`;
+                return new TextEncoder().encode(text);
+            }
+            const handle = await getHandleByPath(fp);
+            if (!handle) return `ERROR: ${fp} not found`;
+            const file = await handle.getFile();
+            if (file.size > MAX_BYTES) {
+                return `ERROR: ${fp} is ${formatFileSize(file.size)}, exceeding the ${formatFileSize(MAX_BYTES)} readFileBytes limit.`;
+            }
+            const buf = await file.arrayBuffer();
+            return new Uint8Array(buf);
+        } catch (e) {
+            return `ERROR: ${e.message || String(e)}`;
+        }
     },
     renameFile: async (toolName, [oldPath, newPath], sessionId) => {
         if (isSecurityProtectedPath(oldPath)) {
