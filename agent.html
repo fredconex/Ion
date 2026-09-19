@@ -3218,9 +3218,6 @@ const AppConfig = {
         }
         localStorage.setItem('app_config_json', JSON.stringify(this._data));
     },
-    async loadFromDisk() {
-        return;
-    },
     save() {
         localStorage.setItem('app_config_json', JSON.stringify(this._data));
     },
@@ -3345,36 +3342,15 @@ const state = {
     linesAdded: 0,
     linesRemoved: 0,
     lastTokenUsage: null,
-    actualGenTokenCount: null,
     expandedFolders: new Set(),
-    availableModels: [],
     selectedContextItem: null,
-    canResumeTask: false,
-    thinkingTimerInterval: null,
-    pendingToolDiv: null,
     userScrolledUp: false,
-    currentPromptContext: null,
     checkpointModalFile: null,
     checkpointModalMode: 'file',
-    genStartTime: null,
-    genFirstTokenTime: null,
-    genEndTime: null,
-    genTokenCount: 0,
-    genFinishReason: null,
-    genTks: null,
-    genServerTks: null,
-    genSessionId: null,
-    genSessionStartMs: null,
-    currentAssistantDiv: null,
-    lastPromptId: 0,
     promptIdToMsgIdx: {},
-    sessionsDeletedLocally: [],
     sessionIds: null,
     sessionMeta: null,
     _lastSavedIndex: null,
-    retryAttempt: 0,
-    retryTimeout: null,
-    retryCancelled: false,
     cachedSystemPrompt: null
 };
 
@@ -5555,7 +5531,7 @@ function promptGroupKey(entry) {
     return `__solo_${entry.index}`;
 }
 
-function buildCheckpointEntryRow(filepath, entry, lastIdx, { compact = false } = {}) {
+function buildCheckpointEntryRow(filepath, entry, { compact = false } = {}) {
     const blame = formatPromptBlame(entry.prompt);
     const row = document.createElement('div');
     row.className = `checkpoint-entry ${entry.kind}${compact ? ' compact' : ''}`;
@@ -5602,8 +5578,6 @@ function renderCheckpointTimeline(filepath) {
     const timeline = getFileTimeline(filepath);
     checkpointTimelineList.innerHTML = '';
 
-    const lastIdx = timeline.length - 1;
-
     const groups = [];
     for (const entry of timeline) {
         const key = promptGroupKey(entry);
@@ -5620,7 +5594,7 @@ function renderCheckpointTimeline(filepath) {
     reversedGroups.forEach(group => {
         const soleEntry = group.entries[0];
         if (group.entries.length === 1 && soleEntry.kind === 'baseline') {
-            checkpointTimelineList.appendChild(buildCheckpointEntryRow(filepath, soleEntry, lastIdx));
+            checkpointTimelineList.appendChild(buildCheckpointEntryRow(filepath, soleEntry));
             return;
         }
 
@@ -5667,7 +5641,7 @@ function renderCheckpointTimeline(filepath) {
         const subList = document.createElement('div');
         subList.className = 'tool-group-body';
         [...group.entries].reverse().forEach(entry => {
-            subList.appendChild(buildCheckpointEntryRow(filepath, entry, lastIdx, { compact: true }));
+            subList.appendChild(buildCheckpointEntryRow(filepath, entry, { compact: true }));
         });
 
         wrap.appendChild(header);
@@ -5676,7 +5650,7 @@ function renderCheckpointTimeline(filepath) {
     });
 }
 
-function buildPromptTouchRow(filepath, entry, promptId) {
+function buildPromptTouchRow(filepath, entry) {
     const row = document.createElement('div');
     row.className = 'checkpoint-touch-row';
 
@@ -5740,7 +5714,7 @@ function renderAllPromptGroups() {
         const seenFiles = new Map();
         group.touches.forEach(t => seenFiles.set(t.filepath, t.entry));
         Array.from(seenFiles.entries()).forEach(([filepath, entry]) => {
-            body.appendChild(buildPromptTouchRow(filepath, entry, group.key));
+            body.appendChild(buildPromptTouchRow(filepath, entry));
         });
 
         wrap.appendChild(header);
@@ -6767,7 +6741,6 @@ async function clearAllSessions() {
     state.sessionIds = [newId];
     state._lastSavedIndex = null;
     state.activeSessionId = newId;
-    state.sessionsDeletedLocally = [];
 
     registry.fileHistory = {};
     registry.currentBlame = {};
@@ -9064,8 +9037,7 @@ function showModelPickerWidget(line) {
     if (!model) return;
 
     const lineContent = model.getLineContent(line);
-    const valueEndCol = getModelValueEndPosition(lineContent);
-    if (valueEndCol === null) return;
+    if (getModelValueEndPosition(lineContent) === null) return;
 
     const widgetLine = line;
     const widgetCol = model.getLineMaxColumn(widgetLine);
@@ -9727,10 +9699,7 @@ function applyConfigToUI() {
     document.getElementById('settings-thinking-timeout').value = AppConfig.get('thinking-timeout', '-1');
     setDuoSwitch(document.getElementById('settings-keep-skipped-thinking'), AppConfig.get('keep-skipped-thinking') === "true");
     setDuoSwitch(document.getElementById('settings-glow-enabled'), AppConfig.get('glow-enabled', 'true') !== 'false');
-    const wm = document.getElementById('settings-window-mode');
-    const windowModeVal = AppConfig.get('window-mode', 'floating') === 'maximized' ? 'maximized' : 'floating';
-    if (wm) wm.value = windowModeVal;
-    applyWindowMode(windowModeVal);
+    applyWindowMode(AppConfig.get('window-mode', 'floating') === 'maximized' ? 'maximized' : 'floating');
     const ce = document.getElementById('settings-compress-enabled');
     const ct = document.getElementById('settings-compress-threshold');
     const cp = document.getElementById('settings-compress-preserve');
@@ -10173,14 +10142,6 @@ window.addEventListener('DOMContentLoaded', async () => {
         AppConfig.set('hide-agent-files', val === 'hide' ? 'true' : 'false');
         updateAgentFilesSwitch();
     });
-    const _wmEl = document.getElementById('settings-window-mode');
-    if (_wmEl) {
-        _wmEl.addEventListener('change', e => {
-            const mode = e.target.value === 'maximized' ? 'maximized' : 'floating';
-            AppConfig.set('window-mode', mode);
-            applyWindowMode(mode);
-        });
-    }
     const btnWindowToggle = document.getElementById('btn-window-toggle');
     if (btnWindowToggle) {
         btnWindowToggle.addEventListener('click', () => {
@@ -10427,8 +10388,6 @@ function commitInlineEdit(promptId) {
         node = node.nextElementSibling;
         toRemove.remove();
     }
-    const resumeBanner = document.getElementById('resume-action-box');
-    if (resumeBanner) resumeBanner.remove();
 
     state.preEditAttachedReferences = null;
 
@@ -10463,12 +10422,6 @@ function attachAssistantCopyAction(div, rawText) {
     if (div.querySelector('.assistant-msg-actions') || div.querySelector('.btn-prompt-action.copy')) return;
 
     const btnHTML = `<button class="btn-prompt-action copy" title="Copy message" onclick="window.copyAssistantMsg(this)"><span class="icon" style="font-size:13px;">content_copy</span></button>`;
-
-    const existingStatsRow = div.querySelector('.gen-stats-row');
-    if (existingStatsRow) {
-        existingStatsRow.insertAdjacentHTML('beforeend', btnHTML.replace('class="btn-prompt-action copy"', 'class="btn-prompt-action copy" style="margin-left:auto;"'));
-        return;
-    }
 
     const actions = document.createElement('div');
     actions.className = 'prompt-actions assistant-msg-actions';
@@ -10550,8 +10503,6 @@ async function commitMsgDelete(promptId, revert) {
             toRemove.remove();
         }
     }
-    const resumeBanner = document.getElementById('resume-action-box');
-    if (resumeBanner) resumeBanner.remove();
 
     // Drop any message-index maps for trimmed prompts.
     delete state.promptIdToMsgIdx[promptId];
@@ -10956,10 +10907,7 @@ function renderRunningToolBox(toolName, args, container = null, sessionId) {
     else if (toolName === 'grep') summaryText = `"${args.pattern || ''}" in ${args.path || 'all files'}`;
     else if (toolName === 'find') summaryText = `pattern "${args.pattern || ''}"`;
     else if (toolName === 'rename') summaryText = `${args.filepath} → ${args.new_name}`;
-    else {
-        const firstVal = Object.values(args || {})[0];
-        summaryText = typeof firstVal === 'string' ? firstVal.slice(0, 70) : JSON.stringify(args || {}).slice(0, 60);
-    }
+    else summaryText = summarizeToolArgs(args);
 
     const isBuiltinBadge = ['read', 'edit', 'write', 'grep', 'find', 'rename'].includes(toolName);
 
@@ -10996,6 +10944,13 @@ function renderRunningToolBox(toolName, args, container = null, sessionId) {
     reorderSpinnerToBottom(sid);
     smartScroll();
     return box;
+}
+
+function summarizeToolArgs(args) {
+    const firstVal = Object.values(args || {})[0];
+    return typeof firstVal === 'string'
+        ? firstVal.slice(0, 70)
+        : JSON.stringify(args || {}).slice(0, 60);
 }
 
 function stopRunningToolBox(box) {
@@ -11248,10 +11203,7 @@ function renderToolCallBox(toolName, args, resultOutput, isDone = false, isError
     else if (toolName === 'grep') summaryText = `"${args.pattern || ''}" in ${args.path || 'all files'}`;
     else if (toolName === 'find') summaryText = `pattern "${args.pattern || ''}"`;
     else if (toolName === 'rename') summaryText = `${args.filepath} → ${args.new_name}`;
-    else {
-        const firstVal = Object.values(args || {})[0];
-        summaryText = typeof firstVal === 'string' ? firstVal.slice(0, 70) : JSON.stringify(args).slice(0, 60);
-    }
+    else summaryText = summarizeToolArgs(args);
 
     let innerContentHTML = '';
 
@@ -11583,25 +11535,24 @@ function renderGenStats(sessionId) {
     gen.genTks = tks;
 
     let reasonLabel = gen.genFinishReason || 'unknown';
-    let reasonClass = 'reason-null';
     let reasonIcon = 'help';
 
     switch (gen.genFinishReason) {
-        case 'stop': reasonClass = 'reason-stop'; reasonIcon = 'check_circle'; reasonLabel = 'EOS stop'; break;
-        case 'length': reasonClass = 'reason-length'; reasonIcon = 'timer'; reasonLabel = 'max length'; break;
-        case 'tool_calls': reasonClass = 'reason-tool_calls'; reasonIcon = 'build'; reasonLabel = 'tool calls'; break;
-        case 'content_filter': reasonClass = 'reason-content_filter'; reasonIcon = 'block'; reasonLabel = 'content filter'; break;
-        case 'abort': reasonClass = 'reason-abort'; reasonIcon = 'cancel'; reasonLabel = 'aborted'; break;
-        case 'error': reasonClass = 'reason-abort'; reasonIcon = 'error'; reasonLabel = 'error'; break;
-        case 'unknown': reasonClass = 'reason-null'; reasonIcon = 'warning'; reasonLabel = 'unknown (server omitted)'; break;
+        case 'stop': reasonIcon = 'check_circle'; reasonLabel = 'EOS stop'; break;
+        case 'length': reasonIcon = 'timer'; reasonLabel = 'max length'; break;
+        case 'tool_calls': reasonIcon = 'build'; reasonLabel = 'tool calls'; break;
+        case 'content_filter': reasonIcon = 'block'; reasonLabel = 'content filter'; break;
+        case 'abort': reasonIcon = 'cancel'; reasonLabel = 'aborted'; break;
+        case 'error': reasonIcon = 'error'; reasonLabel = 'error'; break;
+        case 'unknown': reasonIcon = 'warning'; reasonLabel = 'unknown (server omitted)'; break;
         case null:
         case undefined:
-        case '': reasonClass = 'reason-null'; reasonIcon = 'warning'; reasonLabel = 'no finish_reason'; break;
-        default: reasonClass = 'reason-null'; reasonIcon = 'help'; break;
+        case '': reasonIcon = 'warning'; reasonLabel = 'no finish_reason'; break;
+        default: reasonIcon = 'help'; break;
     }
 
     const tksPill = tks ? `<span class="gen-stat-pill tks"><span class="icon" style="font-size:11px;">speed</span>${tks} tk/s</span>` : '';
-    const reasonPill = `<span class="gen-stat-pill ${reasonClass}"><span class="icon" style="font-size:11px;">${reasonIcon}</span>${reasonLabel}</span>`;
+    const reasonPill = `<span class="gen-stat-pill reason-null"><span class="icon" style="font-size:11px;">${reasonIcon}</span>${reasonLabel}</span>`;
     const elapsedStr = elapsed >= 60 ? `${Math.floor(elapsed/60)}m ${Math.round(elapsed%60)}s` : `${elapsed.toFixed(1)}s`;
     const continueBtn = gen.genFinishReason === 'abort' || gen.genFinishReason === 'error' || gen.genFinishReason === 'stop'
         ? `<button class="gen-stat-pill reason-tool_calls gen-continue-btn" style="cursor:pointer;" onclick="window.continueTask()" title="Continue generation"><span class="icon" style="font-size:11px;">play_arrow</span>Continue</button>`
@@ -11692,8 +11643,6 @@ function removeContinueButtons() {
 }
 
 window.continueTask = async () => {
-    const existing = document.getElementById('resume-action-box');
-    if (existing) existing.remove();
     removeContinueButtons();
     await runTask("Continue execution with the next required steps until completion.");
 };
@@ -11844,7 +11793,6 @@ async function setWorkspace(handle) {
     state.linesAdded = 0;
     state.linesRemoved = 0;
 
-    await AppConfig.loadFromDisk();
     applyConfigToUI();
     registerConfigVirtualFile();
 
@@ -11922,7 +11870,7 @@ function closeTabNoConfirm(tabId) {
         const prevTab = state.openTabs[state.openTabs.length - 1] || 'chat';
         switchTab(prevTab);
     }
-    if (tabId.startsWith('file:') || tabId.startsWith('filediff:')) {
+    if (tabId !== 'chat' && !tabId.startsWith('attachment:')) {
         const model = monacoModels.get(tabId);
         if (model) model.dispose();
         monacoModels.delete(tabId);
@@ -12853,8 +12801,7 @@ function describeToolAction(name, args) {
         case 'find': return `Find files "${args.pattern || ''}"`;
         case 'rename': return `Rename ${args.filepath || ''} to ${args.new_name || ''}`;
         default: {
-            const firstVal = Object.values(args)[0];
-            const preview = typeof firstVal === 'string' ? firstVal.slice(0, 70) : JSON.stringify(args).slice(0, 60);
+            const preview = summarizeToolArgs(args);
             return `Run ${name}${preview ? `: ${preview}` : ''}`;
         }
     }
@@ -13203,8 +13150,6 @@ async function submitPrompt() {
             print("Tip: Open a workspace folder to enable file editing and context indexing.", "yellow");
         }
 
-        const resumeBanner = document.getElementById('resume-action-box');
-        if (resumeBanner) resumeBanner.remove();
         removeContinueButtons();
 
         const runSessionId = state.activeSessionId;
