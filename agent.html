@@ -845,11 +845,11 @@
         #settings-content { padding: 10px !important; }
         #danger-zone-footer { padding: 0 10px 10px; flex-shrink: 0; }
         .settings-panel-group {
-            border: 1px solid var(--border);
+            border: 1px solid rgba(0, 0, 0, 0.2);
             border-radius: 8px;
             overflow: hidden;
             margin-bottom: 10px;
-            background: rgba(255, 255, 255, 0.015);
+            background: rgba(0, 0, 0, 0.0875);
         }
         .settings-panel-group:last-child { margin-bottom: 0; }
         .settings-panel-header {
@@ -967,7 +967,7 @@
         .ct-tool-settings-panel {
             display: flex; flex-direction: column; gap: 8px;
             padding: 8px 8px 10px 24px; margin-top: -2px;
-            background: rgba(0, 0, 0, 0.175);
+            background: rgba(0, 0, 0, 0.0875);
             border-top: 1px solid rgba(0, 0, 0, 0.4);
             border-radius: 0 0 6px 6px;
         }
@@ -2901,9 +2901,9 @@
 
                     </div>
                     <div id="danger-zone-footer">
-                        <div class="settings-panel-group" style="border-color: rgba(224, 108, 117, 0.3); margin-bottom: 0;">
-                            <div class="settings-panel-header" style="background: rgba(224, 108, 117, 0.08); color: var(--red); border-bottom-color: rgba(224, 108, 117, 0.2);">
-                                <span class="icon" style="color: var(--red);">warning</span>
+                        <div class="settings-panel-group" style="border-color: rgba(224, 108, 117, 0.12); margin-bottom: 0;">
+                            <div class="settings-panel-header" style="background: rgba(224, 108, 117, 0.03); color: var(--dim); border-bottom-color: rgba(224, 108, 117, 0.1);">
+                                <span class="icon" style="color: var(--dim);">warning</span>
                                 <span>Danger Zone</span>
                             </div>
                             <div class="settings-panel-body">
@@ -9450,6 +9450,9 @@ btnSettingsToggle.addEventListener('click', (e) => {
     settingsPopover.style.display = isShown ? 'none' : 'block';
     btnSettingsToggle.classList.toggle('active', !isShown);
     hideSessionPopover();
+    if (!isShown) {
+        toolsListEl.querySelectorAll('.ct-item-wrap').forEach(w => collapseToolPanel(w));
+    }
 });
 
 settingsPopover.addEventListener('click', (e) => {
