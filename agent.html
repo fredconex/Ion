@@ -396,7 +396,7 @@
         #newtool-modal {
             background: var(--bg-panel); border: 1px solid var(--border-highlight);
             border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,0.9);
-            width: 680px; max-width: 94vw;
+            width: 520px; max-width: 94vw;
             display: flex; flex-direction: column; animation: fadeIn 0.12s ease-out;
             max-height: 88vh;
         }
@@ -415,6 +415,22 @@
         #newtool-modal-close:hover { color: var(--fg); background: rgba(255,255,255,0.06); }
         #newtool-modal-body { padding: 14px; }
         #newtool-modal-body .settings-field-row label { margin-bottom: 0; }
+        #newtool-source-tabs {
+            display: flex; gap: 4px; margin-bottom: 14px;
+            background: rgba(0,0,0,0.2); border: 1px solid var(--border);
+            border-radius: 8px; padding: 3px;
+        }
+        .newtool-source-tab {
+            flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+            padding: 7px 8px; border-radius: 6px; cursor: pointer;
+            font-family: var(--font-mono); font-size: 11.5px; font-weight: 600;
+            color: var(--dim); transition: all 0.15s ease; user-select: none;
+        }
+        .newtool-source-tab .icon { font-size: 15px; }
+        .newtool-source-tab:hover { color: var(--fg); }
+        .newtool-source-tab.active { background: rgba(86, 182, 194, 0.14); color: var(--cyan); }
+        .newtool-pane { display: none; }
+        .newtool-pane.active { display: block; }
         #newtool-dropzone {
             margin-top: 14px;
             border: 1.5px dashed var(--border-highlight); border-radius: 8px;
@@ -446,22 +462,12 @@
             display: none; font-size: 11px; color: var(--red); margin-top: 8px; line-height: 1.4;
         }
         #newtool-modal-body { overflow-y: auto; }
-        #newtool-columns {
-            display: flex; align-items: stretch; gap: 14px;
-        }
         #newtool-col-local, #newtool-col-browse {
-            flex: 1; min-width: 0; display: flex; flex-direction: column;
+            min-width: 0; flex-direction: column;
         }
-        #newtool-col-divider {
-            width: 1px; background: var(--border); flex-shrink: 0;
+        #newtool-col-local.active, #newtool-col-browse.active {
+            display: flex;
         }
-        #newtool-col-header {
-            display: flex; align-items: center; gap: 6px;
-            margin-bottom: 10px; color: var(--dim);
-            font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
-            text-transform: uppercase; letter-spacing: 0.03em;
-        }
-        #newtool-col-header .icon { font-size: 13px; }
         #newtool-browse-toolbar {
             display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
         }
@@ -496,14 +502,17 @@
         .newtool-browse-row:last-child { border-bottom: none; }
         .newtool-browse-row:hover { background: rgba(86, 182, 194, 0.08); }
         .newtool-browse-row.selected { background: rgba(86, 182, 194, 0.14); }
-        .newtool-browse-row.dragging { opacity: 0.4; cursor: grabbing; }
-        .newtool-browse-row .icon { font-size: 15px; color: var(--dim); flex-shrink: 0; }
-        .newtool-browse-row.selected .icon { color: var(--cyan); }
         .newtool-browse-row.installed { cursor: default; }
-        .newtool-browse-row.installed .icon { color: var(--green); }
         .newtool-browse-row.installed .newtool-browse-row-name { color: var(--dim); }
         .newtool-browse-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .newtool-browse-row-size { font-size: 10px; color: var(--dim); flex-shrink: 0; }
+        .newtool-browse-row-install {
+            flex-shrink: 0; width: 66px; text-align: center; border: 1px solid var(--border); border-radius: 6px;
+            background: var(--bg-input); color: var(--fg);
+            font-family: var(--font-mono); font-size: 10.5px; padding: 3px 0;
+            cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease;
+        }
+        .newtool-browse-row-install:hover:not(:disabled) { border-color: var(--border-highlight); background: rgba(86, 182, 194, 0.12); }
+        .newtool-browse-row-install:disabled { opacity: 0.45; cursor: default; color: var(--green); }
         #newtool-browse-status {
             display: flex; align-items: center; justify-content: center;
             gap: 8px; padding: 20px 10px; color: var(--dim); font-size: 11.5px;
@@ -2597,55 +2606,57 @@
                 </button>
             </div>
             <div id="newtool-modal-body">
-                <div id="newtool-columns">
-                    <div id="newtool-col-browse">
-                        <div id="newtool-col-header">
-                            <span class="icon" style="font-size:13px;">code</span>
-                            <span>Browse GitHub</span>
-                        </div>
-                        <div id="newtool-browse-toolbar">
-                            <input type="text" id="newtool-browse-search" placeholder="Filter tools..." autocomplete="off" spellcheck="false">
-                            <button type="button" id="newtool-browse-refresh" title="Refresh">
-                                <span class="icon">refresh</span>
-                            </button>
-                        </div>
-                        <div id="newtool-browse-list"></div>
-                        <div id="newtool-browse-preview">
-                            <div id="newtool-browse-preview-header">
-                                <span id="newtool-browse-preview-name"></span>
-                                <a id="newtool-browse-preview-link" href="#" target="_blank" rel="noopener noreferrer" title="View on GitHub" style="color: var(--dim); display:flex; align-items:center;">
-                                    <span class="icon" style="font-size:13px;">open_in_new</span>
-                                </a>
-                            </div>
-                            <div id="newtool-browse-preview-code"></div>
-                        </div>
+                <div id="newtool-source-tabs">
+                    <div class="newtool-source-tab" data-pane="blank">
+                        <span class="icon">edit_note</span><span>Blank</span>
                     </div>
+                    <div class="newtool-source-tab" data-pane="local">
+                        <span class="icon">upload_file</span><span>Import file</span>
+                    </div>
+                    <div class="newtool-source-tab active" data-pane="browse">
+                        <span class="icon">code</span><span>Browse GitHub</span>
+                    </div>
+                </div>
 
-                    <div id="newtool-col-divider"></div>
+                <div id="newtool-col-local" class="newtool-pane" data-pane="blank">
+                    <div class="settings-field-row">
+                        <label for="newtool-name-input">Tool name</label>
+                        <input type="text" id="newtool-name-input" placeholder="e.g. my_tool" autocomplete="off" spellcheck="false">
+                    </div>
+                </div>
 
-                    <div id="newtool-col-local">
-                        <div id="newtool-col-header">
-                            <span class="icon" style="font-size:13px;">edit_note</span>
-                            <span>Local</span>
-                        </div>
-                        <div class="settings-field-row">
-                            <label for="newtool-name-input">Tool name</label>
-                            <input type="text" id="newtool-name-input" placeholder="e.g. my_tool" autocomplete="off" spellcheck="false">
-                        </div>
+                <div id="newtool-col-import" class="newtool-pane" data-pane="local">
+                    <div id="newtool-dropzone" tabindex="0">
+                        <span class="icon">upload_file</span>
+                        <div id="newtool-dropzone-text"><strong>Drop a .js file</strong> here, or click to browse</div>
+                        <div id="newtool-dropzone-hint">The tool name and code will be filled in automatically</div>
+                        <input type="file" id="newtool-file-input" accept=".js,text/javascript" style="display:none">
+                    </div>
+                    <div id="newtool-file-picked">
+                        <span class="icon">description</span>
+                        <span id="newtool-file-picked-name"></span>
+                        <button type="button" class="newtool-file-clear" title="Remove file">
+                            <span class="icon" style="font-size:14px;">close</span>
+                        </button>
+                    </div>
+                </div>
 
-                        <div id="newtool-dropzone" tabindex="0">
-                            <span class="icon">upload_file</span>
-                            <div id="newtool-dropzone-text"><strong>Drop a .js file</strong> here, drag a tool from the list, or click to browse</div>
-                            <div id="newtool-dropzone-hint">The tool name and code will be filled in automatically</div>
-                            <input type="file" id="newtool-file-input" accept=".js,text/javascript" style="display:none">
+                <div id="newtool-col-browse" class="newtool-pane active" data-pane="browse">
+                    <div id="newtool-browse-toolbar">
+                        <input type="text" id="newtool-browse-search" placeholder="Filter tools..." autocomplete="off" spellcheck="false">
+                        <button type="button" id="newtool-browse-refresh" title="Refresh">
+                            <span class="icon">refresh</span>
+                        </button>
+                    </div>
+                    <div id="newtool-browse-list"></div>
+                    <div id="newtool-browse-preview">
+                        <div id="newtool-browse-preview-header">
+                            <span id="newtool-browse-preview-name"></span>
+                            <a id="newtool-browse-preview-link" href="#" target="_blank" rel="noopener noreferrer" title="View on GitHub" style="color: var(--dim); display:flex; align-items:center;">
+                                <span class="icon" style="font-size:13px;">open_in_new</span>
+                            </a>
                         </div>
-                        <div id="newtool-file-picked">
-                            <span class="icon">description</span>
-                            <span id="newtool-file-picked-name"></span>
-                            <button type="button" class="newtool-file-clear" title="Remove file">
-                                <span class="icon" style="font-size:14px;">close</span>
-                            </button>
-                        </div>
+                        <div id="newtool-browse-preview-code"></div>
                     </div>
                 </div>
 
@@ -13878,7 +13889,7 @@ document.getElementById('about-modal-overlay').addEventListener('click', (e) => 
     }
 });
 
-// --- New Tool modal (name entry + drag/drop .js import) ---
+// --- New Tool modal (name entry + .js import / GitHub browse) ---
 const newToolModalOverlay = document.getElementById('newtool-modal-overlay');
 const newToolNameInput = document.getElementById('newtool-name-input');
 const newToolDropzone = document.getElementById('newtool-dropzone');
@@ -13907,7 +13918,6 @@ const newToolBrowsePreviewCode = document.getElementById('newtool-browse-preview
 
 let newToolBrowseFiles = null;      // cached listing: [{name, download_url, html_url, size}]
 let newToolBrowseSelected = null;   // currently selected entry
-let newToolDraggedGithubEntry = null; // entry currently being dragged onto the dropzone
 
 function newToolBrowseSetStatus(html) {
     newToolBrowseList.innerHTML = `<div id="newtool-browse-status">${html}</div>`;
@@ -13976,33 +13986,33 @@ function renderGithubToolsList() {
         const row = document.createElement('div');
         row.className = 'newtool-browse-row';
         const installed = isGithubEntryInstalled(entry);
-        row.draggable = !installed;
         if (newToolBrowseSelected && newToolBrowseSelected.name === entry.name) row.classList.add('selected');
         if (installed) row.classList.add('installed');
-        row.innerHTML = `
-            <span class="icon">${installed ? 'check_circle' : 'drag_indicator'}</span>
-            <span class="newtool-browse-row-name">${entry.name}</span>
-            <span class="newtool-browse-row-size">${installed ? 'Installed' : formatBytes(entry.size)}</span>
-        `;
-        row.addEventListener('click', () => selectGithubTool(entry));
-        row.addEventListener('dragstart', (e) => {
-            newToolDraggedGithubEntry = entry;
-            e.dataTransfer.effectAllowed = 'copy';
-            e.dataTransfer.setData('text/plain', entry.name);
-            row.classList.add('dragging');
+        if (installed) {
+            row.innerHTML = `
+                <span class="newtool-browse-row-name">${entry.name}</span>
+                <button type="button" class="newtool-browse-row-install" disabled>Installed</button>
+            `;
+        } else {
+            row.innerHTML = `
+                <span class="newtool-browse-row-name">${entry.name}</span>
+                <button type="button" class="newtool-browse-row-install">Install</button>
+            `;
+        }
+        row.addEventListener('click', (e) => {
+            if (e.target.closest('.newtool-browse-row-install')) return;
+            selectGithubTool(entry);
         });
-        row.addEventListener('dragend', () => {
-            row.classList.remove('dragging');
-            newToolDraggedGithubEntry = null;
-        });
+        const installBtn = row.querySelector('.newtool-browse-row-install');
+        if (installBtn) {
+            installBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                selectGithubTool(entry);
+                await installGithubEntry(entry);
+            });
+        }
         newToolBrowseList.appendChild(row);
     });
-}
-
-function formatBytes(n) {
-    if (typeof n !== 'number') return '';
-    if (n < 1024) return `${n} B`;
-    return `${(n / 1024).toFixed(1)} KB`;
 }
 
 async function selectGithubTool(entry) {
@@ -14061,41 +14071,6 @@ async function installGithubEntry(entry) {
     return true;
 }
 
-async function installSelectedGithubTool() {
-    const entry = newToolBrowseSelected;
-    if (!entry) {
-        newToolShowError('Select a tool from the list first.');
-        return;
-    }
-    const ok = await installGithubEntry(entry);
-    if (!ok) return;
-    closeNewToolModal();
-}
-
-async function handleDroppedGithubEntry(entry) {
-    newToolShowError('');
-    if (isGithubEntryInstalled(entry)) {
-        newToolShowError(`"${entry.name}" is already installed.`);
-        return;
-    }
-    let source = entry._source;
-    if (typeof source !== 'string') {
-        newToolDropzoneText.textContent = 'Downloading…';
-        try {
-            const resp = await fetch(entry.download_url);
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            source = await resp.text();
-            entry._source = source;
-        } catch (e) {
-            newToolShowError(`Could not download that tool: ${(e && e.message) ? e.message : 'network error'}`);
-            newToolDropzoneText.innerHTML = '<strong>Drop a .js file</strong> here, drag a tool from the list, or click to browse';
-            return;
-        }
-        newToolDropzoneText.innerHTML = '<strong>Drop a .js file</strong> here, drag a tool from the list, or click to browse';
-    }
-    handleNewToolFile(new File([source], entry.name, { type: 'text/javascript' }));
-}
-
 function newToolShowError(msg) {
     if (!msg) {
         newToolErrorEl.style.display = 'none';
@@ -14116,8 +14091,30 @@ function newToolClearFile() {
 }
 
 function newToolUpdateCreateLabel() {
-    newToolCreateBtn.textContent = (!newToolDroppedSource && newToolBrowseSelected) ? 'Install' : 'Create';
+    newToolCreateBtn.textContent = newToolDroppedSource ? 'Import' : 'Create';
 }
+
+// --- Source tabs (Blank / Import file / Browse GitHub) ---
+const newToolSourceTabs = document.querySelectorAll('.newtool-source-tab');
+const newToolPanes = document.querySelectorAll('.newtool-pane');
+let newToolActivePane = 'blank';
+
+function setNewToolPane(pane) {
+    newToolActivePane = pane;
+    newToolSourceTabs.forEach(tab => tab.classList.toggle('active', tab.dataset.pane === pane));
+    newToolPanes.forEach(p => p.classList.toggle('active', p.dataset.pane === pane));
+    newToolShowError('');
+    // Footer Create button only drives the Blank and Import-file flows;
+    // Browse GitHub installs directly from each row.
+    newToolCreateBtn.style.display = (pane === 'browse') ? 'none' : '';
+    if (pane === 'blank') {
+        setTimeout(() => newToolNameInput.focus(), 0);
+    }
+}
+
+newToolSourceTabs.forEach(tab => {
+    tab.addEventListener('click', () => setNewToolPane(tab.dataset.pane));
+});
 
 function openNewToolModal() {
     newToolNameInput.value = '';
@@ -14128,8 +14125,8 @@ function openNewToolModal() {
     newToolBrowseSearch.value = '';
     newToolShowError('');
     newToolUpdateCreateLabel();
+    setNewToolPane('browse');
     newToolModalOverlay.style.display = 'flex';
-    setTimeout(() => newToolNameInput.focus(), 0);
     if (!newToolBrowseFiles) {
         loadGithubToolsList();
     } else {
@@ -14209,9 +14206,6 @@ newToolDropzone.addEventListener('drop', (e) => {
         handleNewToolFile(file);
         return;
     }
-    if (newToolDraggedGithubEntry) {
-        handleDroppedGithubEntry(newToolDraggedGithubEntry);
-    }
 });
 
 document.querySelector('#newtool-file-picked .newtool-file-clear').addEventListener('click', () => {
@@ -14224,10 +14218,6 @@ newToolNameInput.addEventListener('input', () => {
 });
 
 newToolCreateBtn.addEventListener('click', async () => {
-    if (!newToolDroppedSource && newToolBrowseSelected) {
-        await installSelectedGithubTool();
-        return;
-    }
     const name = newToolNameInput.value.trim();
     if (!name) {
         newToolShowError('Please enter a tool name.');
