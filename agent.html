@@ -7818,7 +7818,8 @@ function renderTreeNodeChildren(childrenMap, containerEl, depth = 0) {
         const nodeEl = document.createElement('div');
         nodeEl.className = `tree-node ${isExpanded ? 'expanded' : ''} ${state.activeTab === node.path ? 'selected' : ''} ${isFaint ? 'tree-node-faint' : ''}`;
         nodeEl.setAttribute('data-path', node.path);
-        nodeEl.style.paddingLeft = `${depth * 14 + 6}px`;
+        const INDENT_PER_LEVEL = 18;
+        nodeEl.style.paddingLeft = `${depth * INDENT_PER_LEVEL + 6}px`;
 
         let iconHTML = '';
         let statusBadge = '';
@@ -7831,7 +7832,7 @@ function renderTreeNodeChildren(childrenMap, containerEl, depth = 0) {
         } else {
             const vInfo = getFileVisualInfo(node.path);
             iconHTML = `
-                <span style="width:14px; display:inline-block;"></span>
+                <span style="width:14px; display:inline-block; flex-shrink:0;"></span>
                 <span class="node-icon icon" style="color:${isFaint ? 'inherit' : vInfo.color}; font-size:14px;">${vInfo.icon}</span>
             `;
 
