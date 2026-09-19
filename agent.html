@@ -3,23 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!--
-        Content-Security-Policy note:
-        - script-src is restricted to 'self', jsdelivr (Monaco), and blob:/data: (Monaco's
-          worker is loaded from a data: URL, and the tool runner uses a blob: Worker).
-          'unsafe-inline'/'unsafe-eval' are required because Monaco and the app's own code
-          rely on dynamically generated functions (see the tool-execution sandbox); this is
-          not a full script-injection defense, only a reduction of *third-party* script origins.
-        - connect-src is left broad ('self' plus https:) because this app's entire purpose is
-          letting the user point it at an arbitrary, user-configured LLM endpoint (local or
-          cloud) plus optional search/fetch proxies. Locking connect-src down would break the
-          core feature; the real mitigation for that risk is the per-tool permission prompts,
-          not CSP.
-        - object-src 'none' and base-uri 'self' close off two common bypass vectors.
-        - frame-ancestors is intentionally NOT set here: it is ignored when delivered via a
-          <meta> element (it must come from a real HTTP response header). If you need it,
-          serve this page with a Content-Security-Policy header instead.
-    -->
+    <!-- CSP: script-src limited to self/jsdelivr/blob/data (Monaco + tool worker need unsafe-inline/eval); connect-src broad so user-configured LLM endpoints work; object-src none & base-uri self close bypasses; frame-ancestors omitted (ignored via meta - use HTTP header if needed). -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net blob: data: 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: http: data: blob:; object-src 'none'; base-uri 'self';">
     <title>Ion - Untitled Session</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 6L3 12L7 18' stroke='%2356b6c2' stroke-width='2'/%3E%3Cpath d='M13 4L8 12H16L11 20' stroke='%23a855f7' stroke-width='2'/%3E%3Cpath d='M17 6L21 12L17 18' stroke='%2356b6c2' stroke-width='2'/%3E%3C/svg%3E">
@@ -577,7 +561,7 @@
         }
         #models-modal-footer-hint { font-size: 10.5px; color: var(--dim); }
 
-        /* Two-pane body: fixed provider list on the left, detail pane on the right */
+        /* Two-pane: fixed provider list left, detail pane right */
         #models-modal-body { flex: 1; display: flex; min-height: 0; }
         #mm-sidebar {
             width: 220px; flex-shrink: 0; border-right: 1px solid var(--border);
@@ -3262,8 +3246,7 @@ const AppConfig = {
     }
 };
 
-// localStorage keys grouped by clear-data category. Anything not listed here
-// (e.g. app_config_json) falls under the "settings" bucket by default.
+// localStorage keys grouped by clear-data category; unlisted keys default to "settings".
 const CLEARDATA_LS_KEYS = {
     models: ['models_json', 'selected_model'],
     customTools: ['tool_files_json', 'tool_lock_state', 'tool_deleted_names', 'tool_perm_state'],
@@ -3448,10 +3431,7 @@ function toolFilePath(name) {
     return `${TOOLS_DIR}/${name}.js`;
 }
 
-// Returns the tool file's source with the `TOOL_META = {...}` declaration
-// stripped out, keeping the `handler` function AND any top-level helper
-// functions/consts the file declares alongside it. This is what actually
-// runs in the tool worker, so helpers can call other helpers freely.
+// Returns tool file source with TOOL_META stripped, keeping handler + top-level helpers (what runs in the tool worker).
 function extractHandlerBody(source) {
     const startMatch = source.match(/(?:const|let|var)\s+TOOL_META\s*=\s*/);
     if (!startMatch) return source;
@@ -4134,9 +4114,7 @@ let rootHandle = null;
 
 const IGNORED_DIRS = new Set(['node_modules', '.git', 'venv', '__pycache__', 'target', 'build', 'dist']);
 
-// ---- Protected paths (security) ----
-// Patterns are matched against both the full relative path and the basename,
-// using simple gitignore-style globs ('*' wildcard, trailing '/' = directory-only).
+// ---- Protected paths (security) ---- Patterns match full path and basename; gitignore-style globs ('*', trailing '/' = dir-only).
 const PROTECTED_PATTERNS = [
     '.git',
     '.env',
@@ -4169,8 +4147,7 @@ const PROTECTED_PATTERNS = [
     '.vscode/'
 ];
 
-// Cache of parsed .gitignore rules, keyed by the directory path that contains the .gitignore
-// (root .gitignore is keyed by '').
+// Cache of parsed .gitignore rules, keyed by containing directory path (root = '').
 const gitignoreCache = new Map();
 
 function globToRegExp(pattern) {
@@ -4190,8 +4167,7 @@ function matchesPattern(pattern, fullPath, baseName, isDir) {
         pat = pat.slice(0, -1);
     }
     if (dirOnly && !isDir) {
-        // A dir-only pattern can still match a file living inside that directory,
-        // handled separately via isUnderDirPattern(); here we only match dirs themselves.
+        // A dir-only pattern can still match files inside it (via isUnderDirPattern); here only dirs.
         return false;
     }
 
@@ -4217,9 +4193,7 @@ function isUnderDirPattern(pattern, fullPath) {
     return false;
 }
 
-// A small set of known "directory-like" patterns (no trailing slash in PROTECTED_PATTERNS,
-// but they conventionally name a directory, e.g. ".git", "__pycache__") that should also
-// protect everything nested underneath them, not just the entry itself.
+// Known directory-like patterns (no trailing slash) that should also protect everything nested underneath them.
 const IMPLICIT_DIR_PATTERNS = new Set(['.git', '__pycache__']);
 
 function isHardProtectedPath(path) {
@@ -4238,8 +4212,7 @@ function isHardProtectedPath(path) {
         }
     }
 
-    // Any path segment that matches a known directory-like pattern protects everything beneath it
-    // (e.g. "repo/.git/config" is protected because of the "repo/.git" segment).
+    // Any matching directory-like path segment protects everything beneath it (e.g. "repo/.git/config" via "repo/.git").
     for (let i = 0; i < parts.length - 1; i++) {
         if (IMPLICIT_DIR_PATTERNS.has(parts[i])) return true;
     }
@@ -4259,8 +4232,7 @@ function parseGitignoreContent(text) {
         .filter(l => l && !l.startsWith('#'));
 }
 
-// Populated whenever we read a .gitignore file into the registry (see fastTraverseDirectory /
-// readFileContent). Maps directory path -> array of raw gitignore pattern lines.
+// Populated when a .gitignore is read into the registry; maps directory path -> raw pattern lines.
 function registerGitignoreRules(gitignorePath, content) {
     const dir = dirnameOf(gitignorePath);
     gitignoreCache.set(dir, parseGitignoreContent(content));
@@ -4286,8 +4258,7 @@ function isGitignoredPath(path) {
     return false;
 }
 
-// Single source of truth: is this path protected from ALL tool calls (read/write/rename/list/exists)
-// and hidden from the explorer, regardless of the .agent show/hide toggle?
+// Single source of truth: is this path protected from ALL tool calls and hidden from the explorer (regardless of .agent toggle)?
 function isSecurityProtectedPath(path) {
     if (!path) return false;
     return isHardProtectedPath(path) || isGitignoredPath(path);
@@ -4394,10 +4365,7 @@ function seedDefaultModels() {
 
 let MODEL_PROVIDERS = seedDefaultModels();
 
-// Pretty-prints providers with each model on its own compact single line
-// (e.g. {"name": "llama", "context_window": 32768}), since a plain
-// JSON.stringify(..., null, 2) would explode every model object across
-// several lines and make the file much harder to skim/edit by hand.
+// Pretty-prints providers with each model on one compact line, since plain JSON.stringify(..., null, 2) would explode each model across several lines.
 function modelsFileContent() {
     const indentProvider = '  ';
     const indentModel = '    ';
@@ -4427,9 +4395,7 @@ function saveModels() {
     registerModelsVirtualFile();
 }
 
-// Providers/models must be an array of { provider, url, models: [{name, context_window}] }.
-// Anything else (e.g. stale localStorage from an older schema) is rejected
-// so callers can fall back to defaults instead of crashing.
+// Providers must be an array of { provider, url, models: [{name, context_window}] }; anything else is rejected so callers fall back to defaults.
 function isValidProvidersShape(data) {
     return Array.isArray(data) && data.every(p =>
         p && typeof p === 'object' &&
@@ -4439,9 +4405,7 @@ function isValidProvidersShape(data) {
     );
 }
 
-// Flatten providers -> selectable model entries, each carrying its own
-// provider + model config, for rendering and lookup. Entries are keyed by
-// (providerName, modelName) since a model's `name` IS its API model id.
+// Flatten providers -> selectable model entries, each carrying its provider + model config; keyed by (providerName, modelName) since a model's `name` IS its API id.
 function getAllModelEntries() {
     const out = [];
     if (!Array.isArray(MODEL_PROVIDERS)) return out;
@@ -7219,7 +7183,7 @@ async function switchTab(tabId) {
         attachmentTextPreview.style.display = 'none';
 
         if (!att) {
-            // Rebuild the attachment from a still-rendered <img> in chat (e.g. after a page reload).
+            // Rebuild attachment from a still-rendered <img> in chat (e.g. after page reload).
             const imgEl = document.querySelector(`[data-attachment-id="${tabId.replace('attachment:', '')}"] img`);
             if (imgEl) {
                 att = {
@@ -7332,7 +7296,7 @@ function withStorageShim(html) {
         } catch(e) { /* fall through: some content may still read the real one and fail */ }
       })();
     <\/script>`;
-    // Insert immediately after <head> if present, else prepend.
+    // Insert right after <head> if present, else prepend.
     if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, m => m + shim);
     return shim + html;
 }
@@ -8147,8 +8111,7 @@ btnReloadTree.addEventListener('click', async () => await syncWorkspace(false));
 setInterval(() => syncWorkspace(true), 3000);
 window.addEventListener('focus', () => syncWorkspace(true));
 
-// Walks the whole tree once (ignoring nothing except the standard IGNORED_DIRS) purely to find and
-// parse every .gitignore file, so rules from parent directories are known before we filter anything.
+// Walks the whole tree once to find/parse every .gitignore, so parent-dir rules are known before filtering.
 async function prescanGitignoreFiles(handle, path = "") {
     for await (const entry of handle.values()) {
         if (IGNORED_DIRS.has(entry.name)) continue;
@@ -8311,10 +8274,7 @@ function readFileAsDataURL(file) {
     });
 }
 
-/**
- * Re-encode a file (image) as a PNG data-URL so the model receives PNG regardless of the
- * original format (JPEG, WebP, GIF, etc.).
- */
+// Re-encode an image file as a PNG data-URL so the model always receives PNG regardless of source format.
 async function toPngDataUrl(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -8505,12 +8465,7 @@ function updatePromptRail() {
 
 // Observe new prompts being added.
 //
-// Watch only direct children of #chat (no subtree). During streaming,
-// `reorderSpinnerToBottom()` appends `spinEl` on every ~50ms render tick,
-// which fires a childList mutation every frame. The callback below is
-// rAF-coalesced, but the *rebuild* is gated on the prompt-wrap count so
-// a spinner re-order or a streaming write into an existing streamDiv
-// never tears down the ticks — that's what caused the flicker.
+// Watch only direct children of #chat; rebuild is gated on prompt-wrap count so spinner reorders/streaming writes don't tear down ticks (which caused flicker).
 let _railWrapCount = -1;
 let _railRaf = null;
 const railObserver = new MutationObserver(() => {
@@ -8621,8 +8576,7 @@ const settingsPopover = document.getElementById('settings-popover');
 const btnSettingsToggle = document.getElementById('btn-settings-toggle');
 const readLinesInput = document.getElementById('settings-read-lines');
 
-// --- Top-of-prompt model select dropdown (custom, since a native <select>
-// can't render a bold model name next to a dim provider name per-row) ---
+// --- Top-of-prompt model select dropdown (custom: native <select> can't render bold model + dim provider per row) ---
 const modelSelectBtn = document.getElementById('model-select-btn');
 const modelSelectOverlay = document.getElementById('model-select-overlay');
 const modelSelectDropdown = document.getElementById('model-select-dropdown');
@@ -8702,10 +8656,7 @@ modelSelectConfigBtn.addEventListener('click', (e) => {
     openModelsModal();
 });
 
-// --- Models modal: a friendly add/remove UI over .agent/models.json,
-// rather than requiring hand-edited JSON for the common case.
-// Fixed two-pane layout: provider list on the left (always in the same place),
-// selected provider's details on the right. ---
+// --- Models modal: friendly add/remove UI over .agent/models.json (two-pane: provider list left, selected provider details right) ---
 const modelsModalOverlay = document.getElementById('models-modal-overlay');
 const modelsModalClose = document.getElementById('models-modal-close');
 const modelsModalEditJson = document.getElementById('models-modal-edit-json');
@@ -8725,8 +8676,7 @@ function closeModelsModal() {
     modelsModalOverlay.style.display = 'none';
 }
 
-// Persists MODEL_PROVIDERS through the same path as a manual JSON edit,
-// so validation, the virtual file, the dropdown, and the explorer all stay in sync.
+// Persists MODEL_PROVIDERS via the same path as a manual JSON edit so validation, virtual file, dropdown and explorer stay in sync.
 function commitModelsChange() {
     saveModels();
     renderModelDropdown();
@@ -8737,8 +8687,7 @@ function mmNewProvider() {
     return { provider: 'New Provider', url: '', key: '', models: [{ name: '', context_window: DEFAULT_CONTEXT_WINDOW }] };
 }
 
-// Renders both panes. `focusField` optionally names an input to focus/select
-// in the detail pane right after render (used after Add Provider / Add Model).
+// Renders both panes; focusField optionally names an input to focus/select in the detail pane after render.
 function renderModelsModal(focusField) {
     const hasProviders = Array.isArray(MODEL_PROVIDERS) && MODEL_PROVIDERS.length > 0;
     if (hasProviders) {
@@ -9019,12 +8968,7 @@ function getModelValueFromLine(lineContent) {
     return '';
 }
 
-// Finds the config for the model line under the cursor. Since models now
-// nest one level inside their provider ({ provider, url, key, models: [...] }),
-// this walks up from the model's own object to its parent (the provider)
-// to read url/key. Handles both compact single-line models
-// ({"name": "x", "context_window": 1} all on one line) and pretty-printed
-// multi-line models.
+// Finds the config for the model line under the cursor by walking up to the parent provider to read url/key; handles both compact single-line and pretty-printed multi-line models.
 function findModelInfoForLine(filepath, targetLine) {
     if (!filepath || !filepath.endsWith('models.json')) return null;
     if (!monacoEditor) return null;
@@ -11866,7 +11810,7 @@ function renderRecentFoldersList() {
                 }
             } catch (err) { /* fall through to picker */ }
 
-            // Handle is gone or permission denied → let the user repick
+            // Handle gone or permission denied -> let user repick
             try {
                 const newHandle = await pickFolderWithMemory();
                 await setWorkspace(newHandle);
@@ -12023,13 +11967,10 @@ if (btnExitWorkspace) {
     });
 }
 
-// Computes added/removed line counts between two texts using an LCS-based
-// line diff (Myers-style DP). Capped for very large files to avoid O(n*m)
-// blowups; falls back to a simple length-delta heuristic beyond the cap.
+// Computes added/removed line counts via LCS-based diff; capped for very large files with a length-delta fallback to avoid O(n*m) blowups.
 function computeLineDiffCounts(beforeText, afterText) {
     if (beforeText === afterText) return { added: 0, removed: 0 };
-    // ''.split('\n') yields [''], a phantom single "line" — treat empty text as zero lines
-    // so a brand-new or fully-deleted file doesn't count as an extra +1/-1.
+    // ''.split('\n') yields [''], a phantom line - treat empty text as zero lines so new/deleted files don't count as +1/-1.
     const a = beforeText === '' ? [] : beforeText.split('\n');
     const b = afterText === '' ? [] : afterText.split('\n');
     const n = a.length, m = b.length;
@@ -12051,18 +11992,9 @@ function computeLineDiffCounts(beforeText, afterText) {
     return { added: m - lcsLen, removed: n - lcsLen };
 }
 
-// Recomputes total +added/-removed line counts from scratch: for every file
-// currently tracked as modified, diff its session baseline (content the first
-// time this session touched it) against its live content right now. This is
-// idempotent and self-correcting — unlike accumulating a delta on every call
-// to trackModification, it can't drift when a prompt is edited/resubmitted,
-// a change is reverted, or a file is rewritten to the same content, since
-// those cases all update ctx.modifiedFiles / baseline.originalFiles /
-// registry.files rather than firing an inverse "undo" event.
+// Recomputes +added/-removed line counts from scratch for each modified file (baseline vs live content) - idempotent so it can't drift across edits/reverts.
 function recomputeLineStats(ctx, sid, filePath, currentContent) {
-    // Cache each modified file's live content as we go, so files touched
-    // earlier in this session (but not this call) still contribute their
-    // last-known content rather than being skipped.
+    // Cache each modified file's live content so files touched earlier still contribute rather than being skipped.
     if (!ctx.baseline._lastKnownContent) ctx.baseline._lastKnownContent = {};
     if (filePath !== undefined) {
         if (currentContent === undefined) {
@@ -12100,14 +12032,7 @@ async function trackModification(filePath, beforeContent, afterContent, isRevert
     if (ctx.deleted) return;
     const baseline = ctx.baseline;
 
-    // A file counts as "new to this session" only if we have never touched it
-    // before. originalFiles/fileHistory alone are not enough: a file created by
-    // an earlier prompt has neither (there was no pre-existing content to
-    // baseline), but currentBlame IS set. Without the currentBlame check, a
-    // later prompt's edit would be mistaken for the first edit and would
-    // promote the earlier prompt's created content to `originalFiles`, so
-    // deleting the creating prompt would restore to its own content instead of
-    // deleting the file.
+    // A file is "new to this session" only if never touched - must check currentBlame too, else a later edit gets mistaken for the first and promotes created content to originalFiles.
     const neverTouchedBefore = baseline.originalFiles[filePath] === undefined
         && baseline.fileHistory[filePath] === undefined
         && baseline.currentBlame[filePath] === undefined;
@@ -12783,10 +12708,7 @@ async function runTool(runId, toolMeta, args) {
         getMaxReadLines: () => callApi(runId, 'getMaxReadLines', [])
     };
     try {
-        // toolMeta.code is the full tool file (minus the TOOL_META declaration),
-        // so it may declare top-level helper functions/consts in addition to the
-        // handler itself. Evaluate it as a factory that returns the handler,
-        // giving those helpers a shared scope they can call each other from.
+        // toolMeta.code may declare top-level helpers; evaluate as a factory so they share scope with handler.
         const factory = new Function('args', 'api',
             toolMeta.code + '\\nreturn (typeof handler === "function") ? handler(args, api) : (() => { throw new Error("Tool file does not define an async function handler(args, api)."); })();'
         );
@@ -14081,9 +14003,7 @@ async function loadGithubToolsList(forceRefresh) {
 }
 
 function isGithubEntryInstalled(entry) {
-    // Prefer an accurate check using the parsed TOOL_META.name if we've already
-    // fetched this file (e.g. it was previewed); otherwise fall back to matching
-    // by on-disk file name, which covers the common case where they line up.
+    // Prefer accurate check via parsed TOOL_META.name if fetched; else fall back to matching by on-disk file name.
     if (entry._source) {
         const name = deriveToolNameFromFile(entry.name, entry._source);
         return !!toolRegistry[name];
@@ -14378,9 +14298,7 @@ newToolCreateBtn.addEventListener('click', async () => {
     renderExplorerTree();
     renderToolsList();
     if (!newToolDroppedSource) {
-        // Only auto-open the editor for a brand-new blank tool (nothing to
-        // review yet). A dropped .js file already has content, so leave the
-        // user on whatever tab they were on instead of yanking them into it.
+        // Only auto-open the editor for a brand-new blank tool; dropped .js files already have content.
         await openFileTab(result.path);
     }
     showToast(`Created ${result.path}`, 'success');
