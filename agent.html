@@ -12758,81 +12758,112 @@ function isToolOrAgentPath(path) {
 async function performRename(oldPath, newPath, sessionId) {
     const sid = sessionId || state.activeSessionId;
     const ctx = sessionCtx(sid);
-    if (isSecurityProtectedPath(oldPath) || isSecurityProtectedPath(newPath)) {
+    
+    // Extract strictly the new filename, ignoring any directory paths passed in
+    const newName = newPath.split('/').filter(Boolean).pop();
+    if (!newName) return { error: `ERROR: Invalid new file name.` };
+    
+    // Enforce that the new path stays in the exact same directory as the old path
+    const oldParts = oldPath.split('/').filter(Boolean);
+    const oldDirParts = oldParts.slice(0, -1);
+    const resolvedNewPath = [...oldDirParts, newName].join('/');
+
+    if (oldPath === resolvedNewPath) {
+        return {}; // No rename needed
+    }
+
+    if (isSecurityProtectedPath(oldPath) || isSecurityProtectedPath(resolvedNewPath)) {
         return { error: `ERROR: protected paths can't be renamed or moved.` };
     }
     if (isToolOrAgentPath(oldPath)) {
-        return { error: `ERROR: ${oldPath} is a virtual settings file and can't be renamed or moved.` };
+        return { error: `ERROR: ${oldPath} is a virtual settings file and can't be renamed.` };
     }
-    if (isAgentPath(newPath)) {
+    if (isAgentPath(resolvedNewPath)) {
         return { error: `ERROR: Cannot rename files into .agent` };
     }
+    
     try {
-        if (!registry.meta[oldPath]) return { error: `ERROR: ${oldPath} not found` };
-        if (registry.meta[oldPath]?.isBinary) return { error: `ERROR: ${oldPath} is a binary file.` };
+        const oldMeta = registry.meta[oldPath];
+        if (!oldMeta) return { error: `ERROR: ${oldPath} not found` };
 
+        const oldContent = await readFileContent(oldPath);
+        if (oldContent === undefined) return { error: `ERROR: Content for ${oldPath} not found.` };
+
+        const wasModified = ctx.modifiedFiles.has(oldPath);
+        let nativeMoveSuccess = false;
+        let fileHandle = oldMeta.handle;
+
+        // Attempt Native File System rename
         if (rootHandle) {
             const oldHandle = await getHandleByPath(oldPath);
             if (oldHandle && typeof oldHandle.move === 'function') {
-                const oldParts = oldPath.split('/').filter(Boolean);
-                const newParts = newPath.split('/').filter(Boolean);
-                const oldDirParts = oldParts.slice(0, -1);
-                const newDirParts = newParts.slice(0, -1);
+                try {
+                    // Fetch the explicit parent directory handle to satisfy Chromium's context security for subdirectories
+                    const dirPath = oldDirParts.join('/');
+                    const parentDirHandle = dirPath === '' 
+                        ? rootHandle 
+                        : await getDirectoryHandleByPath(dirPath, false);
 
-                if (JSON.stringify(oldDirParts) === JSON.stringify(newDirParts)) {
-                    await oldHandle.move(newParts[newParts.length - 1]);
-                } else {
-                    const destDir = await getDirectoryHandleByPath(newDirParts.join('/'), false);
-                    if (destDir) {
-                        await oldHandle.move(destDir, newParts[newParts.length - 1]);
-                    } else {
-                        return { error: `ERROR: Destination directory does not exist.` };
+                    if (parentDirHandle) {
+                        // Use the two-argument move() to explicitly provide the directory context
+                        await oldHandle.move(parentDirHandle, newName);
+                        fileHandle = oldHandle;
+                        nativeMoveSuccess = true;
+                    }
+                } catch (e) {
+                    console.warn(`Native move() rejected by browser, falling back: ${e.message}`);
                     }
                 }
+        }
 
-                const oldMeta = registry.meta[oldPath];
-                const oldContent = registry.files[oldPath];
-                const wasModified = ctx.modifiedFiles.has(oldPath);
+        if (nativeMoveSuccess) {
+            // Unified internal state update for a successful native rename
                 delete registry.meta[oldPath];
                 delete registry.files[oldPath];
-                ctx.modifiedFiles.delete(oldPath);
-                registry.meta[newPath] = { kind: 'file', size: oldMeta?.size || 0, isBinary: false, handle: oldHandle };
-                registry.files[newPath] = oldContent;
+            
+            registry.meta[resolvedNewPath] = { 
+                kind: 'file', 
+                size: oldMeta.size || 0, 
+                isBinary: false, 
+                handle: fileHandle
+            };
+            registry.files[resolvedNewPath] = oldContent;
+        } else {
+            // Fallback for restricted environments or if parent handle fails to resolve
+            await writeDisk(resolvedNewPath, oldContent, { sessionId: sid });
+            await deleteFileOrDirectory(oldPath);
+        }
 
-                if (ctx.baseline.originalFiles[oldPath] !== undefined) {
-                    ctx.baseline.originalFiles[newPath] = ctx.baseline.originalFiles[oldPath];
-                    delete ctx.baseline.originalFiles[oldPath];
+        // Clean up the old modified status
+                ctx.modifiedFiles.delete(oldPath);
+
+        // Safely transfer history & blames seamlessly for BOTH success and fallback paths
+        const transferHistory = (dict) => {
+            if (dict[oldPath] !== undefined) {
+                dict[resolvedNewPath] = dict[oldPath];
+                delete dict[oldPath];
                 }
-                if (ctx.baseline.fileHistory[oldPath] !== undefined) {
-                    ctx.baseline.fileHistory[newPath] = ctx.baseline.fileHistory[oldPath];
-                    delete ctx.baseline.fileHistory[oldPath];
-                }
-                if (ctx.baseline.currentBlame[oldPath] !== undefined) {
-                    ctx.baseline.currentBlame[newPath] = ctx.baseline.currentBlame[oldPath];
-                    delete ctx.baseline.currentBlame[oldPath];
-                }
-                if (ctx.baseline.baselineBlame[oldPath] !== undefined) {
-                    ctx.baseline.baselineBlame[newPath] = ctx.baseline.baselineBlame[oldPath];
-                    delete ctx.baseline.baselineBlame[oldPath];
-                }
-                if (wasModified) ctx.modifiedFiles.add(newPath);
+        };
+
+        transferHistory(ctx.baseline.originalFiles);
+        transferHistory(ctx.baseline.fileHistory);
+        transferHistory(ctx.baseline.currentBlame);
+        transferHistory(ctx.baseline.baselineBlame);
+
+        // Restore modified status for the new path
+        if (wasModified) {
+            ctx.modifiedFiles.add(resolvedNewPath);
+        } else {
+            ctx.modifiedFiles.delete(resolvedNewPath);
+        }
+        
                 await persistCheckpoint(sid);
 
                 if (ctx.isLive) {
                     renderExplorerTree();
                     renderChangesPanel();
                 }
-                return {};
-            }
-        }
-
-        const content = await readFileContent(oldPath);
-        if (content === undefined) return { error: `ERROR: ${oldPath} not found` };
-
-        await writeDisk(newPath, content, { sessionId: sid });
-        await deleteFileOrDirectory(oldPath);
-        registry.meta[newPath] = { kind: 'file', size: content.length, isBinary: false };
-        registry.files[newPath] = content;
+        
         return {};
     } catch(e) {
         return { error: `ERROR: ${e.message}` };
