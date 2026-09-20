@@ -396,9 +396,9 @@
         #newtool-modal {
             background: var(--bg-panel); border: 1px solid var(--border-highlight);
             border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,0.9);
-            width: 520px; max-width: 94vw;
+            width: 780px; max-width: 94vw;
             display: flex; flex-direction: column; animation: fadeIn 0.12s ease-out;
-            max-height: 88vh;
+            height: 580px; max-height: 88vh;
         }
         #newtool-modal-header {
             display: flex; align-items: center; justify-content: space-between;
@@ -413,7 +413,7 @@
             cursor: pointer; padding: 4px; border-radius: 4px;
         }
         #newtool-modal-close:hover { color: var(--fg); background: rgba(255,255,255,0.06); }
-        #newtool-modal-body { padding: 14px; }
+        #newtool-modal-body { padding: 14px; flex: 1; display: flex; flex-direction: column; }
         #newtool-modal-body .settings-field-row label { margin-bottom: 0; }
         #newtool-source-tabs {
             display: flex; gap: 4px; margin-bottom: 14px;
@@ -430,7 +430,7 @@
         .newtool-source-tab:hover { color: var(--fg); }
         .newtool-source-tab.active { background: rgba(86, 182, 194, 0.14); color: var(--cyan); }
         .newtool-pane { display: none; }
-        .newtool-pane.active { display: block; }
+        .newtool-pane.active { display: flex; flex-direction: column; flex: 1; }
         #newtool-dropzone {
             margin-top: 14px;
             border: 1.5px dashed var(--border-highlight); border-radius: 8px;
@@ -446,24 +446,36 @@
         #newtool-dropzone-text strong { color: var(--fg); font-weight: 600; }
         #newtool-dropzone-hint { font-size: 10px; color: var(--dim); opacity: 0.75; }
         #newtool-file-picked {
-            display: none; margin-top: 8px; align-items: center; gap: 6px;
-            font-size: 11px; color: var(--green); font-family: var(--font-mono);
-            padding: 6px 8px; background: rgba(152, 195, 121, 0.1);
+            display: none; margin-top: 8px;
+            font-family: var(--font-mono); font-size: 11px; color: var(--green);
             border: 1px solid rgba(152, 195, 121, 0.3); border-radius: 6px;
+            overflow: hidden;
         }
-        #newtool-file-picked .icon { font-size: 14px; color: var(--green); }
+        #newtool-file-picked .newtool-file-picked-row {
+            display: flex; align-items: center; gap: 6px;
+            padding: 6px 8px; background: rgba(152, 195, 121, 0.1);
+        }
+        #newtool-file-picked .newtool-file-picked-row .icon { font-size: 14px; color: var(--green); }
         #newtool-file-picked .newtool-file-clear {
             margin-left: auto; background: transparent; border: none;
             color: var(--dim); cursor: pointer; padding: 2px; border-radius: 4px;
             display: flex; align-items: center;
         }
         #newtool-file-picked .newtool-file-clear:hover { color: var(--red); }
+        #newtool-file-picked .newtool-file-picked-desc {
+            display: block; padding: 8px 10px 10px 24px; margin-top: -2px;
+            background: rgba(0, 0, 0, 0.3);
+            border-top: 1px solid rgba(0, 0, 0, 0.4);
+            font-family: var(--font-mono); font-size: 11px; color: var(--fg);
+            white-space: normal; line-height: 1.5;
+        }
+        #newtool-file-picked .newtool-file-picked-desc.dim-placeholder { color: var(--dim); font-style: italic; }
         #newtool-modal-error {
             display: none; font-size: 11px; color: var(--red); margin-top: 8px; line-height: 1.4;
         }
         #newtool-modal-body { overflow-y: auto; }
         #newtool-col-local, #newtool-col-browse {
-            min-width: 0; flex-direction: column;
+            min-width: 0; flex-direction: column; flex: 1;
         }
         #newtool-col-local.active, #newtool-col-browse.active {
             display: flex;
@@ -487,23 +499,43 @@
         #newtool-browse-refresh .icon { font-size: 15px; }
         #newtool-browse-refresh.spinning .icon { animation: spin 0.8s linear infinite; }
         #newtool-browse-list {
-            height: 220px; overflow-y: auto;
+            flex: 1; min-height: 0; overflow-y: auto;
             border: 1px solid var(--border); border-radius: 8px;
             background: rgba(255,255,255,0.015);
             display: flex; flex-direction: column;
         }
-        .newtool-browse-row {
+        .newtool-browse-item {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.0875);
+        }
+        .newtool-browse-item:last-child { border-bottom: none; }
+        .newtool-browse-item-row {
             display: flex; align-items: center; gap: 8px;
-            padding: 8px 10px; cursor: grab;
-            border-bottom: 1px solid var(--border);
+            padding: 8px 10px; cursor: default;
             font-family: var(--font-mono); font-size: 11.5px; color: var(--fg);
             transition: opacity 0.15s ease;
         }
-        .newtool-browse-row:last-child { border-bottom: none; }
-        .newtool-browse-row:hover { background: rgba(86, 182, 194, 0.08); }
-        .newtool-browse-row.selected { background: rgba(86, 182, 194, 0.14); }
-        .newtool-browse-row.installed { cursor: default; }
-        .newtool-browse-row.installed .newtool-browse-row-name { color: var(--dim); }
+        .newtool-browse-item:hover .newtool-browse-item-row { background: rgba(0, 0, 0, 0.1); }
+        .newtool-browse-item.installed { cursor: default; }
+        .newtool-browse-item.installed .newtool-browse-item-row { cursor: default; }
+        .newtool-browse-item.installed .newtool-browse-row-name { color: var(--dim); }
+        .newtool-browse-item.expanded {
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 6px;
+            border-bottom: none;
+        }
+        .newtool-browse-item-desc {
+            display: none;
+            padding: 8px 10px 10px 24px; margin-top: -2px;
+            background: rgba(0, 0, 0, 0.3);
+            border-top: 1px solid rgba(0, 0, 0, 0.4);
+            border-radius: 0 0 6px 6px;
+            font-family: var(--font-mono); font-size: 11px; color: var(--fg);
+            white-space: normal; line-height: 1.5;
+        }
+        .newtool-browse-item.expanded .newtool-browse-item-desc { display: block; }
+        .newtool-browse-item-desc.dim-placeholder { color: var(--dim); font-style: italic; }
+        .newtool-browse-item .icon-chevron { font-size: 14px; color: var(--dim); transition: transform 0.15s ease; flex-shrink: 0; }
+        .newtool-browse-item.expanded .icon-chevron { transform: rotate(-90deg); }
         .newtool-browse-row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .newtool-browse-row-install {
             flex-shrink: 0; width: 66px; text-align: center; border: 1px solid var(--border); border-radius: 6px;
@@ -511,30 +543,14 @@
             font-family: var(--font-mono); font-size: 10.5px; padding: 3px 0;
             cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease;
         }
-        .newtool-browse-row-install:hover:not(:disabled) { border-color: var(--border-highlight); background: rgba(86, 182, 194, 0.12); }
-        .newtool-browse-row-install:disabled { opacity: 0.45; cursor: default; color: var(--green); }
+        .newtool-browse-row-install:hover:not(:disabled) { border-color: var(--border-highlight); background: rgba(0, 0, 0, 0.12); }
+        .newtool-browse-row-install:disabled { opacity: 0.45; cursor: default; color: rgba(255, 255, 255, 0.3); }
         #newtool-browse-status {
             display: flex; align-items: center; justify-content: center;
             gap: 8px; padding: 20px 10px; color: var(--dim); font-size: 11.5px;
             text-align: center; flex-direction: column;
         }
         #newtool-browse-status .icon { font-size: 20px; }
-        #newtool-browse-preview {
-            display: none; margin-top: 10px; border: 1px solid var(--border); border-radius: 8px;
-            overflow: hidden;
-        }
-        #newtool-browse-preview-header {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 6px 10px; background: rgba(255,255,255,0.03);
-            border-bottom: 1px solid var(--border);
-            font-size: 10.5px; color: var(--dim); font-family: var(--font-mono);
-        }
-        #newtool-browse-preview-code {
-            margin: 0; padding: 8px 10px; max-height: 110px; overflow: auto;
-            font-family: var(--font-mono); font-size: 11px; color: var(--fg);
-            white-space: normal; line-height: 1.5;
-        }
-        #newtool-browse-preview-code.dim-placeholder { color: var(--dim); font-style: italic; }
         #newtool-modal-footer {
             display: flex; align-items: center; justify-content: flex-end; gap: 8px;
             padding: 12px 14px; border-top: 1px solid var(--border); flex-shrink: 0;
@@ -2662,11 +2678,14 @@
                         <input type="file" id="newtool-file-input" accept=".js,text/javascript" style="display:none">
                     </div>
                     <div id="newtool-file-picked">
-                        <span class="icon">description</span>
-                        <span id="newtool-file-picked-name"></span>
-                        <button type="button" class="newtool-file-clear" title="Remove file">
-                            <span class="icon" style="font-size:14px;">close</span>
-                        </button>
+                        <div class="newtool-file-picked-row">
+                            <span class="icon">description</span>
+                            <span id="newtool-file-picked-name"></span>
+                            <button type="button" class="newtool-file-clear" title="Remove file">
+                                <span class="icon" style="font-size:14px;">close</span>
+                            </button>
+                        </div>
+                        <div id="newtool-file-picked-desc" class="newtool-file-picked-desc dim-placeholder"></div>
                     </div>
                 </div>
 
@@ -2678,22 +2697,13 @@
                         </button>
                     </div>
                     <div id="newtool-browse-list"></div>
-                    <div id="newtool-browse-preview">
-                        <div id="newtool-browse-preview-header">
-                            <span id="newtool-browse-preview-name"></span>
-                            <a id="newtool-browse-preview-link" href="#" target="_blank" rel="noopener noreferrer" title="View on GitHub" style="color: var(--dim); display:flex; align-items:center;">
-                                <span class="icon" style="font-size:13px;">open_in_new</span>
-                            </a>
-                        </div>
-                        <div id="newtool-browse-preview-code"></div>
-                    </div>
                 </div>
 
                 <div id="newtool-modal-error"></div>
             </div>
             <div id="newtool-modal-footer">
-                <button id="newtool-cancel" class="btn-confirm">Cancel</button>
-                <button id="newtool-create" class="btn-confirm primary">Create</button>
+                <button id="newtool-cancel" class="btn-confirm">Done</button>
+                <button id="newtool-install" class="btn-confirm primary" title="Install this tool" style="display:none;">Install</button>
             </div>
         </div>
     </div>
@@ -8028,31 +8038,30 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
 
             try {
                 if (node.kind === 'file') {
-                    if (rootHandle) {
-                        const oldHandle = await getHandleByPath(oldPath);
-                        if (oldHandle && typeof oldHandle.move === 'function') {
-                            const oldParts = oldPath.split('/').filter(Boolean);
-                            const newParts = newPath.split('/').filter(Boolean);
-                            const oldDirParts = oldParts.slice(0, -1);
-                            const newDirParts = newParts.slice(0, -1);
+                    if (!rootHandle) {
+                        showToast('Rename requires a granted directory (File System Access API).', 'error');
+                        return;
+                    }
+                    const oldHandle = await getHandleByPath(oldPath);
+                    if (!oldHandle || typeof oldHandle.move !== 'function') {
+                        showToast('File System Access move() is not supported in this browser.', 'error');
+                        return;
+                    }
+                    const oldParts = oldPath.split('/').filter(Boolean);
+                    const newParts = newPath.split('/').filter(Boolean);
+                    const oldDirParts = oldParts.slice(0, -1);
+                    const newDirParts = newParts.slice(0, -1);
 
-                            if (JSON.stringify(oldDirParts) === JSON.stringify(newDirParts)) {
-                                await oldHandle.move(newParts[newParts.length - 1]);
-                            } else {
-                                const destDir = await getDirectoryHandleByPath(newDirParts.join('/'), false);
-                                if (destDir) {
-                                    await oldHandle.move(destDir, newParts[newParts.length - 1]);
-                                }
-                            }
-                        } else {
-                            const content = await readFileContent(oldPath);
-                            await writeDisk(newPath, content);
-                            await deleteFileOrDirectory(oldPath);
-                        }
+                    if (JSON.stringify(oldDirParts) === JSON.stringify(newDirParts)) {
+                        await oldHandle.move(newParts[newParts.length - 1]);
                     } else {
-                        const content = await readFileContent(oldPath);
-                        await writeDisk(newPath, content);
-                        await deleteFileOrDirectory(oldPath);
+                        const destDir = await getDirectoryHandleByPath(newDirParts.join('/'), false);
+                        if (destDir) {
+                            await oldHandle.move(destDir, newParts[newParts.length - 1]);
+                        } else {
+                            showToast('Destination directory does not exist.', 'error');
+                            return;
+                        }
                     }
 
                     if (state.openTabs.includes(oldPath)) {
@@ -12812,14 +12821,14 @@ async function performRename(oldPath, newPath, sessionId) {
                     }
                 } catch (e) {
                     console.warn(`Native move() rejected by browser, falling back: ${e.message}`);
-                    }
                 }
+            }
         }
 
         if (nativeMoveSuccess) {
             // Unified internal state update for a successful native rename
-                delete registry.meta[oldPath];
-                delete registry.files[oldPath];
+            delete registry.meta[oldPath];
+            delete registry.files[oldPath];
             
             registry.meta[resolvedNewPath] = { 
                 kind: 'file', 
@@ -12835,14 +12844,14 @@ async function performRename(oldPath, newPath, sessionId) {
         }
 
         // Clean up the old modified status
-                ctx.modifiedFiles.delete(oldPath);
+        ctx.modifiedFiles.delete(oldPath);
 
         // Safely transfer history & blames seamlessly for BOTH success and fallback paths
         const transferHistory = (dict) => {
             if (dict[oldPath] !== undefined) {
                 dict[resolvedNewPath] = dict[oldPath];
                 delete dict[oldPath];
-                }
+            }
         };
 
         transferHistory(ctx.baseline.originalFiles);
@@ -12857,12 +12866,12 @@ async function performRename(oldPath, newPath, sessionId) {
             ctx.modifiedFiles.delete(resolvedNewPath);
         }
         
-                await persistCheckpoint(sid);
+        await persistCheckpoint(sid);
 
-                if (ctx.isLive) {
-                    renderExplorerTree();
-                    renderChangesPanel();
-                }
+        if (ctx.isLive) {
+            renderExplorerTree();
+            renderChangesPanel();
+        }
         
         return {};
     } catch(e) {
@@ -14221,8 +14230,9 @@ const newToolDropzoneText = document.getElementById('newtool-dropzone-text');
 const newToolFileInput = document.getElementById('newtool-file-input');
 const newToolFilePicked = document.getElementById('newtool-file-picked');
 const newToolFilePickedName = document.getElementById('newtool-file-picked-name');
+const newToolFilePickedDesc = document.getElementById('newtool-file-picked-desc');
 const newToolErrorEl = document.getElementById('newtool-modal-error');
-const newToolCreateBtn = document.getElementById('newtool-create');
+const newToolInstallBtn = document.getElementById('newtool-install');
 
 let newToolDroppedSource = null; // raw text content of the dropped/picked .js file
 let newToolNameAutoFilled = false; // whether the name field was auto-filled from a file (vs typed by the user)
@@ -14235,10 +14245,6 @@ const GITHUB_TOOLS_PATH = '';    // directory containing .js tools
 const newToolBrowseList = document.getElementById('newtool-browse-list');
 const newToolBrowseSearch = document.getElementById('newtool-browse-search');
 const newToolBrowseRefresh = document.getElementById('newtool-browse-refresh');
-const newToolBrowsePreview = document.getElementById('newtool-browse-preview');
-const newToolBrowsePreviewName = document.getElementById('newtool-browse-preview-name');
-const newToolBrowsePreviewLink = document.getElementById('newtool-browse-preview-link');
-const newToolBrowsePreviewCode = document.getElementById('newtool-browse-preview-code');
 
 let newToolBrowseFiles = null;      // cached listing: [{name, download_url, html_url, size}]
 let newToolBrowseSelected = null;   // currently selected entry
@@ -14249,7 +14255,6 @@ function newToolBrowseSetStatus(html) {
 
 async function loadGithubToolsList(forceRefresh) {
     newToolBrowseSelected = null;
-    newToolBrowsePreview.style.display = 'none';
     newToolBrowseRefresh.classList.add('spinning');
     newToolBrowseSetStatus('<span class="icon">hourglass_top</span><span>Loading tools from GitHub…</span>');
     try {
@@ -14307,27 +14312,32 @@ function renderGithubToolsList() {
 
     newToolBrowseList.innerHTML = '';
     files.forEach(entry => {
-        const row = document.createElement('div');
-        row.className = 'newtool-browse-row';
+        const item = document.createElement('div');
+        item.className = 'newtool-browse-item';
         const installed = isGithubEntryInstalled(entry);
-        if (newToolBrowseSelected && newToolBrowseSelected.name === entry.name) row.classList.add('selected');
-        if (installed) row.classList.add('installed');
-        if (installed) {
-            row.innerHTML = `
+        if (newToolBrowseSelected && newToolBrowseSelected.name === entry.name) item.classList.add('selected');
+        if (installed) item.classList.add('installed');
+        item.innerHTML = `
+            <div class="newtool-browse-item-row">
+                <span class="icon icon-chevron">expand_more</span>
                 <span class="newtool-browse-row-name">${entry.name}</span>
-                <button type="button" class="newtool-browse-row-install" disabled>Installed</button>
-            `;
-        } else {
-            row.innerHTML = `
-                <span class="newtool-browse-row-name">${entry.name}</span>
-                <button type="button" class="newtool-browse-row-install">Install</button>
-            `;
-        }
-        row.addEventListener('click', (e) => {
+                ${installed
+                    ? '<button type="button" class="newtool-browse-row-install" disabled>Installed</button>'
+                    : '<button type="button" class="newtool-browse-row-install">Install</button>'}
+            </div>
+            <div class="newtool-browse-item-desc dim-placeholder"></div>
+        `;
+        const descEl = item.querySelector('.newtool-browse-item-desc');
+        entry._item = item;
+        item.addEventListener('click', (e) => {
             if (e.target.closest('.newtool-browse-row-install')) return;
+            if (item.classList.contains('expanded')) {
+                item.classList.remove('expanded');
+                return;
+            }
             selectGithubTool(entry);
         });
-        const installBtn = row.querySelector('.newtool-browse-row-install');
+        const installBtn = item.querySelector('.newtool-browse-row-install');
         if (installBtn) {
             installBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
@@ -14335,7 +14345,7 @@ function renderGithubToolsList() {
                 await installGithubEntry(entry);
             });
         }
-        newToolBrowseList.appendChild(row);
+        newToolBrowseList.appendChild(item);
     });
 }
 
@@ -14346,11 +14356,13 @@ async function selectGithubTool(entry) {
     renderGithubToolsList();
     newToolUpdateCreateLabel();
     newToolShowError('');
-    newToolBrowsePreview.style.display = 'block';
-    newToolBrowsePreviewName.textContent = entry.name;
-    newToolBrowsePreviewLink.href = entry.html_url || '#';
-    newToolBrowsePreviewCode.className = 'dim-placeholder';
-    newToolBrowsePreviewCode.textContent = 'Loading…';
+
+    const item = entry._item;
+    if (!item) return;
+    item.classList.add('expanded');
+    const descEl = item.querySelector('.newtool-browse-item-desc');
+    descEl.className = 'newtool-browse-item-desc dim-placeholder';
+    descEl.textContent = 'Loading…';
     try {
         const resp = await fetch(entry.download_url);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -14358,11 +14370,11 @@ async function selectGithubTool(entry) {
         entry._source = text; // cache for install
         const meta = parseToolMeta(text);
         const desc = meta && (meta.description || '').trim();
-        newToolBrowsePreviewCode.className = desc ? '' : 'dim-placeholder';
-        newToolBrowsePreviewCode.textContent = desc || (meta ? 'No description provided.' : 'No TOOL_META found in this file.');
+        descEl.className = 'newtool-browse-item-desc' + (desc ? '' : ' dim-placeholder');
+        descEl.textContent = desc || (meta ? 'No description provided.' : 'No TOOL_META found in this file.');
     } catch (e) {
-        newToolBrowsePreviewCode.className = 'dim-placeholder';
-        newToolBrowsePreviewCode.textContent = `Could not load file: ${(e && e.message) ? e.message : 'network error'}`;
+        descEl.className = 'newtool-browse-item-desc dim-placeholder';
+        descEl.textContent = `Could not load file: ${(e && e.message) ? e.message : 'network error'}`;
     }
 }
 
@@ -14410,12 +14422,15 @@ function newToolClearFile() {
     newToolFileInput.value = '';
     newToolFilePicked.style.display = 'none';
     newToolFilePickedName.textContent = '';
+    newToolFilePickedDesc.textContent = '';
     newToolShowError('');
     newToolUpdateCreateLabel();
 }
 
 function newToolUpdateCreateLabel() {
-    newToolCreateBtn.textContent = newToolDroppedSource ? 'Import' : 'Create';
+    // Footer shows "Install" at the Create position only once a file is
+    // uploaded/dropped; otherwise just "Done".
+    newToolInstallBtn.style.display = newToolDroppedSource ? '' : 'none';
 }
 
 // --- Source tabs (Blank / Import file / Browse GitHub) ---
@@ -14429,8 +14444,9 @@ function setNewToolPane(pane) {
     newToolPanes.forEach(p => p.classList.toggle('active', p.dataset.pane === pane));
     newToolShowError('');
     // Footer Create button only drives the Blank and Import-file flows;
-    // Browse GitHub installs directly from each row.
-    newToolCreateBtn.style.display = (pane === 'browse') ? 'none' : '';
+    // Browse GitHub installs directly from each row, and an uploaded/dropped
+    // file installs via its own Install button instead of Create.
+    newToolUpdateCreateLabel();
     if (pane === 'blank') {
         setTimeout(() => newToolNameInput.focus(), 0);
     }
@@ -14445,7 +14461,6 @@ function openNewToolModal() {
     newToolNameAutoFilled = false;
     newToolClearFile();
     newToolBrowseSelected = null;
-    newToolBrowsePreview.style.display = 'none';
     newToolBrowseSearch.value = '';
     newToolShowError('');
     newToolUpdateCreateLabel();
@@ -14488,10 +14503,14 @@ async function handleNewToolFile(file) {
     }
     newToolDroppedSource = text;
     newToolFilePickedName.textContent = file.name;
-    newToolFilePicked.style.display = 'flex';
+    newToolFilePicked.style.display = 'block';
+    // Show the file's description below its name, similar to the GitHub browse list.
+    const meta = parseToolMeta(text);
+    const desc = meta && (meta.description || '').trim();
+    newToolFilePickedDesc.className = 'newtool-file-picked-desc' + (desc ? '' : ' dim-placeholder');
+    newToolFilePickedDesc.textContent = desc || (meta ? 'No description provided.' : 'No TOOL_META found in this file.');
     // A local file takes priority over any GitHub selection.
     newToolBrowseSelected = null;
-    newToolBrowsePreview.style.display = 'none';
     renderGithubToolsList();
     newToolUpdateCreateLabel();
 
@@ -14536,12 +14555,8 @@ document.querySelector('#newtool-file-picked .newtool-file-clear').addEventListe
     newToolClearFile();
 });
 
-newToolNameInput.addEventListener('input', () => {
-    newToolNameAutoFilled = false;
-    newToolShowError('');
-});
-
-newToolCreateBtn.addEventListener('click', async () => {
+document.getElementById('newtool-install').addEventListener('click', async () => {
+    if (!newToolDroppedSource) return;
     const name = newToolNameInput.value.trim();
     if (!name) {
         newToolShowError('Please enter a tool name.');
@@ -14556,15 +14571,35 @@ newToolCreateBtn.addEventListener('click', async () => {
     closeNewToolModal();
     renderExplorerTree();
     renderToolsList();
-    if (!newToolDroppedSource) {
-        // Only auto-open the editor for a brand-new blank tool; dropped .js files already have content.
-        await openFileTab(result.path);
+    showToast(`Installed ${result.path}`, 'success');
+});
+
+newToolNameInput.addEventListener('input', () => {
+    newToolNameAutoFilled = false;
+    newToolShowError('');
+});
+
+newToolInstallBtn.addEventListener('click', async () => {
+    if (!newToolDroppedSource) return;
+    const name = newToolNameInput.value.trim();
+    if (!name) {
+        newToolShowError('Please enter a tool name.');
+        newToolNameInput.focus();
+        return;
     }
-    showToast(`Created ${result.path}`, 'success');
+    const result = createToolFile(name, newToolDroppedSource);
+    if (!result.ok) {
+        newToolShowError(result.error);
+        return;
+    }
+    closeNewToolModal();
+    renderExplorerTree();
+    renderToolsList();
+    showToast(`Installed ${result.path}`, 'success');
 });
 
 newToolNameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); newToolCreateBtn.click(); }
+    if (e.key === 'Enter' && newToolDroppedSource) { e.preventDefault(); newToolInstallBtn.click(); }
 });
 
 document.getElementById('newtool-modal-close').addEventListener('click', closeNewToolModal);
