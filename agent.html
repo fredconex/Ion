@@ -264,31 +264,34 @@
             display: flex; align-items: center; justify-content: center;
         }
         .btn-del-session:hover { color: var(--red); background: rgba(224, 108, 117, 0.15); }
-        #checkpoint-modal-overlay {
-            display: none; position: fixed; inset: 0;
-            background: rgba(0,0,0,0.55); z-index: 300;
-            align-items: center; justify-content: center;
+        /* Changes panel: Modified Files and Graph each take half the vertical
+           space (50/50 flex split), each with its own scroll. */
+        #sidebar-view-changes { display: flex; flex-direction: column; overflow: hidden; }
+        #changes-subview-files {
+            display: flex; flex-direction: column;
+            flex: 1; min-height: 0; overflow: hidden;
         }
-        #checkpoint-modal {
-            background: var(--bg-panel); border: 1px solid var(--border-highlight);
-            border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,0.9);
-            width: 560px; max-width: 92vw; max-height: 80vh;
-            display: flex; flex-direction: column; animation: fadeIn 0.12s ease-out;
+        #changes-graph-divider {
+            height: 1px; background: var(--border); flex-shrink: 0; margin: 0 8px;
         }
-        #checkpoint-modal-header {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 12px 14px; border-bottom: 1px solid var(--border);
+        #changes-subview-graph {
+            display: flex; flex-direction: column; flex: 1; min-height: 0;
         }
-        #checkpoint-modal-title {
-            font-size: 12px; font-weight: 700; color: var(--cyan);
-            font-family: var(--font-mono); display: flex; align-items: center;
-            gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        #changes-subview-graph .sidebar-panel-header { flex-shrink: 0; }
+        #graph-breadcrumb {
+            display: none; align-items: center; gap: 6px; font-size: 10.5px;
+            color: var(--dim); min-width: 0;
         }
-        #checkpoint-modal-close {
-            background: transparent; border: none; color: var(--dim);
-            cursor: pointer; padding: 4px; border-radius: 4px;
+        #graph-breadcrumb.visible { display: flex; }
+        #graph-breadcrumb .crumb-back {
+            display: flex; align-items: center; gap: 1px; color: var(--cyan);
+            cursor: pointer; font-weight: 700; flex-shrink: 0;
         }
-        #checkpoint-modal-close:hover { color: var(--fg); background: rgba(255,255,255,0.06); }
+        #graph-breadcrumb .crumb-back:hover { text-decoration: underline; }
+        #graph-breadcrumb .crumb-file {
+            font-family: var(--font-mono); color: var(--fg);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+        }
         #yesno-modal-overlay {
             display: none; position: fixed; inset: 0;
             background: rgba(0,0,0,0.55); z-index: 400;
@@ -729,79 +732,110 @@
         #about-modal .about-link:hover { background: rgba(255, 255, 255, 0.06); color: var(--cyan); }
         #about-modal .about-link .icon { font-size: 17px; color: var(--dim); }
         #about-modal .about-link:hover .icon { color: var(--cyan); }
+        /* ---- Git-graph style commit timeline (VS Code "Graph" look) ---- */
         #checkpoint-timeline-list {
-            overflow-y: auto; padding: 10px 14px;
-            display: flex; flex-direction: column; gap: 2px;
+            overflow-y: auto; padding: 4px 0 8px 0; flex: 1; min-height: 0;
         }
-        .checkpoint-entry {
-            display: flex; gap: 10px; padding: 9px 8px;
-            border-radius: 6px; position: relative;
+        .graph-row {
+            display: flex; align-items: stretch; position: relative;
+            cursor: pointer; min-height: 22px;
         }
-        .checkpoint-entry:not(:last-child)::before {
-            content: ''; position: absolute; left: 15px;
-            top: 26px; bottom: -11px; width: 1px; background: var(--border);
+        .graph-row:hover { background: rgba(255,255,255,0.035); }
+        .graph-row.expanded { background: rgba(255,255,255,0.045); }
+        .graph-row.current-row { cursor: default; }
+        .graph-rail {
+            width: 26px; flex-shrink: 0; position: relative; display: flex;
+            justify-content: center;
         }
-        .checkpoint-dot {
-            width: 10px; height: 10px; border-radius: 50%;
-            background: var(--dim); margin-top: 4px;
-            flex-shrink: 0; z-index: 1;
+        .graph-rail::before {
+            content: ''; position: absolute; top: 0; bottom: 0; left: 50%;
+            width: 2px; background: var(--border-highlight); transform: translateX(-50%);
         }
-        .checkpoint-entry.baseline .checkpoint-dot { background: var(--cyan); }
-        .checkpoint-body { flex: 1; min-width: 0; }
-        .checkpoint-label-row {
+        .graph-row:first-child .graph-rail::before { top: 50%; }
+        .graph-row:last-child .graph-rail::before { bottom: 50%; }
+        .graph-node {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 11px; height: 11px; border-radius: 50%; z-index: 1;
+            background: var(--dim); border: 2px solid var(--bg-panel);
+            box-shadow: 0 0 0 1px var(--border-highlight);
+        }
+        .graph-node.baseline  { background: var(--cyan); }
+        .graph-node.checkpoint,
+        .graph-node.mixed      { background: var(--magenta); }
+        .graph-node.delete    { background: var(--red); }
+        .graph-node.rename-in,
+        .graph-node.rename-out{ background: var(--blue); }
+        .graph-node.mkdir     { background: var(--yellow); }
+        .graph-node.current {
+            background: var(--bg-panel); border: 2px solid var(--green);
+            box-shadow: 0 0 0 3px rgba(152,195,121,0.18);
+        }
+        .graph-body {
+            flex: 1; min-width: 0; padding: 2px 10px 2px 4px;
+            display: flex; flex-direction: column; gap: 1px; justify-content: center;
+        }
+        .graph-msg-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+        .graph-msg {
+            font-size: 11.5px; font-weight: 600; color: var(--fg);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+        }
+        .graph-msg.manual { font-style: italic; color: var(--dim); font-weight: 500; }
+        .graph-msg .icon { font-size: 11px; vertical-align: -1px; color: var(--dim); margin-right: 2px; }
+        .graph-meta-row {
+            display: flex; align-items: center; gap: 6px; font-size: 9.5px; color: var(--dim);
+        }
+        .graph-meta-row .graph-kind-label { flex-shrink: 0; }
+        .graph-meta-row .graph-kind-label.baseline { color: var(--cyan); }
+        .graph-meta-row .graph-kind-label.checkpoint,
+        .graph-meta-row .graph-kind-label.mixed { color: var(--magenta); }
+        .graph-meta-row .graph-kind-label.delete { color: var(--red); }
+        .graph-meta-row .graph-kind-label.rename-in,
+        .graph-meta-row .graph-kind-label.rename-out { color: var(--blue); }
+        .graph-meta-row .graph-kind-label.mkdir { color: var(--yellow); }
+        .graph-meta-row .graph-kind-label.current { color: var(--green); }
+        .graph-meta-dot { flex-shrink: 0; opacity: 0.5; }
+        .graph-file-count { flex-shrink: 0; }
+        .graph-ts { flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+        .graph-actions {
+            display: flex; align-items: center; gap: 2px; flex-shrink: 0;
+            margin-left: auto;
+            opacity: 0; transition: opacity 0.1s ease;
+        }
+        .graph-row:hover .graph-actions { opacity: 1; }
+        .btn-graph-action {
+            background: transparent; border: none; color: var(--dim);
+            cursor: pointer; padding: 3px; border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .btn-graph-action:hover { color: var(--cyan); background: rgba(255,255,255,0.06); }
+        .btn-graph-action.revert:hover { color: var(--yellow, orange); background: rgba(229,192,123,0.12); }
+        .graph-files {
+            position: relative;
+            padding: 0 10px 4px 22px; display: flex; flex-direction: column; gap: 1px;
+        }
+        .graph-files::before {
+            content: ''; position: absolute; top: 0; bottom: 0; left: 13px;
+            width: 2px; background: var(--border-highlight); transform: translateX(-50%);
+        }
+        .graph-file-row {
             display: flex; align-items: center; gap: 6px;
-            font-size: 11px; font-weight: 700; color: var(--fg);
+            padding: 1px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;
         }
-        .checkpoint-badge {
-            font-size: 9px; font-weight: 700; text-transform: uppercase;
-            letter-spacing: 0.4px; padding: 1px 6px; border-radius: 4px;
+        .graph-file-row:hover { background: var(--bg-hover); }
+        .graph-file-row .icon { font-size: 12px; color: var(--dim); flex-shrink: 0; }
+        .graph-file-name {
+            font-family: var(--font-mono); color: var(--fg);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; min-width: 0;
         }
-        .checkpoint-badge.current { background: rgba(152,195,121,0.18); color: var(--green); }
-        .checkpoint-badge.baseline { background: rgba(86,182,194,0.18); color: var(--cyan); }
-        .checkpoint-badge.checkpoint  { background: rgba(198, 120, 221, 0.18); color: var(--magenta); }
-        .checkpoint-badge.delete      { background: rgba(224, 108, 117, 0.18); color: var(--red); }
-        .checkpoint-badge.rename-in   { background: rgba(97, 175, 239, 0.18);  color: var(--blue); }
-        .checkpoint-badge.rename-out  { background: rgba(97, 175, 239, 0.18);  color: var(--blue); }
-        .checkpoint-badge.mkdir       { background: rgba(229, 192, 123, 0.18); color: var(--yellow); }
-        .checkpoint-ts { font-size: 10px; color: var(--dim); font-weight: 400; margin-left: auto; }
-        .checkpoint-prompt {
-            font-size: 11.5px; color: var(--dim); margin-top: 3px;
-            line-height: 1.4; display: -webkit-box;
-            line-clamp: 2; -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical; overflow: hidden;
+        .graph-file-status { font-size: 9px; font-weight: 700; flex-shrink: 0; }
+        .graph-file-status.checkpoint { color: var(--magenta); }
+        .graph-file-status.delete { color: var(--red); }
+        .graph-file-status.rename-in, .graph-file-status.rename-out { color: var(--blue); }
+        .graph-file-status.mkdir { color: var(--yellow); }
+        .graph-file-row .btn-graph-action.history {
+            opacity: 0; transition: opacity 0.1s ease; flex-shrink: 0;
         }
-        .checkpoint-prompt.manual { font-style: italic; }
-        .checkpoint-actions { display: flex; gap: 6px; margin-top: 6px; }
-        .btn-checkpoint-action {
-            font-family: inherit; font-size: 10.5px; padding: 3px 8px;
-            border-radius: 5px; border: 1px solid var(--border);
-            background: var(--bg-main); color: var(--fg); cursor: pointer;
-        }
-        .btn-checkpoint-action:hover { border-color: var(--cyan); color: var(--cyan); }
-        .btn-checkpoint-action.revert:hover { border-color: var(--yellow, orange); color: var(--yellow, orange); }
-        #checkpoint-timeline-list .tool-group {
-            border: 1px solid var(--border); border-radius: 6px;
-            margin: 2px 0; overflow: hidden;
-        }
-        #checkpoint-timeline-list .tool-group-header { padding: 8px; border-radius: 0; }
-        #checkpoint-timeline-list .tool-group-body { padding: 0 8px 6px 8px; }
-        #checkpoint-timeline-list .tool-summary {
-            white-space: normal; display: -webkit-box;
-            line-clamp: 1; -webkit-line-clamp: 1;
-            -webkit-box-orient: vertical; overflow: hidden;
-        }
-        .checkpoint-group-revert { margin-left: auto; flex-shrink: 0; }
-        .checkpoint-touch-row {
-            display: flex; align-items: center; gap: 6px;
-            padding: 5px 6px; border-radius: 4px; cursor: pointer;
-        }
-        .checkpoint-touch-row:hover { background: var(--bg-hover); }
-        .checkpoint-touch-name {
-            font-family: var(--font-mono); font-size: 11.5px; color: var(--fg);
-            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-            flex: 1 1 auto; min-width: 0;
-        }
-        .checkpoint-touch-label { font-size: 10px; color: var(--dim); flex-shrink: 0; }
+        .graph-file-row:hover .btn-graph-action.history { opacity: 1; }
         #toast-container {
             position: fixed; bottom: 18px; left: 50%;
             transform: translateX(-50%); z-index: 500;
@@ -2360,7 +2394,6 @@
             #prompt-row .prompt-actions { padding: 4px 6px; }
             .prompt-chip { padding: 3px 8px; font-size: 10px; }
             .btn-send-prompt { width: 36px; height: 36px; }
-            #checkpoint-modal { width: 95vw; max-height: 85vh; border-radius: 12px; }
             #sessions-popover { width: 90vw; max-width: 320px; top: 48px; }
             .settings-panel { width: 90vw; max-width: 340px; right: 4px; padding: 10px 12px; }
             .tree-node { padding: 4px 6px; font-size: 11px; }
@@ -2515,24 +2548,6 @@
     </div>
 
     <div id="toast-container"></div>
-
-    <div id="checkpoint-modal-overlay">
-        <div id="checkpoint-modal">
-            <div id="checkpoint-modal-header">
-                <div id="checkpoint-modal-title">
-                    <button id="checkpoint-modal-back" class="icon-btn" title="Back to all changes" style="display:none;">
-                        <span class="icon" style="font-size: 16px;">arrow_back</span>
-                    </button>
-                    <span class="icon" style="font-size: 14px;">schedule</span>
-                    <span id="checkpoint-modal-filename">file.js</span>
-                </div>
-                <button id="checkpoint-modal-close" class="icon-btn" title="Close">
-                    <span class="icon" style="font-size: 16px;">close</span>
-                </button>
-            </div>
-            <div id="checkpoint-timeline-list"></div>
-        </div>
-    </div>
 
     <div id="yesno-modal-overlay">
         <div id="yesno-modal">
@@ -2959,19 +2974,33 @@
             </div>
 
             <div id="sidebar-view-changes" style="display:none;">
-                
-                <div class="sidebar-panel-header">
-                    <span style="font-size:10px; color:var(--dim); font-weight:700; text-transform:uppercase;">Modified Files</span>
-                    <div class="sidebar-header-actions">
-                        <button id="btn-view-all-checkpoints" class="icon-btn" title="View all checkpoints, grouped by prompt">
-                            <span class="icon" style="font-size: 14px; color: var(--magenta, violet);">schedule</span>
-                        </button>
-                        <button id="btn-discard-all" class="icon-btn" title="Discard all changes">
-                            <span class="icon" style="font-size: 14px; color: var(--red);">undo</span>
-                        </button>
+
+                <div id="changes-subview-files">
+                    <div class="sidebar-panel-header">
+                        <span style="font-size:10px; color:var(--dim); font-weight:700; text-transform:uppercase;">Modified Files</span>
+                        <div class="sidebar-header-actions">
+                            <button id="btn-discard-all" class="icon-btn" title="Discard all changes">
+                                <span class="icon" style="font-size: 14px; color: var(--red);">undo</span>
+                            </button>
+                        </div>
                     </div>
+                    <div id="changes-list"></div>
                 </div>
-                <div id="changes-list"></div>
+
+                <div id="changes-graph-divider"></div>
+
+                <div id="changes-subview-graph">
+                    <div class="sidebar-panel-header">
+                        <span id="graph-panel-label" style="font-size:10px; color:var(--dim); font-weight:700; text-transform:uppercase;">Prompts</span>
+                        <div id="graph-breadcrumb">
+                            <span class="crumb-back" id="graph-breadcrumb-back">
+                                <span class="icon" style="font-size:13px;">arrow_back</span>All changes
+                            </span>
+                            <span class="crumb-file" id="graph-breadcrumb-file"></span>
+                        </div>
+                    </div>
+                    <div id="checkpoint-timeline-list"></div>
+                </div>
             </div>
             </div>
             </div>
@@ -4216,7 +4245,7 @@ const fs = (() => {
 
         await recomputeLineStats(ctx, sid);
         await persistCheckpoint(sid);
-        if (ctx.isLive) { renderChangesPanel(); renderExplorerTree(); updateStatusInfo(); }
+        if (ctx.isLive) { renderChangesPanel(); renderExplorerTree(); updateStatusInfo(); refreshChangesGraph(); }
     }
 
     async function create(path, content, opts = {}) {
@@ -5609,7 +5638,6 @@ window.openCheckpointDiff = (filepath, fromIdx, toIdx) => {
     const tabId = `filediff:${filepath}::${fromIdx}::${toIdx}`;
     if (!state.openTabs.includes(tabId)) state.openTabs.push(tabId);
     switchTab(tabId);
-    window.hideCheckpointTimeline();
 };
 
 function recomputeModifiedFromOps(filepath) {
@@ -5743,6 +5771,7 @@ window.revertFileToCheckpoint = async (filepath, timelineIndex) => {
             await recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
             await persistCheckpoint();
             renderChangesPanel(); renderExplorerTree(); updateStatusInfo();
+            refreshChangesGraph();
             if (state.currentDiffFilepath === filepath) renderFileDiffView(filepath);
         }
         showToast(`Reverted ${filepath.split('/').pop()} to ${label}`, 'success');
@@ -5879,15 +5908,11 @@ window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
     }
 };
 
-const checkpointModalOverlay = document.getElementById('checkpoint-modal-overlay');
-const checkpointModalFilename = document.getElementById('checkpoint-modal-filename');
-const checkpointModalBackBtn = document.getElementById('checkpoint-modal-back');
 const checkpointTimelineList = document.getElementById('checkpoint-timeline-list');
-document.getElementById('checkpoint-modal-close').addEventListener('click', () => window.hideCheckpointTimeline());
-checkpointModalOverlay.addEventListener('click', (e) => {
-    if (e.target === checkpointModalOverlay) window.hideCheckpointTimeline();
-});
-checkpointModalBackBtn.addEventListener('click', () => window.showAllCheckpoints());
+const graphBreadcrumb = document.getElementById('graph-breadcrumb');
+const graphBreadcrumbFile = document.getElementById('graph-breadcrumb-file');
+const graphPanelLabel = document.getElementById('graph-panel-label');
+document.getElementById('graph-breadcrumb-back').addEventListener('click', () => window.showAllCheckpoints());
 
 function formatPromptBlame(promptInfo) {
     if (!promptInfo) return { text: '(pre-existing content)', manual: true };
@@ -5902,81 +5927,105 @@ function promptGroupKey(entry) {
     return `__solo_${entry.index}`;
 }
 
-function buildCheckpointEntryRow(filepath, entry, { compact = false } = {}) {
-    const blame = formatPromptBlame(entry.prompt);
+// ---------------------------------------------------------------------------
+// Git-graph style commit timeline. Renders inline in the sidebar's Changes ▸
+// Graph tab (VS Code "Git Graph" look): one vertical rail with a dot per
+// commit, newest at top, each row expandable to show the files it touched.
+// Two modes share this rendering:
+//   "all"  — one dot per prompt (+ a dot per file's original baseline),
+//            like the repo-wide commit graph.
+//   "file" — one dot per checkpoint for a single file (drill-down).
+// ---------------------------------------------------------------------------
+
+const graphBadgeLabelMap = {
+    baseline: 'Baseline',
+    checkpoint: 'Edit',
+    mixed: 'Edit',
+    delete: 'Deleted',
+    'rename-in': 'Renamed in',
+    'rename-out': 'Renamed out',
+    mkdir: 'New directory',
+    current: 'Current',
+};
+
+function graphKindForTouches(touches) {
+    // Pick a representative node color when a single "commit" (prompt) touched
+    // several files with different kinds of ops.
+    const kinds = new Set(touches.map(t => t.entry.kind));
+    if (kinds.size === 1) return [...kinds][0];
+    if (kinds.has('delete') && kinds.size === 1) return 'delete';
+    return 'mixed';
+}
+
+function buildGraphRow({ kind, isCurrent, message, manual, ts, fileCount, onExpand, onDiff, onRevert }) {
     const row = document.createElement('div');
-    row.className = `checkpoint-entry ${entry.kind}${compact ? ' compact' : ''}`;
-
-    // Distinct label + badge per entry kind so the timeline reads like a
-    // per-file history of create / edit / delete / rename / mkdir operations.
-    const badgeClassMap = {
-        baseline: 'baseline',
-        checkpoint: 'checkpoint',
-        delete: 'delete',
-        'rename-in': 'rename-in',
-        'rename-out': 'rename-out',
-        mkdir: 'mkdir',
-        current: 'current',
-    };
-    const badgeLabelMap = {
-        baseline: 'Baseline',
-        checkpoint: 'Edit',
-        delete: 'Deleted',
-        'rename-in': 'Renamed in',
-        'rename-out': 'Renamed out',
-        mkdir: 'New directory',
-        current: 'Current',
-    };
-    const badge = entry.kind === 'current'
-        ? ''
-        : `<span class="checkpoint-badge ${badgeClassMap[entry.kind] || 'checkpoint'}">${badgeLabelMap[entry.kind] || 'Checkpoint'}</span>`;
-
-    const tsLabel = entry.ts ? new Date(entry.ts).toLocaleString() : (entry.kind === 'baseline' ? 'Session start' : '');
-
-    const hasPrev = entry.index > 0;
-    const isCurrent = entry.kind === 'current';
-    const labelMap = {
-        baseline: 'Original content',
-        checkpoint: 'Edit',
-        delete: 'File deleted',
-        'rename-in': `Renamed in from ${escapeHTML(entry.op?.from || '')}`,
-        'rename-out': `Renamed out to ${escapeHTML(entry.op?.to || '')}`,
-        mkdir: 'Directory created',
-        current: 'Current state',
-    };
-    const label = labelMap[entry.kind] || 'Checkpoint';
+    row.className = `graph-row${isCurrent ? ' current-row' : ''}`;
 
     row.innerHTML = `
-        <div class="checkpoint-dot"></div>
-        <div class="checkpoint-body">
-            <div class="checkpoint-label-row">
-                ${badge}
-                <span>${label}</span>
-                <span class="checkpoint-ts">${escapeHTML(tsLabel)}</span>
-            </div>
-            ${compact ? '' : `
-            <div class="checkpoint-prompt ${blame.manual ? 'manual' : ''}" title="${escapeHTML(blame.text)}">
-                ${blame.manual ? '' : '<span class="icon" style="font-size:11px; vertical-align:-1px;">chat_bubble</span> '}${escapeHTML(blame.text)}
-            </div>`}
-            <div class="checkpoint-actions">
-                ${hasPrev ? `<button class="btn-checkpoint-action diff-prev icon-btn" title="See what changed at this step"><span class="icon" style="font-size:12px;">difference</span></button>` : ''}
-                ${(['baseline', 'checkpoint', 'delete', 'rename-out'].includes(entry.kind)) ? `<button class="btn-checkpoint-action revert icon-btn" data-idx="${entry.index}" title="Revert this change"><span class="icon" style="font-size:12px;">undo</span></button>` : ''}
+        <div class="graph-rail"><div class="graph-node ${isCurrent ? 'current' : kind}"></div></div>
+        <div class="graph-body">
+            <div class="graph-msg-row">
+                <span class="graph-msg ${manual ? 'manual' : ''}" title="${escapeHTML(message)}">${escapeHTML(message)}</span>
+                <div class="graph-actions">
+                    ${onDiff ? `<button class="btn-graph-action diff icon-btn" title="See what changed"><span class="icon" style="font-size:13px;">difference</span></button>` : ''}
+                    ${onRevert ? `<button class="btn-graph-action revert icon-btn" title="Revert to here"><span class="icon" style="font-size:13px;">undo</span></button>` : ''}
+                </div>
             </div>
         </div>
     `;
 
-    const revertBtn = row.querySelector('.btn-checkpoint-action.revert');
-    if (revertBtn) {
-        revertBtn.addEventListener('click', () => window.revertFileToCheckpoint(filepath, entry.index));
+    if (onExpand) {
+        row.addEventListener('click', (e) => {
+            if (e.target.closest('.btn-graph-action')) return;
+            onExpand(row);
+        });
     }
-    const diffPrevBtn = row.querySelector('.btn-checkpoint-action.diff-prev');
-    if (diffPrevBtn) {
-        diffPrevBtn.addEventListener('click', () => window.openCheckpointDiff(filepath, entry.index - 1, entry.index));
-    }
+    const diffBtn = row.querySelector('.btn-graph-action.diff');
+    if (diffBtn) diffBtn.addEventListener('click', (e) => { e.stopPropagation(); onDiff(); });
+    const revertBtn = row.querySelector('.btn-graph-action.revert');
+    if (revertBtn) revertBtn.addEventListener('click', (e) => { e.stopPropagation(); onRevert(); });
 
     return row;
 }
 
+function toggleGraphExpand(row, filesBuilder) {
+    const already = row.nextElementSibling && row.nextElementSibling.classList.contains('graph-files');
+    // Collapse any other open panel so only one commit is expanded at a time.
+    checkpointTimelineList.querySelectorAll('.graph-files').forEach(el => el.remove());
+    checkpointTimelineList.querySelectorAll('.graph-row.expanded').forEach(el => el.classList.remove('expanded'));
+    if (already) return;
+    row.classList.add('expanded');
+    const panel = document.createElement('div');
+    panel.className = 'graph-files';
+    filesBuilder(panel);
+    row.after(panel);
+}
+
+function buildGraphFileRow(filepath, entry, { onDiff } = {}) {
+    const row = document.createElement('div');
+    row.className = 'graph-file-row';
+    const statusLabel = entry.kind === 'current' ? '' : (graphBadgeLabelMap[entry.kind] || 'Edit');
+    row.innerHTML = `
+        <span class="icon">description</span>
+        <span class="graph-file-name" title="${escapeHTML(filepath)}">${escapeHTML(filepath)}</span>
+        ${statusLabel ? `<span class="graph-file-status ${entry.kind}">${escapeHTML(statusLabel)}</span>` : ''}
+        <button class="btn-graph-action history icon-btn" title="View this file's full history"><span class="icon" style="font-size:12px;">history</span></button>
+    `;
+    if (onDiff) {
+        row.addEventListener('click', (e) => {
+            e.stopPropagation();
+            onDiff(filepath, entry);
+        });
+    }
+    const historyBtn = row.querySelector('.btn-graph-action.history');
+    historyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.showCheckpointTimeline(filepath);
+    });
+    return row;
+}
+
+// ---- "file" mode: one dot per checkpoint on a single file ----
 function renderCheckpointTimeline(filepath) {
     const timeline = getFileTimeline(filepath);
     checkpointTimelineList.innerHTML = '';
@@ -5985,7 +6034,7 @@ function renderCheckpointTimeline(filepath) {
     for (const entry of timeline) {
         const key = promptGroupKey(entry);
         const last = groups[groups.length - 1];
-        if (entry.kind !== 'baseline' && last && last.key === key) {
+        if (entry.kind !== 'baseline' && entry.kind !== 'current' && last && last.key === key) {
             last.entries.push(entry);
         } else {
             groups.push({ key, entries: [entry] });
@@ -5993,164 +6042,127 @@ function renderCheckpointTimeline(filepath) {
     }
 
     const reversedGroups = [...groups].reverse();
+    if (reversedGroups.length === 0) {
+        checkpointTimelineList.innerHTML = `<div class="tree-node dim" style="padding: 8px 12px;">No history yet.</div>`;
+        return;
+    }
 
     reversedGroups.forEach(group => {
-        const soleEntry = group.entries[0];
-        if (group.entries.length === 1 && soleEntry.kind === 'baseline') {
-            checkpointTimelineList.appendChild(buildCheckpointEntryRow(filepath, soleEntry));
-            return;
-        }
-
         const newestInGroup = group.entries[group.entries.length - 1];
         const oldestInGroup = group.entries[0];
-        const blame = formatPromptBlame(newestInGroup.prompt);
-        const tsLabel = newestInGroup.ts ? new Date(newestInGroup.ts).toLocaleString() : '';
+        const isCurrent = newestInGroup.kind === 'current';
+        const isBaseline = group.entries.length === 1 && newestInGroup.kind === 'baseline';
+        const blame = isCurrent ? { text: 'Current state', manual: true } : formatPromptBlame(newestInGroup.prompt);
+        const kind = isBaseline ? 'baseline' : (isCurrent ? 'current' : graphKindForTouches(group.entries.map(entry => ({ entry }))));
         const promptId = newestInGroup.prompt && newestInGroup.prompt.id;
         const editCount = group.entries.length;
-        const groupHasPrev = oldestInGroup.index > 0;
+        const hasPrev = oldestInGroup.index > 0;
 
-        const wrap = document.createElement('div');
-        wrap.className = 'tool-group collapsed';
-
-        const header = document.createElement('div');
-        header.className = 'tool-group-header';
-        header.innerHTML = `
-            <span class="icon icon-chevron">expand_more</span>
-            <span class="tool-badge">${editCount} edit${editCount === 1 ? '' : 's'}</span>
-            <span class="tool-summary" title="${escapeHTML(blame.text)}">${blame.manual ? '' : '<span class="icon" style="font-size:11px; vertical-align:-1px;">chat_bubble</span> '}${escapeHTML(blame.text)}</span>
-            <span class="checkpoint-ts">${escapeHTML(tsLabel)}</span>
-            ${groupHasPrev ? `<button class="btn-checkpoint-action diff-prev checkpoint-group-diff icon-btn" title="See everything this prompt changed"><span class="icon" style="font-size:12px;">difference</span></button>` : ''}
-            ${promptId ? `<button class="btn-checkpoint-action revert checkpoint-group-revert icon-btn" title="Revert every file touched by this prompt back to right before it ran"><span class="icon" style="font-size:12px;">undo</span></button>` : ''}
-        `;
-        header.addEventListener('click', (e) => {
-            if (e.target.closest('.checkpoint-group-revert') || e.target.closest('.checkpoint-group-diff')) return;
-            wrap.classList.toggle('collapsed');
+        const row = buildGraphRow({
+            kind,
+            isCurrent,
+            message: isBaseline ? 'Original content' : blame.text,
+            manual: blame.manual,
+            ts: newestInGroup.ts,
+            fileCount: (isCurrent || isBaseline) ? null : editCount,
+            onExpand: (editCount > 1 && !isCurrent && !isBaseline) ? (r) => toggleGraphExpand(r, (panel) => {
+                [...group.entries].reverse().forEach(entry => {
+                    const label = graphBadgeLabelMap[entry.kind] || 'Edit';
+                    const sub = document.createElement('div');
+                    sub.className = 'graph-file-row';
+                    sub.innerHTML = `<span class="icon">history</span><span class="graph-file-name">${escapeHTML(label)}</span><span class="graph-ts">${entry.ts ? new Date(entry.ts).toLocaleTimeString() : ''}</span>`;
+                    if (entry.index > 0) {
+                        sub.style.cursor = 'pointer';
+                        sub.addEventListener('click', (e) => { e.stopPropagation(); window.openCheckpointDiff(filepath, entry.index - 1, entry.index); });
+                    }
+                    panel.appendChild(sub);
+                });
+            }) : null,
+            onDiff: (hasPrev && !isCurrent) ? () => window.openCheckpointDiff(filepath, oldestInGroup.index - 1, newestInGroup.index) : null,
+            onRevert: (!isCurrent && ['baseline', 'checkpoint', 'delete', 'rename-out'].includes(newestInGroup.kind))
+                ? () => (promptId ? window.revertToBeforePrompt(promptId, blame.text) : window.revertFileToCheckpoint(filepath, newestInGroup.index))
+                : null,
         });
-        const groupDiffBtn = header.querySelector('.checkpoint-group-diff');
-        if (groupDiffBtn) {
-            groupDiffBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                window.openCheckpointDiff(filepath, oldestInGroup.index - 1, newestInGroup.index);
-            });
-        }
-        const groupRevertBtn = header.querySelector('.checkpoint-group-revert');
-        if (groupRevertBtn) {
-            groupRevertBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                window.revertToBeforePrompt(promptId, blame.text);
-            });
-        }
-
-        const subList = document.createElement('div');
-        subList.className = 'tool-group-body';
-        [...group.entries].reverse().forEach(entry => {
-            subList.appendChild(buildCheckpointEntryRow(filepath, entry, { compact: true }));
-        });
-
-        wrap.appendChild(header);
-        wrap.appendChild(subList);
-        checkpointTimelineList.appendChild(wrap);
+        checkpointTimelineList.appendChild(row);
     });
 }
 
-function buildPromptTouchRow(filepath, entry) {
-    const row = document.createElement('div');
-    row.className = 'checkpoint-touch-row';
-
-    const actionLabel = entry.kind === 'current' ? 'Live content' : 'Checkpoint';
-
-    row.innerHTML = `
-        <span class="icon" style="font-size:13px; color:var(--dim);">description</span>
-        <span class="checkpoint-touch-name" title="${escapeHTML(filepath)}">${escapeHTML(filepath)}</span>
-        <span class="checkpoint-touch-label">${escapeHTML(actionLabel)}</span>
-        <button class="btn-checkpoint-action diff-file icon-btn" title="View this file's diff"><span class="icon" style="font-size:12px;">difference</span></button>
-    `;
-    row.querySelector('.diff-file').addEventListener('click', (e) => {
-        e.stopPropagation();
-        window.hideCheckpointTimeline();
-        window.openFileDiff(filepath);
-    });
-    row.addEventListener('click', (e) => {
-        if (e.target.closest('button')) return;
-        window.showCheckpointTimeline(filepath);
-    });
-    return row;
-}
-
+// ---- "all" mode: one dot per prompt across the whole workspace ----
 function renderAllPromptGroups() {
     checkpointTimelineList.innerHTML = '';
     const groups = getAllPromptGroups().slice().reverse();
 
     if (groups.length === 0) {
-        checkpointTimelineList.innerHTML = `<div class="tree-node dim" style="padding: 8px 12px;">No prompt-attributed changes yet.</div>`;
+        checkpointTimelineList.innerHTML = `<div class="tree-node dim" style="padding: 8px 12px;">(no prompts)</div>`;
         return;
     }
 
     groups.forEach(group => {
         const blame = formatPromptBlame(group.promptInfo);
-        const tsLabel = group.ts ? new Date(group.ts).toLocaleString() : '';
-        const fileCount = new Set(group.touches.map(t => t.filepath)).size;
-
-        const wrap = document.createElement('div');
-        wrap.className = 'tool-group collapsed';
-
-        const header = document.createElement('div');
-        header.className = 'tool-group-header';
-        header.innerHTML = `
-            <span class="icon icon-chevron">expand_more</span>
-            <span class="tool-badge">${fileCount} file${fileCount === 1 ? '' : 's'}</span>
-            <span class="tool-summary" title="${escapeHTML(blame.text)}"><span class="icon" style="font-size:11px; vertical-align:-1px;">chat_bubble</span> ${escapeHTML(blame.text)}</span>
-            <span class="checkpoint-ts">${escapeHTML(tsLabel)}</span>
-            <button class="btn-checkpoint-action revert checkpoint-group-revert icon-btn" title="Revert every file touched by this prompt back to right before it ran"><span class="icon" style="font-size:12px;">undo</span></button>
-        `;
-        header.addEventListener('click', (e) => {
-            if (e.target.closest('.checkpoint-group-revert')) return;
-            wrap.classList.toggle('collapsed');
-        });
-        header.querySelector('.checkpoint-group-revert').addEventListener('click', (e) => {
-            e.stopPropagation();
-            window.revertToBeforePrompt(group.key, blame.text);
-        });
-
-        const body = document.createElement('div');
-        body.className = 'tool-group-body';
+        // Collapse to one row per file, but remember the *first* and *last*
+        // timeline index this prompt touched on that file, so opening it
+        // shows only what this prompt changed — not the file's whole history.
         const seenFiles = new Map();
-        group.touches.forEach(t => seenFiles.set(t.filepath, t.entry));
-        Array.from(seenFiles.entries()).forEach(([filepath, entry]) => {
-            body.appendChild(buildPromptTouchRow(filepath, entry));
+        group.touches.forEach(t => {
+            const existing = seenFiles.get(t.filepath);
+            if (existing) {
+                existing.lastEntry = t.entry;
+                existing.lastIndex = t.entry.index;
+            } else {
+                seenFiles.set(t.filepath, { firstEntry: t.entry, lastEntry: t.entry, firstIndex: t.entry.index, lastIndex: t.entry.index });
+            }
         });
+        const fileEntries = Array.from(seenFiles.entries());
+        const kind = graphKindForTouches(group.touches);
 
-        wrap.appendChild(header);
-        wrap.appendChild(body);
-        checkpointTimelineList.appendChild(wrap);
+        const row = buildGraphRow({
+            kind,
+            isCurrent: false,
+            message: blame.text,
+            manual: blame.manual,
+            ts: group.ts,
+            fileCount: fileEntries.length,
+            onExpand: (r) => toggleGraphExpand(r, (panel) => {
+                fileEntries.forEach(([filepath, touch]) => {
+                    panel.appendChild(buildGraphFileRow(filepath, touch.lastEntry, {
+                        onDiff: () => window.openCheckpointDiff(filepath, touch.firstIndex - 1, touch.lastIndex),
+                    }));
+                });
+            }),
+            onRevert: () => window.revertToBeforePrompt(group.key, blame.text),
+        });
+        checkpointTimelineList.appendChild(row);
     });
 }
 
 window.showAllCheckpoints = () => {
     state.checkpointModalFile = null;
     state.checkpointModalMode = 'all';
-    checkpointModalFilename.innerText = 'All Changes (by prompt)';
-    checkpointModalBackBtn.style.display = 'none';
+    graphBreadcrumb.classList.remove('visible');
+    graphBreadcrumbFile.innerText = '';
+    graphPanelLabel.style.display = '';
     renderAllPromptGroups();
-    checkpointModalOverlay.style.display = 'flex';
 };
 
 window.showCheckpointTimeline = async (filepath) => {
     state.checkpointModalFile = filepath;
     state.checkpointModalMode = 'file';
-    checkpointModalFilename.innerText = filepath;
-    checkpointModalBackBtn.style.display = 'inline-flex';
     if (registry.files[filepath] === undefined) {
         await readFileContent(filepath);
     }
+    activateSidebarView(tabNavChanges, viewChanges);
+    graphPanelLabel.style.display = 'none';
+    graphBreadcrumb.classList.add('visible');
+    graphBreadcrumbFile.innerText = filepath;
+    graphBreadcrumbFile.title = filepath;
     renderCheckpointTimeline(filepath);
-    checkpointModalOverlay.style.display = 'flex';
 };
 
 window.hideCheckpointTimeline = () => {
-    state.checkpointModalFile = null;
-    state.checkpointModalMode = 'file';
-    checkpointModalOverlay.style.display = 'none';
+    // Kept for backward compatibility with older call sites; the graph now
+    // lives inline in the sidebar rather than in a dismissable modal, so this
+    // just returns to the repo-wide graph view.
+    window.showAllCheckpoints();
 };
 
 // ---------------------------------------------------------------------------
@@ -6245,12 +6257,9 @@ async function executeRevertPlan(actions, opts = {}) {
     renderExplorerTree();
     updateStatusInfo();
 
-    // Refresh any open diff/timeline view so it doesn't show stale data.
+    // Refresh any open diff view and the graph so neither shows stale data.
     if (state.currentDiffFilepath) renderFileDiffView(state.currentDiffFilepath);
-    if (state.checkpointModalFile && checkpointModalOverlay.style.display === 'flex') {
-        if (state.checkpointModalMode === 'file') renderCheckpointTimeline(state.checkpointModalFile);
-        else renderAllPromptGroups();
-    }
+    refreshChangesGraph();
     if (state.currentEditorPath && monacoEditor) scheduleGutterDiffUpdate();
 
     return applied;
@@ -6317,7 +6326,18 @@ window.restoreAllModifiedFiles = async () => {
 };
 
 document.getElementById('btn-discard-all').addEventListener('click', () => window.restoreAllModifiedFiles());
-document.getElementById('btn-view-all-checkpoints').addEventListener('click', () => window.showAllCheckpoints());
+
+// Both sections of the Changes panel (Modified Files on top, Graph below)
+// are always visible now — no tabs to switch between. This just (re)renders
+// whichever graph mode is current: the repo-wide commit graph, or a
+// drilled-into single file's history.
+function refreshChangesGraph() {
+    if (state.checkpointModalMode === 'file' && state.checkpointModalFile) {
+        renderCheckpointTimeline(state.checkpointModalFile);
+    } else {
+        renderAllPromptGroups();
+    }
+}
 
 const tabNavExplorer = document.getElementById('tab-nav-explorer');
 const tabNavChanges = document.getElementById('tab-nav-changes');
@@ -6538,8 +6558,8 @@ function renderChangesPanel() {
                 <button class="btn-change-action icon-btn" title="View Diff">
                     <span class="icon" style="font-size:13px; color:var(--cyan);">difference</span>
                 </button>
-                <button class="btn-change-action show-timeline icon-btn" title="View checkpoints &amp; blame (revert/discard from here)">
-                    <span class="icon" style="font-size:13px; color:var(--magenta, violet);">schedule</span>
+                <button class="btn-change-action show-timeline icon-btn" title="View history in Prompts (revert/discard from here)">
+                    <span class="icon" style="font-size:13px; color:var(--magenta, violet);">commit</span>
                 </button>
             </div>
         `;
@@ -7032,6 +7052,16 @@ async function restoreActiveSessionContent() {
     updateStatusInfo();
     updateWelcomeVisibility();
 
+    // New session = new op log, so any file drilled into in the Graph belongs
+    // to the previous session. Reset to the repo-wide view and refresh it,
+    // otherwise the Graph keeps showing the old session's (stale) history.
+    state.checkpointModalFile = null;
+    state.checkpointModalMode = 'all';
+    graphBreadcrumb.classList.remove('visible');
+    graphBreadcrumbFile.innerText = '';
+    graphPanelLabel.style.display = '';
+    renderAllPromptGroups();
+
     const savedTabs = Array.isArray(current.openTabs) && current.openTabs.length ? current.openTabs : ['chat'];
     state.openTabs = savedTabs.slice();
     const savedActiveTab = current.activeTab && savedTabs.includes(current.activeTab) ? current.activeTab : 'chat';
@@ -7142,6 +7172,11 @@ async function deleteSession(sessionId, e) {
         renderChangesPanel();
         renderExplorerTree();
         updateStatusInfo();
+        state.checkpointModalFile = null;
+        state.checkpointModalMode = 'all';
+        graphBreadcrumb.classList.remove('visible');
+        graphPanelLabel.style.display = '';
+        renderAllPromptGroups();
         await saveActiveSession();
         renderSessionPopoverList();
         hideSessionPopover();
@@ -12236,8 +12271,8 @@ document.addEventListener('keydown', (e) => {
             contextMenu.style.display = 'none';
             return;
         }
-        if (checkpointModalOverlay.style.display === 'flex') {
-            window.hideCheckpointTimeline();
+        if (viewChanges.style.display !== 'none' && state.checkpointModalMode === 'file' && state.checkpointModalFile) {
+            window.showAllCheckpoints();
             return;
         }
         if (permBanner.style.display === 'flex') {
@@ -12471,6 +12506,11 @@ function closeWorkspace() {
     renderExplorerTree();
     renderChangesPanel();
     updateStatusInfo();
+    state.checkpointModalFile = null;
+    state.checkpointModalMode = 'all';
+    graphBreadcrumb.classList.remove('visible');
+    graphPanelLabel.style.display = '';
+    renderAllPromptGroups();
 }
 
 async function closeWorkspaceNoConfirm() {
@@ -13700,6 +13740,11 @@ async function submitPrompt() {
 
                 renderChangesPanel();
                 updateStatusInfo();
+                state.checkpointModalFile = null;
+                state.checkpointModalMode = 'all';
+                graphBreadcrumb.classList.remove('visible');
+                graphPanelLabel.style.display = '';
+                renderAllPromptGroups();
                 await persistCheckpoint();
                 saveActiveSession();
                 showToast('Session cleared and checkpoint re-baselined', 'success');
