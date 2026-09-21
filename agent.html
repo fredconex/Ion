@@ -3396,8 +3396,7 @@ const state = {
     promptIdToMsgIdx: {},
     sessionIds: null,
     sessionMeta: null,
-    _lastSavedIndex: null,
-    cachedSystemPrompt: null
+    _lastSavedIndex: null
 };
 
 window.skipCurrentThinking = function(e) {
@@ -6714,7 +6713,6 @@ async function saveSession(sessionId) {
             state.sessions[id].linesAdded = state.linesAdded;
             state.sessions[id].linesRemoved = state.linesRemoved;
             state.sessions[id].lastTokenUsage = state.lastTokenUsage || null;
-            state.sessions[id].systemPrompt = state.cachedSystemPrompt || null;
         }
         delete state.sessions[id]._loaded;
         await persistCheckpoint(id);
@@ -6741,6 +6739,7 @@ async function saveSession(sessionId) {
             patch.linesRemoved = state.sessions[id].linesRemoved;
             patch.lastTokenUsage = state.sessions[id].lastTokenUsage;
             patch.systemPrompt = state.sessions[id].systemPrompt;
+            patch.systemPromptMode = state.sessions[id].systemPromptMode;
         }
         const merged = await patchSessionRecordInDB(wsKey, id, patch);
         if (merged) {
@@ -6830,7 +6829,6 @@ async function restoreActiveSessionContent() {
     state.linesAdded = current.linesAdded || 0;
     state.linesRemoved = current.linesRemoved || 0;
     state.lastTokenUsage = current.lastTokenUsage || null;
-    state.cachedSystemPrompt = current.systemPrompt || null;
     updateTokenStatus(state.lastTokenUsage);
 
     const gen = getGenState(state.activeSessionId);
@@ -6948,7 +6946,6 @@ async function deleteSession(sessionId, e) {
     const keys = (state.sessionIds && state.sessionIds.length) ? state.sessionIds : Object.keys(state.sessions);
     if (keys.length <= 1) {
         state.messages = [];
-        state.cachedSystemPrompt = null;
         term.innerHTML = '';
         resetScrollState();
         state.linesAdded = 0;
@@ -7047,7 +7044,6 @@ async function clearAllSessions() {
     state.linesAdded = 0;
     state.linesRemoved = 0;
     state.messages = [];
-    state.cachedSystemPrompt = null;
     term.innerHTML = '';
     resetScrollState();
 
@@ -12278,7 +12274,6 @@ function closeWorkspace() {
     state.linesAdded = 0;
     state.linesRemoved = 0;
     state.messages = [];
-    state.cachedSystemPrompt = null;
     term.innerHTML = '';
     resetScrollState();
 
@@ -13419,7 +13414,6 @@ async function submitPrompt() {
                     abortGeneration({ showResumeUI: false });
                 }
                 state.messages = [];
-                state.cachedSystemPrompt = null;
                 state.modifiedFiles.clear();
                 state.linesAdded = 0;
                 state.linesRemoved = 0;
@@ -13598,21 +13592,15 @@ async function runTask(task, blameId, imageUrls, sessionId) {
     const runMode = state.mode;
     const activeTools = getToolsForMode(runMode);
     const runModeSession = state.sessions[runSessionId];
-    let currentSystemPrompt = runModeSession ? runModeSession.systemPrompt : null;
-    if (!currentSystemPrompt) {
-        currentSystemPrompt = buildDynamicSystemPrompt(runMode);
-        if (runModeSession) runModeSession.systemPrompt = currentSystemPrompt;
-        if (isRunLive()) state.cachedSystemPrompt = currentSystemPrompt;
-        if (runModeSession) runModeSession.systemPromptMode = runMode;
-    }
 
-    if (runModeSession && runModeSession.systemPromptMode && runModeSession.systemPromptMode !== runMode) {
-        const from = runModeSession.systemPromptMode;
-        runCtx.messages.push({ role: "user", content: `[SYSTEM NOTICE: The mode has been switched from ${from} to ${runMode}. Your instructions for the remainder of this conversation are now the following - follow them in place of any earlier mode's instructions:]\n\n${buildDynamicSystemPrompt(runMode)}` });
+    // The system prompt is derived purely from the current mode, so build it
+    // fresh each run. This is effectively free and can never be stale — no
+    // cached prompt to keep in sync, no mode-tracking to maintain.
+    const currentSystemPrompt = buildDynamicSystemPrompt(runMode);
+    if (runModeSession) {
+        runModeSession.systemPrompt = currentSystemPrompt;
         runModeSession.systemPromptMode = runMode;
-        runGen.hasNewContent = true;
     }
-
     runGen.retryAttempt = 0;
     runGen.retryCancelled = false;
 
