@@ -758,6 +758,11 @@
         }
         .checkpoint-badge.current { background: rgba(152,195,121,0.18); color: var(--green); }
         .checkpoint-badge.baseline { background: rgba(86,182,194,0.18); color: var(--cyan); }
+        .checkpoint-badge.checkpoint  { background: rgba(198, 120, 221, 0.18); color: var(--magenta); }
+        .checkpoint-badge.delete      { background: rgba(224, 108, 117, 0.18); color: var(--red); }
+        .checkpoint-badge.rename-in   { background: rgba(97, 175, 239, 0.18);  color: var(--blue); }
+        .checkpoint-badge.rename-out  { background: rgba(97, 175, 239, 0.18);  color: var(--blue); }
+        .checkpoint-badge.mkdir       { background: rgba(229, 192, 123, 0.18); color: var(--yellow); }
         .checkpoint-ts { font-size: 10px; color: var(--dim); font-weight: 400; margin-left: auto; }
         .checkpoint-prompt {
             font-size: 11.5px; color: var(--dim); margin-top: 3px;
@@ -4168,9 +4173,11 @@ const fs = (() => {
             };
             move(b.originalFiles);
 
-            const wasModified = ctx.modifiedFiles.has(op.from);
+            // A rename is always a workspace change — the destination path is new
+            // even when its content matches the source, so it must show up in the
+            // Changes panel and in every prompt/commit timeline.
             ctx.modifiedFiles.delete(op.from);
-            if (wasModified) ctx.modifiedFiles.add(op.to);
+            ctx.modifiedFiles.add(op.to);
 
             if (b._lastKnownContent && b._lastKnownContent[op.from] !== undefined) {
                 b._lastKnownContent[op.to] = b._lastKnownContent[op.from];
@@ -5686,13 +5693,19 @@ window.revertFileToCheckpoint = async (filepath, timelineIndex) => {
     }
     if (target.kind === 'current') return;
 
-    const label = target.kind === 'baseline' ? 'the original baseline' : `the checkpoint from ${new Date(target.ts).toLocaleString()}`;
-    if (!confirm(`Revert ${filepath} to ${label}? Later checkpoints will be discarded.`)) return;
+    const labelMap = {
+        baseline: 'the original baseline',
+        checkpoint: `the checkpoint from ${new Date(target.ts).toLocaleString()}`,
+        delete: 'the point where this file was deleted',
+        'rename-in': `the point where ${target.op?.from || 'a file'} was renamed to this file`,
+        'rename-out': `the point where this file was renamed to ${target.op?.to || 'a new name'}`,
+        mkdir: 'the point where this directory was created',
+    };
+    const label = labelMap[target.kind] || `the checkpoint from ${new Date(target.ts).toLocaleString()}`;
+    if (!confirm(`Revert ${filepath} to ${label}? Later changes will be discarded.`)) return;
 
     try {
-        await fs.write(filepath, target.content, { track: false });
-
-        // Truncate the op log: keep only ops before this checkpoint.
+        // Truncate the op log: keep only ops strictly before this entry.
         const ops = registry.opsLog[filepath] || [];
         const kept = [];
         for (const op of ops) {
@@ -5700,22 +5713,38 @@ window.revertFileToCheckpoint = async (filepath, timelineIndex) => {
             kept.push(op);
         }
         registry.opsLog[filepath] = kept;
-        recomputeModifiedFromOps(filepath);
 
-        if (registry.originalFiles[filepath] === target.content) {
-            state.modifiedFiles.delete(filepath);
+        // Build a kind-appropriate action for this single file.
+        let action;
+        if (target.kind === 'delete') {
+            action = { kind: 'delete', filepath };
+        } else if (target.kind === 'rename-out') {
+            // At this point `filepath` no longer exists (it was renamed to op.to),
+            // so reverting to it means the file at this path is gone.
+            action = { kind: 'delete', filepath };
+        } else if (target.kind === 'rename-in' || target.kind === 'mkdir') {
+            // Defensive: structural checkpoint reached without a self-contained
+            // content action; the op-log truncation already reflects the state.
+            action = null;
+        } else if (target.kind === 'baseline') {
+            const original = registry.originalFiles[filepath];
+            action = (original === undefined)
+                ? { kind: 'delete', filepath }
+                : { kind: 'restore', filepath, content: target.content };
         } else {
-            state.modifiedFiles.add(filepath);
+            action = { kind: 'restore', filepath, content: target.content };
         }
-        await recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
 
-        await persistCheckpoint();
-        renderChangesPanel();
-        renderExplorerTree();
-        updateStatusInfo();
-        if (state.activeTab === `filediff:${filepath}`) renderFileDiffView(filepath);
-        if (state.checkpointModalMode === 'file' && state.checkpointModalFile === filepath) renderCheckpointTimeline(filepath);
-        if (state.checkpointModalMode === 'all' && checkpointModalOverlay.style.display === 'flex') renderAllPromptGroups();
+        if (action) {
+            await executeRevertPlan([action], {});
+        } else {
+            // Defensive no-action path (rename-in / mkdir): just refresh state from the truncated log.
+            recomputeAllModifiedFromOps();
+            await recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
+            await persistCheckpoint();
+            renderChangesPanel(); renderExplorerTree(); updateStatusInfo();
+            if (state.currentDiffFilepath === filepath) renderFileDiffView(filepath);
+        }
         showToast(`Reverted ${filepath.split('/').pop()} to ${label}`, 'success');
     } catch(e) {
         showToast(`Revert error: ${e.message}`, 'error');
@@ -5755,80 +5784,99 @@ function getAllPromptGroups() {
 }
 
 window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
-    // Accept a single id (string) or an array of ids (for reverting a range of prompts).
+    // A prompt is a commit: reverting to before it drops that prompt AND every
+    // later prompt (git `reset --hard <commit>` semantics).
+    // Accept a single id (string) or an array of ids (for reverting a range).
     const idSet = new Set(Array.isArray(promptId) ? promptId : [promptId]);
-    const idList = Array.from(idSet);
-    const matchesAny = (p) => p && p.prompt && idSet.has(p.prompt.id);
-
     const files = getAllTrackedFiles();
-    const plan = [];
 
+    // Earliest ts among the matching prompts' ops is the cut point: everything
+    // at or after it is dropped.
+    let cutTs = Infinity;
+    let cutFound = false;
     for (const filepath of files) {
         const timeline = getFileTimeline(filepath);
-        const firstIdx = timeline.findIndex(t => t.prompt && idSet.has(t.prompt.id));
-        if (firstIdx === -1) continue;
-
-        const before = timeline[firstIdx - 1];
-        if (before && before.kind !== 'delete') {
-            plan.push({ filepath, action: 'restore', content: before.content });
-        } else {
-            const hasBaseline = registry.originalFiles[filepath] !== undefined && registry.originalFiles[filepath] !== null;
-            if (hasBaseline) plan.push({ filepath, action: 'restore', content: registry.originalFiles[filepath] });
-            else plan.push({ filepath, action: 'delete' });
+        for (const entry of timeline) {
+            if (entry.kind === 'baseline') continue;
+            if (entry.prompt && idSet.has(entry.prompt.id)) {
+                const ts = entry.ts || 0;
+                if (ts < cutTs) cutTs = ts;
+                cutFound = true;
+            }
         }
     }
-
-    if (plan.length === 0) {
+    if (!cutFound) {
         showToast('No file changes are attributed to that prompt', 'info');
         return;
     }
 
-    const summary = plan.map(p => `${p.action === 'delete' ? 'delete' : 'restore'} ${p.filepath}`).join(', ');
-    const shortLabel = (promptLabel || 'this prompt').slice(0, 120) + (promptLabel && promptLabel.length > 120 ? '…' : '');
-    if (!(opts && opts.skipConfirm) && !confirm(`Revert to right before "${shortLabel}"?\n\nThis will ${summary}. Later changes to these files will be discarded.`)) return;
-
-    let ok = 0;
-    for (const p of plan) {
-        try {
-            if (p.action === 'delete') {
-                await fs.del(p.filepath, { track: false });
-                // Truncate op log to ops before the first matching prompt.
-                const ops = registry.opsLog[p.filepath] || [];
-                registry.opsLog[p.filepath] = ops.filter(op => !matchesAny(op));
-                delete registry.originalFiles[p.filepath];
-                state.modifiedFiles.delete(p.filepath);
-            } else {
-                await fs.write(p.filepath, p.content, { track: false });
-                const ops = registry.opsLog[p.filepath] || [];
-                const kept = [];
-                for (const op of ops) {
-                    if (matchesAny(op)) break;
-                    kept.push(op);
-                }
-                registry.opsLog[p.filepath] = kept;
-                recomputeModifiedFromOps(p.filepath);
+    // Forget ids = every prompt whose ops land at/after the cut, so the whole
+    // later history is discarded, not just the named prompt.
+    const forgetIds = new Set();
+    for (const filepath of files) {
+        const timeline = getFileTimeline(filepath);
+        for (const entry of timeline) {
+            if (entry.kind === 'baseline') continue;
+            if ((entry.ts || 0) >= cutTs && entry.prompt && entry.prompt.id) {
+                forgetIds.add(entry.prompt.id);
             }
-            ok++;
-        } catch(e) {
-            showToast(`Revert error (${p.filepath}): ${e.message}`, 'error');
         }
     }
 
-    await recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
-    await persistCheckpoint();
-    renderChangesPanel();
-    renderExplorerTree();
-    updateStatusInfo();
-    if (state.currentDiffFilepath && plan.some(p => p.filepath === state.currentDiffFilepath)) {
-        renderFileDiffView(state.currentDiffFilepath);
+    // Build an action for every tracked file reflecting its pre-cut state:
+    // replay only the ops that survive the cut (ts < cutTs) from the baseline.
+    const actions = [];
+    for (const filepath of files) {
+        const timeline = getFileTimeline(filepath);
+        let present = false;
+        let content = null;
+        for (const entry of timeline) {
+            if (entry.kind === 'baseline') { present = entry.content !== null; content = entry.content; continue; }
+            if (entry.ts === null) continue;       // the synthetic 'current' entry
+            if (entry.ts >= cutTs) break;          // first op at/after the cut
+            if (entry.kind === 'delete') { present = false; content = null; }
+            else if (entry.kind === 'rename-in' || entry.kind === 'rename-out') { present = true; }
+            else if (entry.kind === 'checkpoint') { present = true; content = entry.content; }
+        }
+
+        // A rename-in at/after the cut means the file was renamed after the cut,
+        // so its pre-cut location is a different path. Move it back first.
+        const renameIdx = timeline.findIndex(e => e.kind === 'rename-in' && (e.ts || 0) >= cutTs);
+        let moveBackTo = null;
+        if (renameIdx !== -1) {
+            // The rename-in marker carries op.from — the pre-rename (pre-cut) path.
+            moveBackTo = timeline[renameIdx].op && timeline[renameIdx].op.from ? timeline[renameIdx].op.from : null;
+        }
+
+        if (present) {
+            const finalPath = moveBackTo || filepath;
+            if (moveBackTo) actions.push({ kind: 'rename', filepath, targetPath: moveBackTo });
+            actions.push({ kind: 'restore', filepath: finalPath, content });
+        } else {
+            actions.push({ kind: 'delete', filepath });
+        }
     }
-    if (state.checkpointModalMode === 'file' && state.checkpointModalFile && plan.some(p => p.filepath === state.checkpointModalFile)) {
-        renderCheckpointTimeline(state.checkpointModalFile);
+
+    // Renames must run before restores/deletes so the restored content lands
+    // at its final path (a file renamed back to its old path first, then restored).
+    const renamed = actions.filter(a => a.kind === 'rename');
+    const rest = actions.filter(a => a.kind !== 'rename');
+    rest.sort((a, b) => (a.kind === 'restore' ? 0 : 1) - (b.kind === 'restore' ? 0 : 1));
+    const finalActions = [...renamed, ...rest];
+
+    if (actions.length === 0) {
+        showToast('No file changes are attributed to that prompt', 'info');
+        return;
     }
-    if (state.checkpointModalMode === 'all' && checkpointModalOverlay.style.display === 'flex') {
-        renderAllPromptGroups();
+
+    const summary = actions.map(p => p.kind === 'delete' ? 'delete' : p.kind === 'rename' ? `rename ${p.filepath} → ${p.targetPath}` : `restore ${p.filepath}`).join(', ');
+    const shortLabel = (promptLabel || 'this prompt').slice(0, 120) + (promptLabel && promptLabel.length > 120 ? '…' : '');
+    if (!(opts && opts.skipConfirm) && !confirm(`Revert to right before "${shortLabel}"?\n\nThis will ${summary}. Later changes will be discarded.`)) return;
+
+    const ok = await executeRevertPlan(finalActions, { forgetPromptIds: Array.from(forgetIds) });
+    if (ok > 0) {
+        showToast(`Reverted to right before "${shortLabel}"`, 'success');
     }
-    showToast(`Reverted ${ok} file(s) to right before "${shortLabel}"`, 'success');
 };
 
 const checkpointModalOverlay = document.getElementById('checkpoint-modal-overlay');
@@ -5859,19 +5907,51 @@ function buildCheckpointEntryRow(filepath, entry, { compact = false } = {}) {
     const row = document.createElement('div');
     row.className = `checkpoint-entry ${entry.kind}${compact ? ' compact' : ''}`;
 
-    const badge = entry.kind === 'baseline' ? '<span class="checkpoint-badge baseline">Baseline</span>' : '';
+    // Distinct label + badge per entry kind so the timeline reads like a
+    // per-file history of create / edit / delete / rename / mkdir operations.
+    const badgeClassMap = {
+        baseline: 'baseline',
+        checkpoint: 'checkpoint',
+        delete: 'delete',
+        'rename-in': 'rename-in',
+        'rename-out': 'rename-out',
+        mkdir: 'mkdir',
+        current: 'current',
+    };
+    const badgeLabelMap = {
+        baseline: 'Baseline',
+        checkpoint: 'Edit',
+        delete: 'Deleted',
+        'rename-in': 'Renamed in',
+        'rename-out': 'Renamed out',
+        mkdir: 'New directory',
+        current: 'Current',
+    };
+    const badge = entry.kind === 'current'
+        ? ''
+        : `<span class="checkpoint-badge ${badgeClassMap[entry.kind] || 'checkpoint'}">${badgeLabelMap[entry.kind] || 'Checkpoint'}</span>`;
 
     const tsLabel = entry.ts ? new Date(entry.ts).toLocaleString() : (entry.kind === 'baseline' ? 'Session start' : '');
 
     const hasPrev = entry.index > 0;
     const isCurrent = entry.kind === 'current';
+    const labelMap = {
+        baseline: 'Original content',
+        checkpoint: 'Edit',
+        delete: 'File deleted',
+        'rename-in': `Renamed in from ${escapeHTML(entry.op?.from || '')}`,
+        'rename-out': `Renamed out to ${escapeHTML(entry.op?.to || '')}`,
+        mkdir: 'Directory created',
+        current: 'Current state',
+    };
+    const label = labelMap[entry.kind] || 'Checkpoint';
 
     row.innerHTML = `
         <div class="checkpoint-dot"></div>
         <div class="checkpoint-body">
             <div class="checkpoint-label-row">
                 ${badge}
-                <span>${entry.kind === 'baseline' ? 'Original content' : 'Checkpoint'}</span>
+                <span>${label}</span>
                 <span class="checkpoint-ts">${escapeHTML(tsLabel)}</span>
             </div>
             ${compact ? '' : `
@@ -5880,7 +5960,7 @@ function buildCheckpointEntryRow(filepath, entry, { compact = false } = {}) {
             </div>`}
             <div class="checkpoint-actions">
                 ${hasPrev ? `<button class="btn-checkpoint-action diff-prev icon-btn" title="See what changed at this step"><span class="icon" style="font-size:12px;">difference</span></button>` : ''}
-                ${!isCurrent ? `<button class="btn-checkpoint-action revert icon-btn" data-idx="${entry.index}" title="Revert this change"><span class="icon" style="font-size:12px;">undo</span></button>` : ''}
+                ${(['baseline', 'checkpoint', 'delete', 'rename-out'].includes(entry.kind)) ? `<button class="btn-checkpoint-action revert icon-btn" data-idx="${entry.index}" title="Revert this change"><span class="icon" style="font-size:12px;">undo</span></button>` : ''}
             </div>
         </div>
     `;
@@ -6073,44 +6153,148 @@ window.hideCheckpointTimeline = () => {
     checkpointModalOverlay.style.display = 'none';
 };
 
+// ---------------------------------------------------------------------------
+// executeRevertPlan — the single entry point for every revert/discard path.
+// Checkpoint-modal reverts, per-file discard, discard-all, and
+// delete-message-and-revert all build a list of actions and route them here
+// so behavior is identical everywhere.
+//
+// Action shapes:
+//   { kind: 'restore', filepath, content }    — write content back to filepath
+//   { kind: 'delete',  filepath }             — remove filepath
+//   { kind: 'rename',  filepath, targetPath } — move filepath back to targetPath
+//
+// Options:
+//   forgetPromptIds: string[] — remove any op whose prompt.id is in the list
+//                               (the "commits" being dropped) from every file
+//   clearOpsFor:     string[] — wipe the whole opsLog entry for these files
+// ---------------------------------------------------------------------------
+async function executeRevertPlan(actions, opts = {}) {
+    const forgetIds = opts.forgetPromptIds ? new Set(opts.forgetPromptIds) : null;
+    const clearFor = opts.clearOpsFor ? new Set(opts.clearOpsFor) : null;
+    let applied = 0;
+
+    for (const action of actions) {
+        try {
+            if (action.kind === 'rename') {
+                const res = await fs.rename(action.filepath, action.targetPath, { track: false });
+                if (res && res.error) {
+                    showToast(`Revert error (${action.filepath}): ${res.error}`, 'error');
+                    continue;
+                }
+                // rawRename moves disk content but doesn't touch tracking state;
+                // carry the op log and baseline across so history follows the path.
+                if (registry.opsLog[action.filepath]) {
+                    registry.opsLog[action.targetPath] = registry.opsLog[action.filepath];
+                    delete registry.opsLog[action.filepath];
+                }
+                if (action.filepath in registry.originalFiles) {
+                    registry.originalFiles[action.targetPath] = registry.originalFiles[action.filepath];
+                    delete registry.originalFiles[action.filepath];
+                }
+                // Follow open tabs and Monaco models so the UI doesn't point
+                // at a path that no longer exists.
+                if (state.openTabs.includes(action.filepath)) {
+                    state.openTabs[state.openTabs.indexOf(action.filepath)] = action.targetPath;
+                }
+                if (state.activeTab === action.filepath) state.activeTab = action.targetPath;
+                if (state.currentEditorPath === action.filepath) state.currentEditorPath = action.targetPath;
+                if (state.currentDiffFilepath === action.filepath) state.currentDiffFilepath = action.targetPath;
+                if (state.checkpointModalFile === action.filepath) state.checkpointModalFile = action.targetPath;
+                const model = monacoModels.get(action.filepath);
+                if (model) {
+                    monacoModels.delete(action.filepath);
+                    monacoModels.set(action.targetPath, model);
+                }
+            } else if (action.kind === 'delete') {
+                await fs.del(action.filepath, { track: false });
+            } else if (action.kind === 'restore') {
+                await fs.write(action.filepath, action.content, { track: false });
+                if (state.currentEditorPath === action.filepath && monacoEditor) {
+                    const model = monacoModels.get(action.filepath);
+                    if (model) withDirtyTrackingSuppressed(() => model.setValue(action.content));
+                }
+            }
+            applied++;
+        } catch (e) {
+            showToast(`Revert error (${action.filepath}): ${e.message}`, 'error');
+        }
+    }
+
+    // Trim op logs. A prompt is a commit: forgetting its id drops every op it
+    // produced, regardless of which file that op landed on.
+    if (forgetIds) {
+        for (const fp of Object.keys(registry.opsLog)) {
+            const kept = (registry.opsLog[fp] || []).filter(op => !(op.prompt && forgetIds.has(op.prompt.id)));
+            if (kept.length) registry.opsLog[fp] = kept;
+            else delete registry.opsLog[fp];
+        }
+    }
+    // Full log reset for a file (per-file discard / discard-all).
+    if (clearFor) {
+        for (const fp of clearFor) {
+            delete registry.opsLog[fp];
+            if (registry.originalFiles[fp] === null) delete registry.originalFiles[fp];
+        }
+    }
+
+    recomputeAllModifiedFromOps();
+    await recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
+    await persistCheckpoint();
+    renderChangesPanel();
+    renderExplorerTree();
+    updateStatusInfo();
+
+    // Refresh any open diff/timeline view so it doesn't show stale data.
+    if (state.currentDiffFilepath) renderFileDiffView(state.currentDiffFilepath);
+    if (state.checkpointModalFile && checkpointModalOverlay.style.display === 'flex') {
+        if (state.checkpointModalMode === 'file') renderCheckpointTimeline(state.checkpointModalFile);
+        else renderAllPromptGroups();
+    }
+    if (state.currentEditorPath && monacoEditor) scheduleGutterDiffUpdate();
+
+    return applied;
+}
+
+// Authoritative reconstruction of state.modifiedFiles from baselines + op logs.
+// Called after every batch of revert actions so the Changes panel can never
+// drift out of sync with what's actually on disk.
+function recomputeAllModifiedFromOps() {
+    const all = new Set([
+        ...Object.keys(registry.originalFiles),
+        ...Object.keys(registry.opsLog),
+    ]);
+    state.modifiedFiles.clear();
+    for (const fp of all) {
+        const hasBaseline = registry.originalFiles[fp] !== undefined && registry.originalFiles[fp] !== null;
+        const fileExists = registry.files[fp] !== undefined;
+        const ops = registry.opsLog[fp] || [];
+
+        let modified = false;
+        if (hasBaseline) {
+            // File existed before this session: modified if it's gone, or if
+            // its live content differs from the pre-session baseline.
+            if (!fileExists) modified = true;
+            else if (registry.files[fp] !== registry.originalFiles[fp]) modified = true;
+        } else if (fileExists && ops.length > 0) {
+            // No baseline (created this session) and still present.
+            modified = true;
+        }
+        if (modified) state.modifiedFiles.add(fp);
+    }
+}
+
 window.discardFile = async (filepath) => {
     if (!confirm(`Discard all changes in ${filepath} and revert to session checkpoint?`)) return;
-    try {
-        const originalContent = registry.originalFiles[filepath];
-        if (originalContent === undefined) {
-            delete registry.files[filepath];
-            delete registry.meta[filepath];
-            if (rootHandle) {
-                await deleteFileOrDirectory(filepath);
-            }
-        } else {
-            // Discard/reset: write the file back without recording a new op
-            // (track:false), so we wipe the log clean on the next line instead
-            // of logging a stray 'write' op first.
-            await fs.write(filepath, originalContent, { track: false });
-        }
+    const original = registry.originalFiles[filepath];
+    const actions = (original === undefined)
+        ? [{ kind: 'delete', filepath }]
+        : [{ kind: 'restore', filepath, content: original }];
 
-        state.modifiedFiles.delete(filepath);
-        registry.opsLog[filepath] = [];
-        if (registry.originalFiles[filepath] === null) delete registry.originalFiles[filepath];
-        await recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
-        await persistCheckpoint();
-        renderChangesPanel();
-        renderExplorerTree();
-        updateStatusInfo();
+    await executeRevertPlan(actions, { clearOpsFor: [filepath] });
 
-        if (state.activeTab === `filediff:${filepath}`) {
-            closeTab(`filediff:${filepath}`);
-        } else if (state.activeTab === filepath && monacoEditor) {
-            const curModel = monacoModels.get(filepath);
-            if (curModel) withDirtyTrackingSuppressed(() => curModel.setValue(registry.files[filepath] || ''));
-            scheduleGutterDiffUpdate();
-        }
-
-        showToast(`Discarded changes in ${filepath.split('/').pop()}`, 'success');
-    } catch(e) {
-        showToast(`Discard error: ${e.message}`, 'error');
-    }
+    if (state.activeTab === `filediff:${filepath}`) closeTab(`filediff:${filepath}`);
+    showToast(`Discarded changes in ${filepath.split('/').pop()}`, 'success');
 };
 
 window.restoreAllModifiedFiles = async () => {
@@ -6120,39 +6304,16 @@ window.restoreAllModifiedFiles = async () => {
     }
     if (!confirm(`Discard all changes across ${state.modifiedFiles.size} file(s)?`)) return;
 
-    let restored = 0;
-    const list = Array.from(state.modifiedFiles);
-    for (const fp of list) {
+    const files = Array.from(state.modifiedFiles);
+    const actions = files.map(fp => {
         const original = registry.originalFiles[fp];
-        try {
-            if (original === undefined) {
-                delete registry.files[fp];
-                delete registry.meta[fp];
-                if (rootHandle) {
-                    await deleteFileOrDirectory(fp);
-                }
-            } else {
-                await fs.write(fp, original, { track: false });
-            }
-            registry.opsLog[fp] = [];
-            restored++;
-        } catch (e) {
-            showToast(`Restore error: ${e.message}`, 'error');
-        }
-    }
-    state.modifiedFiles.clear();
-    state.linesAdded = 0;
-    state.linesRemoved = 0;
-    await persistCheckpoint();
-    renderChangesPanel();
-    renderExplorerTree();
-    updateStatusInfo();
-    if (state.currentEditorPath && list.includes(state.currentEditorPath) && monacoEditor) {
-        const curModel = monacoModels.get(state.currentEditorPath);
-        if (curModel) withDirtyTrackingSuppressed(() => curModel.setValue(registry.files[state.currentEditorPath] || ''));
-        scheduleGutterDiffUpdate();
-    }
-    showToast(`Restored ${restored} file(s) to session checkpoint`, 'success');
+        return (original === undefined)
+            ? { kind: 'delete', filepath: fp }
+            : { kind: 'restore', filepath: fp, content: original };
+    });
+
+    const applied = await executeRevertPlan(actions, { clearOpsFor: files });
+    showToast(`Restored ${applied} file(s) to session checkpoint`, 'success');
 };
 
 document.getElementById('btn-discard-all').addEventListener('click', () => window.restoreAllModifiedFiles());
@@ -12426,23 +12587,47 @@ function greedyLcsCount(a, b) {
 }
 
 // Computes added/removed line counts via LCS-based diff; capped for very large files with a length-delta fallback to avoid O(n*m) blowups.
+function trimCommonLines(a, b) {
+    let start = 0;
+    while (start < a.length && start < b.length && a[start] === b[start]) start++;
+    let endA = a.length, endB = b.length;
+    while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) { endA--; endB--; }
+    return { a: a.slice(start, endA), b: b.slice(start, endB) };
+}
+
 function computeLineDiffCounts(beforeText, afterText) {
     if (beforeText === afterText) return { added: 0, removed: 0 };
-    // Binary files have no meaningful "lines" - ignore line-diff computation for them entirely
-    // (returning 0/0 rather than running LCS or a net-delta heuristic on unparseable content).
     if (isBinaryContent(beforeText) || isBinaryContent(afterText)) return { added: 0, removed: 0 };
-    // ''.split('\n') yields [''], a phantom line - treat empty text as zero lines so new/deleted files don't count as +1/-1.
-    const a = beforeText === '' ? [] : beforeText.split('\n');
-    const b = afterText === '' ? [] : afterText.split('\n');
+
+    const normA = beforeText.replace(/\r\n/g, '\n');
+    const normB = afterText.replace(/\r\n/g, '\n');
+    const aFull = normA === '' ? [] : normA.split('\n');
+    const bFull = normB === '' ? [] : normB.split('\n');
+
+    // Drop identical leading/trailing lines first. This is git-hunk behavior:
+    // context lines around an edit aren't changes. It also shrinks the region
+    // to something exact LCS can handle on all but truly scattered rewrites.
+    const { a, b } = trimCommonLines(aFull, bFull);
     const n = a.length, m = b.length;
+    if (n === 0 && m === 0) return { added: 0, removed: 0 };
+
     const LCS_LINE_CAP = 4000;
     if (n * m > LCS_LINE_CAP * LCS_LINE_CAP || n > LCS_LINE_CAP * 4 || m > LCS_LINE_CAP * 4) {
-        // Too large for exact LCS; use an O(n log m) greedy line-matcher that counts matched
-        // lines on BOTH sides, so added and removed are both reported correctly (no swallowing).
-        const matched = greedyLcsCount(a, b);
+        // Large scattered diff. Greedy LCS collapses on files with thousands
+        // of duplicate lines (blank lines, </div>, }); the walker's cursor
+        // races ahead of the real matches and matched drops to ~40%. A set
+        // overlap can't under-count that badly — it's the honest lower bound
+        // on how many lines are still shared between the two sides.
+        const aSet = new Set(a);
+        const bSet = new Set(b);
+        let aMatched = 0;
+        for (const line of a) if (bSet.has(line)) aMatched++;
+        let bMatched = 0;
+        for (const line of b) if (aSet.has(line)) bMatched++;
+        const matched = Math.min(aMatched, bMatched);
         return { added: m - matched, removed: n - matched };
     }
-    // Standard LCS length table.
+
     const dp = new Array(n + 1);
     for (let i = 0; i <= n; i++) dp[i] = new Uint32Array(m + 1);
     for (let i = 1; i <= n; i++) {
