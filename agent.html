@@ -3739,12 +3739,32 @@ function seedBuiltinToolSources() {
     if (err) return err;
     return \`Renamed \${args.filepath} to \${args.new_name}\`;
 `),
+
+        preview_image: buildToolFileSource({
+            name: 'preview_image',
+            description: 'View an image file (or a cropped region of it) as an actual image (png/jpg/jpeg/gif/bmp/webp/svg/ico). Pass filepath alone to see the whole image, or add x/y/width/height (in the original image pixel coordinates) to zoom into a specific region — useful for reading small text or inspecting detail in a screenshot.',
+            parameters: {
+                type: "object",
+                properties: {
+                    filepath: { type: "string", description: "Path to an image in the open workspace." },
+                    x: { type: "integer", description: "Left edge of the crop region, in original image pixels. Omit to view the full image." },
+                    y: { type: "integer", description: "Top edge of the crop region, in original image pixels." },
+                    width: { type: "integer", description: "Width of the crop region, in original image pixels." },
+                    height: { type: "integer", description: "Height of the crop region, in original image pixels." }
+                },
+                required: ["filepath"]
+            },
+            modes: ['plan', 'ask', 'code'],
+            permission: 'always'
+        }, `
+    return "ERROR: preview_image should be handled natively; this stub should not run.";
+`),
     };
 }
 
-const BUILTIN_TOOL_NAMES = ['read', 'edit', 'write', 'grep', 'find', 'rename'];
+const BUILTIN_TOOL_NAMES = ['read', 'edit', 'write', 'grep', 'find', 'rename', 'preview_image'];
 
-const TOOL_IO_READ_ONLY = new Set(['read', 'grep', 'find']);
+const TOOL_IO_READ_ONLY = new Set(['read', 'grep', 'find', 'preview_image']);
 const TOOL_IO_WRITE = new Set(['edit', 'write', 'rename']);
 function getToolIOKind(toolName) {
     if (TOOL_IO_WRITE.has(toolName)) return 'write';
@@ -4103,14 +4123,98 @@ async function handler(args, api) {
     unmarkToolDeleted(name);
     rebuildToolRegistryFromFiles();
     return { ok: true, path: fp };
-}
+    }
 
-function isAgentPath(path) {
-    return path === CUSTOM_TOOLS_DIR || 
-           path === TOOLS_DIR || 
-           path === PROMPTS_DIR || 
+    const IMAGE_FILE_EXT_RE = /\.(png|jpg|jpeg|gif|bmp|webp|svg|ico)$/i;
+    function isImageFilePath(path) {
+    return IMAGE_FILE_EXT_RE.test(path || '');
+    }
+
+    async function readImageDataUrl(filepath) {
+    if (!isImageFilePath(filepath)) return null;
+
+    let handle = registry.meta[filepath]?.handle || null;
+    if (!handle && rootHandle) {
+        try { handle = await getHandleByPath(filepath); } catch (e) { handle = null; }
+    }
+    if (!handle) return null;
+
+    try {
+        const file = await handle.getFile();
+        const blob = file.slice(0, file.size, file.type || guessImageMimeType(filepath));
+        return await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+            reader.readAsDataURL(blob);
+        });
+    } catch (e) {
+        return null;
+    }
+    }
+
+    function guessImageMimeType(filepath) {
+    const ext = (filepath.match(/\.([a-zA-Z0-9]+)$/)?.[1] || '').toLowerCase();
+    const map = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp', svg: 'image/svg+xml', ico: 'image/x-icon' };
+    return map[ext] || 'application/octet-stream';
+    }
+
+    async function cropAndEncodeImage(dataUrl, { x, y, width, height } = {}) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const naturalW = img.naturalWidth || img.width;
+            const naturalH = img.naturalHeight || img.height;
+            let sx = 0, sy = 0, sw = naturalW, sh = naturalH;
+            const hasCrop = [x, y, width, height].some(v => v !== undefined && v !== null);
+            if (hasCrop) {
+                sx = Math.max(0, Math.min(naturalW - 1, Math.round(x || 0)));
+                sy = Math.max(0, Math.min(naturalH - 1, Math.round(y || 0)));
+                sw = Math.max(1, Math.min(naturalW - sx, Math.round(width || (naturalW - sx))));
+                sh = Math.max(1, Math.min(naturalH - sy, Math.round(height || (naturalH - sy))));
+            }
+            const MAX_SIDE = 1568;
+            const MIN_ZOOM_SIDE = 768;
+            let outW = sw, outH = sh;
+            const longSide = Math.max(outW, outH);
+            if (hasCrop && longSide < MIN_ZOOM_SIDE) {
+                const scale = MIN_ZOOM_SIDE / longSide;
+                outW = Math.round(outW * scale);
+                outH = Math.round(outH * scale);
+            }
+            const longSide2 = Math.max(outW, outH);
+            if (longSide2 > MAX_SIDE) {
+                const scale = MAX_SIDE / longSide2;
+                outW = Math.round(outW * scale);
+                outH = Math.round(outH * scale);
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = outW;
+            canvas.height = outH;
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
+            resolve({
+                dataUrl: canvas.toDataURL('image/png'),
+                crop: hasCrop ? { x: sx, y: sy, width: sw, height: sh } : null,
+                outputWidth: outW,
+                outputHeight: outH,
+                sourceWidth: naturalW,
+                sourceHeight: naturalH
+            });
+        };
+        img.onerror = () => reject(new Error('Failed to load image for preview'));
+        img.src = dataUrl;
+    });
+    }
+
+    function isAgentPath(path) {
+    return path === CUSTOM_TOOLS_DIR ||
+           path === TOOLS_DIR ||
+           path === PROMPTS_DIR ||
            path.startsWith(CUSTOM_TOOLS_DIR + '/');
-}
+    }
 
 const VIRTUAL_AGENT_FILES = [MODELS_FILE, CONFIG_FILE];
 function isVirtualAgentFile(path) {
@@ -12985,26 +13089,50 @@ function detectIndentation(lines) {
     return { type: 'space4', char: '    ' };
 }
 
+// Applies a search/replace edit to a file, transparently handling both LF
+// and CRLF line endings:
+//   - The file's original EOL style (LF vs CRLF) is preserved on output,
+//     so editing a CRLF file doesn't silently rewrite every line to LF
+//     (and vice versa).
+//   - The search and replace blocks may use either style (or a mix); they
+//     are normalized to bare LF for matching, then the result is converted
+//     back to the file's EOL style.
+//   - A line-by-line, trim-insensitive fallback catches indentation drift
+//     between the search block and the file.
+// Returns { content, lineNumber } or throws if the search block isn't found.
 function applySearchReplace(original, searchBlock, replaceBlock) {
-    const hasCRLF = original.includes('\r\n');
-    const normalize = s => s.replace(/\r\n/g, '\n');
-    let orig = normalize(original);
-    let sBlock = normalize(searchBlock);
-    let rBlock = normalize(replaceBlock);
+    // Detect the file's EOL style. If it contains at least one CRLF pair we
+    // treat it as CRLF, otherwise LF. Empty / undefined input -> LF.
+    const usesCRLF = String(original == null ? '' : original).includes('\r\n');
 
-    if (orig.includes(sBlock)) {
-        let res = orig.replace(sBlock, rBlock);
-        const beforeMatch = orig.substring(0, orig.indexOf(sBlock));
-        const startLine = beforeMatch.split('\n').length;
-        return {
-            content: hasCRLF ? res.replace(/\n/g, '\r\n') : res,
-            lineNumber: startLine
-        };
+    // Normalize all inputs to bare LF so matching is EOL-agnostic.
+    const normalize = s => String(s == null ? '' : s).replace(/\r\n/g, '\n');
+
+    // Convert a normalized (LF-only) result back to the file's EOL style.
+    const toFileEol = s => usesCRLF ? s.replace(/\n/g, '\r\n') : s;
+
+    const orig   = normalize(original);
+    const sBlock = normalize(searchBlock);
+    const rBlock = normalize(replaceBlock);
+
+    // --- Fast path: exact substring match on the normalized content. ---
+    // Uses indexOf + slice (instead of String.replace) so any '$' characters
+    // in the replacement text are treated literally, not as backreferences.
+    const directIdx = orig.indexOf(sBlock);
+    if (directIdx !== -1) {
+        const before = orig.slice(0, directIdx);
+        const after  = orig.slice(directIdx + sBlock.length);
+        const res = before + rBlock + after;
+        const startLine = before.split('\n').length;
+        return { content: toFileEol(res), lineNumber: startLine };
     }
 
+    // --- Fallback: line-by-line, trim-aware match. Handles cases where the
+    //     search block has slightly different indentation or trailing
+    //     whitespace than the file. ---
     const origLines = orig.split('\n');
-    const sLines = sBlock.split('\n');
-    const rLines = rBlock.split('\n');
+    const sLines    = sBlock.split('\n');
+    const rLines    = rBlock.split('\n');
     const fileIndent = detectIndentation(origLines);
 
     let matchIdx = -1;
@@ -13024,7 +13152,7 @@ function applySearchReplace(original, searchBlock, replaceBlock) {
 
     if (matchIdx !== -1) {
         const origLead = origLines[matchIdx].match(/^\s*/)[0];
-        const sLead = sLines[0].match(/^\s*/)[0];
+        const sLead    = sLines[0].match(/^\s*/)[0];
 
         const adjustedRLines = rLines.map((line) => {
             if (!line.trim()) return '';
@@ -13046,12 +13174,9 @@ function applySearchReplace(original, searchBlock, replaceBlock) {
         });
 
         const before = origLines.slice(0, matchIdx).join('\n');
-        const after = origLines.slice(matchIdx + sLines.length).join('\n');
-        let res = (before ? before + '\n' : '') + adjustedRLines.join('\n') + (after ? '\n' + after : '');
-        return {
-            content: hasCRLF ? res.replace(/\n/g, '\r\n') : res,
-            lineNumber: matchIdx + 1
-        };
+        const after  = origLines.slice(matchIdx + sLines.length).join('\n');
+        const res = (before ? before + '\n' : '') + adjustedRLines.join('\n') + (after ? '\n' + after : '');
+        return { content: toFileEol(res), lineNumber: matchIdx + 1 };
     }
 
     throw new Error("Could not find search_block in target file.");
@@ -13504,10 +13629,50 @@ function describeToolAction(name, args) {
         case 'grep': return `Search pattern "${args.pattern || ''}"`;
         case 'find': return `Find files "${args.pattern || ''}"`;
         case 'rename': return `Rename ${args.filepath || ''} to ${args.new_name || ''}`;
+        case 'PreviewImage': {
+            const hasCrop = [args.x, args.y, args.width, args.height].some(v => v !== undefined && v !== null);
+            return `Preview ${args.filepath || ''}${hasCrop ? ` (region ${args.x || 0},${args.y || 0} ${args.width || '?'}x${args.height || '?'})` : ''}`;
+        }
         default: {
             const preview = summarizeToolArgs(args);
             return `Run ${name}${preview ? `: ${preview}` : ''}`;
         }
+    }
+}
+
+async function executePreviewImage(args) {
+    const fp = args.filepath;
+    if (!fp) return { output: 'ERROR: filepath is required.' };
+
+    if (isSecurityProtectedPath(fp)) {
+        return { output: `ERROR: ${fp} is a protected path and cannot be read by a tool call.` };
+    }
+    if (isSensitiveUserFile(fp)) {
+        return { output: `ERROR: ${fp} is a private user settings file and cannot be read by a tool call.` };
+    }
+    if (shouldHideFromTools(fp)) {
+        return { output: `ERROR: ${fp} has .agent extension and is hidden from tool access. You can enable access in Settings > Explorer > Show .agent files to tools.` };
+    }
+    if (isAgentPath(fp) && !isVirtualAgentFile(fp)) {
+        return { output: `ERROR: ${fp} is inside .agent and cannot be read by a tool call.` };
+    }
+
+    const dataUrl = await readImageDataUrl(fp);
+    if (!dataUrl) {
+        return { output: `ERROR: ${fp} is not a readable image. It must be an image file (png/jpg/jpeg/gif/bmp/webp/svg/ico) that exists in the open workspace.` };
+    }
+
+    try {
+        const { dataUrl: outUrl, width, height, sourceWidth, sourceHeight, crop } = await cropAndEncodeImage(
+            dataUrl,
+            { x: args.x, y: args.y, width: args.width, height: args.height }
+        );
+        const summary = crop
+            ? `Cropped region ${crop.x},${crop.y} ${crop.width}x${crop.height} of ${fp} (full image is ${sourceWidth}x${sourceHeight}), shown below at ${width}x${height}.`
+            : `Full image ${fp} (${sourceWidth}x${sourceHeight}), shown below${(width !== sourceWidth || height !== sourceHeight) ? ` scaled to ${width}x${height}` : ''}.`;
+        return { output: summary, __imageDataUrl: outUrl };
+    } catch (e) {
+        return { output: `ERROR: Failed to preview ${fp}: ${e.message}` };
     }
 }
 
@@ -13518,6 +13683,10 @@ async function executeTool(name, args, sessionId) {
 
     const perm = await checkPermission(name, describeToolAction(name, args), sessionId);
     if (!perm.allowed) return { output: `ERROR: ${perm.error}` };
+
+    if (name === 'preview_image') {
+        return await executePreviewImage(args);
+    }
 
     try {
         const output = await runToolInWorker(name, tool, args, sessionId);
@@ -14431,7 +14600,26 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                         safeRenderToolCallBox(call.function.name, args, resStr, false, resIsError, toolGroupContainer, runningBox, runSessionId);
                     }
 
+                    if (resObj.__imageDataUrl && isRunLive()) {
+                        const target = toolGroupContainer ? (toolGroupContainer.querySelector('.tool-group-body') || toolGroupContainer) : term;
+                        const thumbEl = document.createElement('div');
+                        thumbEl.className = 'tool-preview-image-thumb';
+                        thumbEl.innerHTML = `<img src="${resObj.__imageDataUrl}" alt="Preview of ${escapeHTML(args.filepath || '')}" style="max-width:280px; max-height:200px; border-radius:6px; border:1px solid var(--border); margin:4px 0; display:block;">`;
+                        target.appendChild(thumbEl);
+                        smartScroll();
+                    }
+
                     runCtx.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: resStr });
+
+                    if (resObj.__imageDataUrl) {
+                        runCtx.messages.push({
+                            role: "user",
+                            content: [
+                                { type: "text", text: `(Image result from PreviewImage tool call for ${args.filepath || ''})` },
+                                { type: "image_url", image_url: { url: resObj.__imageDataUrl } }
+                            ]
+                        });
+                    }
                     runGen.hasNewContent = true;
                     await saveSession(runSessionId);
                 }
