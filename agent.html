@@ -4110,13 +4110,180 @@ const registry = {
     files: {},
     meta: {},
     originalFiles: {},
-    fileHistory: {},
-    currentBlame: {},
-    baselineBlame: {},
+    opsLog: {},
+    compressionHistory: [],
     treeRoot: { name: "", path: "", kind: "directory", children: {} }
 };
 
-const MAX_FILE_HISTORY = 25;
+// ---------------------------------------------------------------------------
+// fs.*  — single entry point for every workspace mutation.
+// Every change (create/write/edit/rename/delete/mkdir) is recorded as an op in
+// the owning session's opsLog, mirroring a git-style operation timeline.
+// ---------------------------------------------------------------------------
+const fs = (() => {
+    function currentPromptCtx(sessionId) {
+        const gen = getGenState(sessionId || state.activeSessionId);
+        return gen.currentPromptContext || null;
+    }
+
+    function ensureLog(filePath, sessionId) {
+        const ctx = sessionCtx(sessionId || state.activeSessionId);
+        const b = ctx.baseline;
+        if (!b.opsLog) b.opsLog = {};
+        if (!b.opsLog[filePath]) b.opsLog[filePath] = [];
+        return b.opsLog[filePath];
+    }
+
+    // Records an op, updates modifiedFiles + line stats, persists. The single
+    // source of truth for "something happened to this file".
+    async function record(op, sessionId) {
+        const sid = sessionId || state.activeSessionId;
+        const ctx = sessionCtx(sid);
+        if (ctx.deleted) return;
+        const b = ctx.baseline;
+
+        op.ts = op.ts || Date.now();
+        if (op.prompt === undefined) op.prompt = currentPromptCtx(sid);
+
+        if (op.kind === 'rename') {
+            // Git-style rename tracking: history follows the path (like `git log
+            // --follow`) instead of splitting into two disconnected timelines.
+            // The old path's ops (its full prior history plus a trailing
+            // 'rename-out' marker) are moved onto the new path's log, prefixed
+            // before a 'rename-in' marker and anything the new path already had
+            // logged (e.g. a path that was renamed, then renamed again).
+            const priorLog = ensureLog(op.from, sid);
+            priorLog.push({ kind: 'rename-out', ts: op.ts, prompt: op.prompt, to: op.to, mode: op.mode });
+            const renameIn = { kind: 'rename-in', ts: op.ts, prompt: op.prompt, from: op.from, mode: op.mode };
+            const newLog = ensureLog(op.to, sid);
+
+            if (op.from !== op.to) {
+                b.opsLog[op.to] = [...priorLog, renameIn, ...newLog];
+                delete b.opsLog[op.from]; // history now lives entirely under the new path
+            } else {
+                newLog.push(renameIn);
+            }
+
+            const move = (dict) => {
+                if (dict[op.from] !== undefined) { dict[op.to] = dict[op.from]; delete dict[op.from]; }
+            };
+            move(b.originalFiles);
+
+            const wasModified = ctx.modifiedFiles.has(op.from);
+            ctx.modifiedFiles.delete(op.from);
+            if (wasModified) ctx.modifiedFiles.add(op.to);
+
+            if (b._lastKnownContent && b._lastKnownContent[op.from] !== undefined) {
+                b._lastKnownContent[op.to] = b._lastKnownContent[op.from];
+                delete b._lastKnownContent[op.from];
+            }
+        } else {
+            const p = op.path;
+            ensureLog(p, sid).push(op);
+
+            if (op.kind === 'delete') {
+                ctx.modifiedFiles.delete(p);
+            } else if (op.kind === 'create') {
+                if (b.originalFiles[p] === undefined) b.originalFiles[p] = null; // sentinel: created this session
+                ctx.modifiedFiles.add(p);
+            } else if (op.kind === 'mkdir') {
+                // directories don't affect modifiedFiles
+            } else {
+                if (b.originalFiles[p] !== undefined && b.originalFiles[p] === op.content) {
+                    ctx.modifiedFiles.delete(p);
+                } else {
+                    ctx.modifiedFiles.add(p);
+                }
+            }
+
+            if (!b._lastKnownContent) b._lastKnownContent = {};
+            if (op.kind === 'delete') delete b._lastKnownContent[p];
+            else if (op.content !== undefined) b._lastKnownContent[p] = op.content;
+        }
+
+        recomputeLineStats(ctx, sid);
+        await persistCheckpoint(sid);
+        if (ctx.isLive) { renderChangesPanel(); renderExplorerTree(); updateStatusInfo(); }
+    }
+
+    async function create(path, content, opts = {}) {
+        const sid = opts.sessionId || state.activeSessionId;
+        if (isSecurityProtectedPath(path)) return { error: `ERROR: ${path} is a protected path.` };
+        await rawWrite(path, content);
+        // track=false: disk-only mutation that must not be recorded (discard/reset paths).
+        if (opts.track !== false) {
+            await record({ kind: 'create', path, content, mode: opts.mode || 'ui' }, sid);
+        }
+        return { ok: true };
+    }
+
+    async function write(path, content, opts = {}) {
+        const sid = opts.sessionId || state.activeSessionId;
+        if (isSecurityProtectedPath(path)) return { error: `ERROR: ${path} is a protected path.` };
+        const existed = await fileExistsOnDisk(path) || registry.files[path] !== undefined;
+        await rawWrite(path, content);
+        // track=false: disk-only mutation that must not be recorded (discard/reset paths).
+        if (opts.track !== false) {
+            await record({ kind: existed ? 'write' : 'create', path, content, mode: opts.mode || 'ui' }, sid);
+        }
+        return { ok: true };
+    }
+
+    async function edit(path, searchBlock, replaceBlock, opts = {}) {
+        const original = await readFileContent(path);
+        if (original === undefined || original === null) return { error: `ERROR: ${path} not found` };
+        const { content, lineNumber } = applySearchReplace(original, searchBlock, replaceBlock || '');
+        const res = await write(path, content, { ...opts, mode: opts.mode || 'tool' });
+        return res.error ? res : { ok: true, lineNumber };
+    }
+
+    async function rename(from, to, opts = {}) {
+        const sid = opts.sessionId || state.activeSessionId;
+        if (isSecurityProtectedPath(from) || isSecurityProtectedPath(to)) {
+            return { error: `ERROR: protected paths can't be renamed or moved.` };
+        }
+        if (isToolOrAgentPath(from)) return { error: `ERROR: ${from} is a virtual settings file and can't be renamed.` };
+        if (isAgentPath(to)) return { error: `ERROR: Cannot rename files into .agent` };
+        const res = await rawRename(from, to);
+        if (res.error) return res;
+        // track=false: disk-only rename that must not be recorded (discard/reset paths).
+        if (opts.track === false) return { ok: true, resolvedNewPath: res.resolvedNewPath || to };
+        // rawRename may resolve to a different path than requested (it forces the
+        // file to stay in its original directory, stripping any directory
+        // component off `to`). Record against that actual resolved path, not the
+        // raw `to` the caller passed in — otherwise tracking points at a path
+        // nothing was ever written to, while the real file sits untracked.
+        const actualTo = res.resolvedNewPath || to;
+        await record({ kind: 'rename', from, to: actualTo, mode: opts.mode || 'ui' }, sid);
+        return { ok: true, resolvedNewPath: actualTo };
+    }
+
+    async function del(path, opts = {}) {
+        const sid = opts.sessionId || state.activeSessionId;
+        if (isVirtualAgentFile(path) || path === CUSTOM_TOOLS_DIR || path === PROMPTS_DIR) {
+            return { error: `ERROR: ${path} is a virtual settings file/folder and can't be deleted.` };
+        }
+        if (isSecurityProtectedPath(path)) return { error: `ERROR: ${path} is a protected path.` };
+        await rawDelete(path);
+        // track=false: disk-only delete that must not be recorded (discard/reset paths).
+        if (opts.track !== false) {
+            await record({ kind: 'delete', path, mode: opts.mode || 'ui' }, sid);
+        }
+        return { ok: true };
+    }
+
+    async function mkdir(path, opts = {}) {
+        const sid = opts.sessionId || state.activeSessionId;
+        await rawMkdir(path);
+        // track=false: disk-only mkdir that must not be recorded (discard/reset paths).
+        if (opts.track !== false) {
+            await record({ kind: 'mkdir', path, mode: opts.mode || 'ui' }, sid);
+        }
+        return { ok: true };
+    }
+
+    return { create, write, edit, rename, del, mkdir, record };
+})();
 
 function baselineKey(wsName, sessionId) {
     return `${wsName}::${sessionId}`;
@@ -4126,7 +4293,7 @@ function ensureSessionBaseline(id) {
     const s = state.sessions[id];
     if (!s) return null;
     if (!s._baseline) {
-        s._baseline = { originalFiles: {}, fileHistory: {}, currentBlame: {}, baselineBlame: {}, compressionHistory: [] };
+        s._baseline = { originalFiles: {}, opsLog: {}, compressionHistory: [] };
     }
     if (!s._modifiedFiles) {
         s._modifiedFiles = new Set(Array.isArray(s.modifiedFiles) ? s.modifiedFiles : []);
@@ -4154,7 +4321,7 @@ function sessionCtx(sessionId) {
             deleted: true,
             messages: [],
             modifiedFiles: new Set(),
-            baseline: { originalFiles: {}, fileHistory: {}, currentBlame: {}, baselineBlame: {}, compressionHistory: [] },
+            baseline: { originalFiles: {}, opsLog: {}, compressionHistory: [] },
         };
     }
     return {
@@ -5049,6 +5216,7 @@ function updateGutterDiffMarkers() {
         if (state.currentEditorPath === filepath && monacoEditor.getModel() === model) {
             _gutterDecorationIds = monacoEditor.deltaDecorations(_gutterDecorationIds, decorations);
         }
+        diffEditor.setModel(null);
         originalModel.dispose();
     };
 
@@ -5285,7 +5453,7 @@ async function loadBaselineFromDB(wsName, sessionId) {
     } catch(e) { return null; }
 }
 
-async function saveBaselineToDB(wsName, sessionId, originalFiles, modifiedFilesSet, fileHistory, currentBlame, baselineBlame, compressionHistory) {
+async function saveBaselineToDB(wsName, sessionId, originalFiles, modifiedFilesSet, opsLog, compressionHistory) {
     try {
         const db = await getDB();
         const tx = db.transaction(STORE_BASELINES, 'readwrite');
@@ -5295,9 +5463,7 @@ async function saveBaselineToDB(wsName, sessionId, originalFiles, modifiedFilesS
             sessionId,
             originalFiles,
             modifiedFiles: Array.from(modifiedFilesSet),
-            fileHistory: fileHistory || {},
-            currentBlame: currentBlame || {},
-            baselineBlame: baselineBlame || {},
+            opsLog: opsLog || {},
             compressionHistory: compressionHistory || []
         }, key);
         return new Promise(res => tx.oncomplete = res);
@@ -5404,9 +5570,7 @@ async function persistCheckpoint(sessionId) {
         id,
         ctx.baseline.originalFiles,
         ctx.modifiedFiles,
-        ctx.baseline.fileHistory,
-        ctx.baseline.currentBlame,
-        ctx.baseline.baselineBlame,
+        ctx.baseline.opsLog,
         ctx.baseline.compressionHistory
     );
 }
@@ -5424,42 +5588,75 @@ window.openCheckpointDiff = (filepath, fromIdx, toIdx) => {
     window.hideCheckpointTimeline();
 };
 
-function getFileTimeline(filepath) {
-    const timeline = [];
-    const hasBaseline = registry.originalFiles[filepath] !== undefined;
+function recomputeModifiedFromOps(filepath) {
+    const b = registry;
+    const ops = b.opsLog[filepath] || [];
+    let present = b.files[filepath] !== undefined;
+    for (const op of ops) {
+        if (op.kind === 'delete') present = false;
+        else if (op.kind === 'create' || op.kind === 'write' || op.kind === 'edit') present = true;
+    }
+    if (present) state.modifiedFiles.add(filepath);
+    else state.modifiedFiles.delete(filepath);
+}
 
-    if (hasBaseline) {
+// Derives a checkpoint timeline from the session's op log. Entries are:
+//   baseline    — original content before this session touched the file
+//   checkpoint  — state after a create/write/edit op
+//   delete      — file was removed; content is empty
+//   current     — live content on disk right now
+// Rename-in/rename-out and mkdir markers are shown by the UI but are not
+// content checkpoints.
+function getFileTimeline(filepath) {
+    const b = registry;
+    const ops = (b.opsLog && b.opsLog[filepath]) || [];
+    const timeline = [];
+
+    if (b.originalFiles[filepath] !== undefined && b.originalFiles[filepath] !== null) {
         timeline.push({
             index: 0,
             kind: 'baseline',
-            content: registry.originalFiles[filepath],
-            prompt: registry.baselineBlame[filepath] || null,
-            ts: null
+            content: b.originalFiles[filepath],
+            prompt: null,
+            ts: null,
         });
     }
-
-    const hist = registry.fileHistory[filepath] || [];
-    hist.forEach((h, i) => {
+    for (const op of ops) {
+        if (op.kind === 'rename-in' || op.kind === 'rename-out' || op.kind === 'mkdir') {
+            timeline.push({ index: timeline.length, kind: op.kind, prompt: op.prompt, ts: op.ts, op });
+            continue;
+        }
+        if (op.kind === 'delete') {
+            timeline.push({
+                index: timeline.length,
+                kind: 'delete',
+                content: '',
+                prompt: op.prompt,
+                ts: op.ts,
+                op,
+            });
+            continue;
+        }
+        // create / write / edit
         timeline.push({
             index: timeline.length,
             kind: 'checkpoint',
-            content: h.content,
-            prompt: h.prompt || null,
-            ts: h.ts
-        });
-    });
-
-    const liveContent = registry.files[filepath];
-    if (liveContent !== undefined) {
-        timeline.push({
-            index: timeline.length,
-            kind: 'current',
-            content: liveContent,
-            prompt: registry.currentBlame[filepath] || null,
-            ts: registry.currentBlame[filepath]?.ts || null
+            content: op.content,
+            prompt: op.prompt,
+            ts: op.ts,
+            op,
         });
     }
 
+    if (b.files[filepath] !== undefined) {
+        timeline.push({
+            index: timeline.length,
+            kind: 'current',
+            content: b.files[filepath],
+            prompt: null,
+            ts: null,
+        });
+    }
     return timeline;
 }
 
@@ -5476,17 +5673,17 @@ window.revertFileToCheckpoint = async (filepath, timelineIndex) => {
     if (!confirm(`Revert ${filepath} to ${label}? Later checkpoints will be discarded.`)) return;
 
     try {
-        await writeDisk(filepath, target.content, { silent: true });
+        await fs.write(filepath, target.content, { track: false });
 
-        // Only skip the leading entry if it actually is a baseline. When the
-        // file was created in-session there is no baseline entry, and slicing
-        // from index 1 would silently drop the first real checkpoint.
-        const hasBaseline = registry.originalFiles[filepath] !== undefined;
-        const keptHistory = timeline.slice(hasBaseline ? 1 : 0, target.index).map(t => ({
-            content: t.content, ts: t.ts, prompt: t.prompt
-        }));
-        registry.fileHistory[filepath] = keptHistory;
-        registry.currentBlame[filepath] = target.prompt;
+        // Truncate the op log: keep only ops before this checkpoint.
+        const ops = registry.opsLog[filepath] || [];
+        const kept = [];
+        for (const op of ops) {
+            if (op.ts === target.ts) break;
+            kept.push(op);
+        }
+        registry.opsLog[filepath] = kept;
+        recomputeModifiedFromOps(filepath);
 
         if (registry.originalFiles[filepath] === target.content) {
             state.modifiedFiles.delete(filepath);
@@ -5511,8 +5708,7 @@ window.revertFileToCheckpoint = async (filepath, timelineIndex) => {
 function getAllTrackedFiles() {
     const set = new Set([
         ...Object.keys(registry.originalFiles),
-        ...Object.keys(registry.fileHistory),
-        ...Object.keys(registry.currentBlame),
+        ...Object.keys(registry.opsLog),
         ...Array.from(state.modifiedFiles)
     ]);
     return Array.from(set);
@@ -5552,20 +5748,16 @@ window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
 
     for (const filepath of files) {
         const timeline = getFileTimeline(filepath);
-        // Cut at the earliest change made by any of the targeted prompts.
-        const firstIdx = timeline.findIndex(matchesAny);
+        const firstIdx = timeline.findIndex(t => t.prompt && idSet.has(t.prompt.id));
         if (firstIdx === -1) continue;
 
         const before = timeline[firstIdx - 1];
-        if (before) {
-            plan.push({ filepath, action: 'restore', content: before.content, blame: before.prompt });
+        if (before && before.kind !== 'delete') {
+            plan.push({ filepath, action: 'restore', content: before.content });
         } else {
-            const hasBaseline = registry.originalFiles[filepath] !== undefined;
-            if (hasBaseline) {
-                plan.push({ filepath, action: 'restore', content: registry.originalFiles[filepath], blame: registry.baselineBlame[filepath] || null });
-            } else {
-                plan.push({ filepath, action: 'delete' });
-            }
+            const hasBaseline = registry.originalFiles[filepath] !== undefined && registry.originalFiles[filepath] !== null;
+            if (hasBaseline) plan.push({ filepath, action: 'restore', content: registry.originalFiles[filepath] });
+            else plan.push({ filepath, action: 'delete' });
         }
     }
 
@@ -5582,34 +5774,22 @@ window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
     for (const p of plan) {
         try {
             if (p.action === 'delete') {
-                delete registry.files[p.filepath];
-                delete registry.meta[p.filepath];
-                if (rootHandle) await deleteFileOrDirectory(p.filepath);
-                delete registry.fileHistory[p.filepath];
-                registry.currentBlame[p.filepath] = registry.baselineBlame[p.filepath] || null;
+                await fs.del(p.filepath, { track: false });
+                // Truncate op log to ops before the first matching prompt.
+                const ops = registry.opsLog[p.filepath] || [];
+                registry.opsLog[p.filepath] = ops.filter(op => !matchesAny(op));
+                delete registry.originalFiles[p.filepath];
                 state.modifiedFiles.delete(p.filepath);
             } else {
-                await writeDisk(p.filepath, p.content, { silent: true });
-                const timeline = getFileTimeline(p.filepath);
-                // Only skip a leading baseline if one actually exists. When the
-                // file was created in-session, timeline[0] is a real checkpoint
-                // and slicing from 1 would drop it.
-                const hasBaseline = registry.originalFiles[p.filepath] !== undefined;
-                const cutIdx = timeline.findIndex(matchesAny);
-                // Keep everything before the first change made by a targeted
-                // prompt. slice() excludes the end, so `cutIdx` (not
-                // `cutIdx - 1`) is correct: the entry at cutIdx - 1 is the
-                // state we are restoring TO and must remain tracked.
-                const keptHistory = timeline.slice(hasBaseline ? 1 : 0, cutIdx > -1 ? cutIdx : undefined)
-                    .filter(t => t.kind === 'checkpoint')
-                    .map(t => ({ content: t.content, ts: t.ts, prompt: t.prompt }));
-                registry.fileHistory[p.filepath] = keptHistory;
-                registry.currentBlame[p.filepath] = p.blame;
-                if (registry.originalFiles[p.filepath] === p.content) {
-                    state.modifiedFiles.delete(p.filepath);
-                } else {
-                    state.modifiedFiles.add(p.filepath);
+                await fs.write(p.filepath, p.content, { track: false });
+                const ops = registry.opsLog[p.filepath] || [];
+                const kept = [];
+                for (const op of ops) {
+                    if (matchesAny(op)) break;
+                    kept.push(op);
                 }
+                registry.opsLog[p.filepath] = kept;
+                recomputeModifiedFromOps(p.filepath);
             }
             ok++;
         } catch(e) {
@@ -5887,12 +6067,15 @@ window.discardFile = async (filepath) => {
                 await deleteFileOrDirectory(filepath);
             }
         } else {
-            await writeDisk(filepath, originalContent, { silent: true });
+            // Discard/reset: write the file back without recording a new op
+            // (track:false), so we wipe the log clean on the next line instead
+            // of logging a stray 'write' op first.
+            await fs.write(filepath, originalContent, { track: false });
         }
 
         state.modifiedFiles.delete(filepath);
-        delete registry.fileHistory[filepath];
-        registry.currentBlame[filepath] = registry.baselineBlame[filepath] || null;
+        registry.opsLog[filepath] = [];
+        if (registry.originalFiles[filepath] === null) delete registry.originalFiles[filepath];
         recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
         await persistCheckpoint();
         renderChangesPanel();
@@ -5932,10 +6115,9 @@ window.restoreAllModifiedFiles = async () => {
                     await deleteFileOrDirectory(fp);
                 }
             } else {
-                await writeDisk(fp, original, { silent: true });
+                await fs.write(fp, original, { track: false });
             }
-            delete registry.fileHistory[fp];
-            registry.currentBlame[fp] = registry.baselineBlame[fp] || null;
+            registry.opsLog[fp] = [];
             restored++;
         } catch (e) {
             showToast(`Restore error: ${e.message}`, 'error');
@@ -6609,39 +6791,31 @@ async function loadCheckpointForSession(sessionId) {
     const existing = state.sessions[sessionId];
     if (existing && existing._baseline) {
         registry.originalFiles = existing._baseline.originalFiles;
-        registry.fileHistory = existing._baseline.fileHistory;
-        registry.currentBlame = existing._baseline.currentBlame;
-        registry.baselineBlame = existing._baseline.baselineBlame;
+        registry.opsLog = existing._baseline.opsLog || {};
         registry.compressionHistory = existing._baseline.compressionHistory || [];
         state.modifiedFiles = existing._modifiedFiles || new Set();
         return;
     }
 
     registry.originalFiles = {};
-    registry.fileHistory = {};
-    registry.currentBlame = {};
-    registry.baselineBlame = {};
+    registry.opsLog = {};
     registry.compressionHistory = [];
     state.modifiedFiles = new Set();
 
     const saved = await loadBaselineFromDB(currentWsName(), sessionId);
     if (saved) {
         registry.originalFiles = saved.originalFiles || {};
-        registry.fileHistory = saved.fileHistory || {};
-        registry.currentBlame = saved.currentBlame || {};
-        registry.baselineBlame = saved.baselineBlame || {};
+        registry.opsLog = saved.opsLog || {};
         registry.compressionHistory = saved.compressionHistory || [];
         (saved.modifiedFiles || []).forEach(f => state.modifiedFiles.add(f));
     } else {
-        await saveBaselineToDB(currentWsName(), sessionId, registry.originalFiles, state.modifiedFiles, registry.fileHistory, registry.currentBlame, registry.baselineBlame, registry.compressionHistory);
+        await saveBaselineToDB(currentWsName(), sessionId, registry.originalFiles, state.modifiedFiles, registry.opsLog, registry.compressionHistory);
     }
 
     if (existing) {
         existing._baseline = {
             originalFiles: registry.originalFiles,
-            fileHistory: registry.fileHistory,
-            currentBlame: registry.currentBlame,
-            baselineBlame: registry.baselineBlame,
+            opsLog: registry.opsLog,
             compressionHistory: registry.compressionHistory
         };
         existing._modifiedFiles = state.modifiedFiles;
@@ -6783,10 +6957,8 @@ async function deleteSession(sessionId, e) {
         state.sessions[sessionId].title = 'Untitled Session';
         state.sessions[sessionId].runningTimeMs = 0;
 
-        registry.fileHistory = {};
-        registry.currentBlame = {};
         registry.originalFiles = {};
-        registry.baselineBlame = {};
+        registry.opsLog = {};
         registry.compressionHistory = [];
         state.modifiedFiles.clear();
         await persistCheckpoint();
@@ -6868,10 +7040,8 @@ async function clearAllSessions() {
     state._lastSavedIndex = null;
     state.activeSessionId = newId;
 
-    registry.fileHistory = {};
-    registry.currentBlame = {};
     registry.originalFiles = {};
-    registry.baselineBlame = {};
+    registry.opsLog = {};
     registry.compressionHistory = [];
     state.modifiedFiles.clear();
     state.linesAdded = 0;
@@ -7718,16 +7888,34 @@ async function readFileContentForTool(filepath) {
     return { content: await readFileContent(filepath) };
 }
 
-async function deleteFileOrDirectory(path) {
-    if (isVirtualAgentFile(path) || path === CUSTOM_TOOLS_DIR || path === PROMPTS_DIR) {
-        showToast(`${path} is a virtual settings file/folder and can't be deleted`, 'error');
+// Disk-only write. Does not touch opsLog or modifiedFiles.
+async function rawWrite(path, content) {
+    if (!rootHandle) {
+        registry.files[path] = content;
+        registry.meta[path] = { kind: 'file' };
         return;
     }
-    if (isSecurityProtectedPath(path)) {
-        showToast(`${path} is a protected path and can't be deleted`, 'error');
+    const parts = path.split('/').filter(Boolean);
+    const fileName = parts.pop();
+    let parentHandle = rootHandle;
+    for (const p of parts) {
+        parentHandle = await parentHandle.getDirectoryHandle(p);
+    }
+    const fh = await parentHandle.getFileHandle(fileName, { create: true });
+    const w = await fh.createWritable();
+    await w.write(content);
+    await w.close();
+    registry.files[path] = content;
+    registry.meta[path] = { kind: 'file' };
+}
+
+// Disk-only delete. Does not touch opsLog or modifiedFiles.
+async function rawDelete(path) {
+    if (!rootHandle) {
+        delete registry.meta[path];
+        delete registry.files[path];
         return;
     }
-    if (!rootHandle) return;
     const parts = path.split('/').filter(Boolean);
     const targetName = parts.pop();
     let parentHandle = rootHandle;
@@ -7737,11 +7925,25 @@ async function deleteFileOrDirectory(path) {
     await parentHandle.removeEntry(targetName, { recursive: true });
     delete registry.meta[path];
     delete registry.files[path];
-    state.modifiedFiles.delete(path);
-    delete registry.fileHistory[path];
-    recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
-    updateStatusInfo();
-    await persistCheckpoint();
+}
+
+async function rawMkdir(path) {
+    await getDirectoryHandleByPath(path, true);
+    registry.meta[path] = { kind: 'directory' };
+}
+
+// Kept as a public wrapper for the few remaining direct callers (tool delete
+// path, context menu) so they don't all have to change in this diff.
+async function deleteFileOrDirectory(path) {
+    if (isVirtualAgentFile(path) || path === CUSTOM_TOOLS_DIR || path === PROMPTS_DIR) {
+        showToast(`${path} is a virtual settings file/folder and can't be deleted`, 'error');
+        return;
+    }
+    if (isSecurityProtectedPath(path)) {
+        showToast(`${path} is a protected path and can't be deleted`, 'error');
+        return;
+    }
+    await fs.del(path, { mode: 'ui' });
 }
 
 const fileTreeEl = document.getElementById('file-tree');
@@ -8020,7 +8222,7 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
                 showToast('Cannot create folders inside .agent', 'error');
                 return;
             }
-            await getDirectoryHandleByPath(fullPath, true);
+            await fs.mkdir(fullPath, { mode: 'ui' });
             state.expandedFolders.add(fullPath);
             await syncWorkspace(false);
         } else if (action === 'open-tab') {
@@ -8037,37 +8239,14 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
             const newPath = parent ? `${parent}/${newName}` : newName;
 
             try {
-                if (node.kind === 'file') {
-                    if (!rootHandle) {
-                        showToast('Rename requires a granted directory (File System Access API).', 'error');
-                        return;
-                    }
-                    const oldHandle = await getHandleByPath(oldPath);
-                    if (!oldHandle || typeof oldHandle.move !== 'function') {
-                        showToast('File System Access move() is not supported in this browser.', 'error');
-                        return;
-                    }
-                    const oldParts = oldPath.split('/').filter(Boolean);
-                    const newParts = newPath.split('/').filter(Boolean);
-                    const oldDirParts = oldParts.slice(0, -1);
-                    const newDirParts = newParts.slice(0, -1);
-
-                    if (JSON.stringify(oldDirParts) === JSON.stringify(newDirParts)) {
-                        await oldHandle.move(newParts[newParts.length - 1]);
-                    } else {
-                        const destDir = await getDirectoryHandleByPath(newDirParts.join('/'), false);
-                        if (destDir) {
-                            await oldHandle.move(destDir, newParts[newParts.length - 1]);
-                        } else {
-                            showToast('Destination directory does not exist.', 'error');
-                            return;
-                        }
-                    }
-
-                    if (state.openTabs.includes(oldPath)) {
-                        state.openTabs[state.openTabs.indexOf(oldPath)] = newPath;
-                        if (state.activeTab === oldPath) state.activeTab = newPath;
-                    }
+                const res = await fs.rename(oldPath, newPath, { mode: 'ui' });
+                if (res && res.error) {
+                    showToast(res.error, 'error');
+                    return;
+                }
+                if (state.openTabs.includes(oldPath)) {
+                    state.openTabs[state.openTabs.indexOf(oldPath)] = newPath;
+                    if (state.activeTab === oldPath) state.activeTab = newPath;
                 }
                 await syncWorkspace(false);
             } catch(err) {
@@ -8126,7 +8305,7 @@ btnNewFolder.addEventListener('click', async () => {
         showToast('Cannot create folders inside .agent', 'error');
         return;
     }
-    await getDirectoryHandleByPath(name, true);
+    await fs.mkdir(name, { mode: 'ui' });
     state.expandedFolders.add(name);
     await syncWorkspace(false);
 });
@@ -12054,9 +12233,7 @@ async function setWorkspace(handle) {
 
     registry.files = {};
     registry.originalFiles = {};
-    registry.fileHistory = {};
-    registry.currentBlame = {};
-    registry.baselineBlame = {};
+    registry.opsLog = {};
     registry.compressionHistory = [];
     state.modifiedFiles.clear();
     state.linesAdded = 0;
@@ -12095,9 +12272,7 @@ function closeWorkspace() {
     registry.files = {};
     registry.originalFiles = {};
     registry.meta = {};
-    registry.fileHistory = {};
-    registry.currentBlame = {};
-    registry.baselineBlame = {};
+    registry.opsLog = {};
     registry.compressionHistory = [];
     state.modifiedFiles.clear();
     state.linesAdded = 0;
@@ -12227,8 +12402,8 @@ function recomputeLineStats(ctx, sid, filePath, currentContent) {
         const after = ctx.isLive && registry.files[fp] !== undefined
             ? registry.files[fp]
             : ctx.baseline._lastKnownContent[fp];
-        const beforeText = before !== undefined ? before : '';
-        const afterText = after !== undefined ? after : '';
+        const beforeText = (before === undefined || before === null) ? '' : before;
+        const afterText = (after === undefined || after === null) ? '' : after;
         const { added, removed } = computeLineDiffCounts(beforeText, afterText);
         totalAdded += added;
         totalRemoved += removed;
@@ -12243,61 +12418,6 @@ function recomputeLineStats(ctx, sid, filePath, currentContent) {
     }
 }
 
-async function trackModification(filePath, beforeContent, afterContent, isRevert, sessionId) {
-    const sid = sessionId || state.activeSessionId;
-    const ctx = sessionCtx(sid);
-    if (ctx.deleted) return;
-    const baseline = ctx.baseline;
-
-    // A file is "new to this session" only if never touched - must check currentBlame too, else a later edit gets mistaken for the first and promotes created content to originalFiles.
-    const neverTouchedBefore = baseline.originalFiles[filePath] === undefined
-        && baseline.fileHistory[filePath] === undefined
-        && baseline.currentBlame[filePath] === undefined;
-    const isFirstEditThisSession = neverTouchedBefore && !isRevert;
-
-    if (isFirstEditThisSession) {
-        if (beforeContent !== undefined) {
-            baseline.originalFiles[filePath] = beforeContent;
-            baseline.baselineBlame[filePath] = null;
-        }
-    }
-
-    const gen = getGenState(sid);
-    const promptCtx = gen.currentPromptContext;
-
-    if (!isRevert && !isFirstEditThisSession && beforeContent !== undefined && beforeContent !== afterContent) {
-        if (!baseline.fileHistory[filePath]) baseline.fileHistory[filePath] = [];
-        const prevBlame = baseline.currentBlame[filePath] || null;
-        baseline.fileHistory[filePath].push({
-            content: beforeContent,
-            ts: Date.now(),
-            prompt: prevBlame
-        });
-        if (baseline.fileHistory[filePath].length > MAX_FILE_HISTORY) {
-            baseline.fileHistory[filePath].shift();
-        }
-    }
-
-    if (!isRevert && beforeContent !== afterContent) {
-        baseline.currentBlame[filePath] = promptCtx
-            ? { id: promptCtx.id, text: promptCtx.text, ts: Date.now() }
-            : { id: null, text: '(manual edit)', ts: Date.now() };
-    }
-    if (baseline.originalFiles[filePath] === afterContent) {
-        ctx.modifiedFiles.delete(filePath);
-    } else {
-        ctx.modifiedFiles.add(filePath);
-    }
-
-    recomputeLineStats(ctx, sid, filePath, afterContent);
-
-    await persistCheckpoint(sid);
-
-    if (ctx.isLive) {
-        updateStatusInfo();
-        renderChangesPanel();
-    }
-}
 
 function updateStatusInfo() {
     const modCount = state.modifiedFiles.size;
@@ -12520,28 +12640,12 @@ async function writeDisk(filePath, content, opts) {
         return { handled: true };
     }
 
-    const isRevert = !!(opts && opts.silent);
-    const fileExisted = registry.files[filePath] !== undefined || await fileExistsOnDisk(filePath);
-    const beforeContent = registry.files[filePath] !== undefined ? registry.files[filePath] : (await readFileContent(filePath));
-
-    if (!rootHandle) {
-        registry.files[filePath] = content;
-        registry.meta[filePath] = { kind: 'file', size: content.length, isBinary: false };
-        await trackModification(filePath, fileExisted ? beforeContent : undefined, content, isRevert, sessionId);
-        if (isLive) renderExplorerTree();
-        return;
+    // Workspace file: route through fs.* so the op log stays authoritative.
+    if (isFromLLMTool) {
+        await fs.write(filePath, content, { sessionId, mode: 'tool' });
+    } else {
+        await fs.write(filePath, content, { sessionId, mode: 'editor' });
     }
-
-    const fileHandle = await getHandleByPath(filePath, true);
-    const writable = await fileHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-    
-    registry.files[filePath] = content;
-    registry.meta[filePath] = { kind: 'file', size: content.length, isBinary: false, handle: fileHandle };
-    
-    await trackModification(filePath, fileExisted ? beforeContent : undefined, content, isRevert, sessionId);
-    if (isLive) renderExplorerTree();
 
     if (!isLive) return;
 
@@ -12764,14 +12868,12 @@ function isToolOrAgentPath(path) {
     return isVirtualAgentFile(path) || path === CUSTOM_TOOLS_DIR || path === TOOLS_DIR || path === PROMPTS_DIR;
 }
 
-async function performRename(oldPath, newPath, sessionId) {
-    const sid = sessionId || state.activeSessionId;
-    const ctx = sessionCtx(sid);
-    
+// Disk-only rename. Validates and moves on disk; no opsLog/history bookkeeping.
+async function rawRename(oldPath, newPath) {
     // Extract strictly the new filename, ignoring any directory paths passed in
     const newName = newPath.split('/').filter(Boolean).pop();
     if (!newName) return { error: `ERROR: Invalid new file name.` };
-    
+
     // Enforce that the new path stays in the exact same directory as the old path
     const oldParts = oldPath.split('/').filter(Boolean);
     const oldDirParts = oldParts.slice(0, -1);
@@ -12781,16 +12883,6 @@ async function performRename(oldPath, newPath, sessionId) {
         return {}; // No rename needed
     }
 
-    if (isSecurityProtectedPath(oldPath) || isSecurityProtectedPath(resolvedNewPath)) {
-        return { error: `ERROR: protected paths can't be renamed or moved.` };
-    }
-    if (isToolOrAgentPath(oldPath)) {
-        return { error: `ERROR: ${oldPath} is a virtual settings file and can't be renamed.` };
-    }
-    if (isAgentPath(resolvedNewPath)) {
-        return { error: `ERROR: Cannot rename files into .agent` };
-    }
-    
     try {
         const oldMeta = registry.meta[oldPath];
         if (!oldMeta) return { error: `ERROR: ${oldPath} not found` };
@@ -12798,7 +12890,6 @@ async function performRename(oldPath, newPath, sessionId) {
         const oldContent = await readFileContent(oldPath);
         if (oldContent === undefined) return { error: `ERROR: Content for ${oldPath} not found.` };
 
-        const wasModified = ctx.modifiedFiles.has(oldPath);
         let nativeMoveSuccess = false;
         let fileHandle = oldMeta.handle;
 
@@ -12807,14 +12898,12 @@ async function performRename(oldPath, newPath, sessionId) {
             const oldHandle = await getHandleByPath(oldPath);
             if (oldHandle && typeof oldHandle.move === 'function') {
                 try {
-                    // Fetch the explicit parent directory handle to satisfy Chromium's context security for subdirectories
                     const dirPath = oldDirParts.join('/');
-                    const parentDirHandle = dirPath === '' 
-                        ? rootHandle 
+                    const parentDirHandle = dirPath === ''
+                        ? rootHandle
                         : await getDirectoryHandleByPath(dirPath, false);
 
                     if (parentDirHandle) {
-                        // Use the two-argument move() to explicitly provide the directory context
                         await oldHandle.move(parentDirHandle, newName);
                         fileHandle = oldHandle;
                         nativeMoveSuccess = true;
@@ -12826,54 +12915,22 @@ async function performRename(oldPath, newPath, sessionId) {
         }
 
         if (nativeMoveSuccess) {
-            // Unified internal state update for a successful native rename
             delete registry.meta[oldPath];
             delete registry.files[oldPath];
-            
-            registry.meta[resolvedNewPath] = { 
-                kind: 'file', 
-                size: oldMeta.size || 0, 
-                isBinary: false, 
+            registry.meta[resolvedNewPath] = {
+                kind: 'file',
+                size: oldMeta.size || 0,
+                isBinary: false,
                 handle: fileHandle
             };
             registry.files[resolvedNewPath] = oldContent;
         } else {
-            // Fallback for restricted environments or if parent handle fails to resolve
-            await writeDisk(resolvedNewPath, oldContent, { sessionId: sid });
-            await deleteFileOrDirectory(oldPath);
+            // Fallback: copy + delete at the raw layer so fs.rename records one op.
+            await rawWrite(resolvedNewPath, oldContent);
+            await rawDelete(oldPath);
         }
 
-        // Clean up the old modified status
-        ctx.modifiedFiles.delete(oldPath);
-
-        // Safely transfer history & blames seamlessly for BOTH success and fallback paths
-        const transferHistory = (dict) => {
-            if (dict[oldPath] !== undefined) {
-                dict[resolvedNewPath] = dict[oldPath];
-                delete dict[oldPath];
-            }
-        };
-
-        transferHistory(ctx.baseline.originalFiles);
-        transferHistory(ctx.baseline.fileHistory);
-        transferHistory(ctx.baseline.currentBlame);
-        transferHistory(ctx.baseline.baselineBlame);
-
-        // Restore modified status for the new path
-        if (wasModified) {
-            ctx.modifiedFiles.add(resolvedNewPath);
-        } else {
-            ctx.modifiedFiles.delete(resolvedNewPath);
-        }
-        
-        await persistCheckpoint(sid);
-
-        if (ctx.isLive) {
-            renderExplorerTree();
-            renderChangesPanel();
-        }
-        
-        return {};
+        return { ok: true, resolvedNewPath };
     } catch(e) {
         return { error: `ERROR: ${e.message}` };
     }
@@ -13055,7 +13112,7 @@ const TOOL_API_METHODS = {
         if (shouldHideFromTools(newPath)) {
             return `ERROR: ${newPath} has .agent extension and is hidden from tool access. You can enable access in Settings > Explorer > Show .agent files to tools.`;
         }
-        const res = await performRename(oldPath, newPath, sessionId);
+        const res = await fs.rename(oldPath, newPath, { mode: 'tool' });
         return (res && res.error) ? res.error : null;
     },
     listFiles: async () => Object.keys(registry.meta).filter(f =>
@@ -13376,9 +13433,7 @@ async function submitPrompt() {
                 updateSessionPillLabel();
 
                 registry.originalFiles = {};
-                registry.baselineBlame = {};
-                registry.fileHistory = {};
-                registry.currentBlame = {};
+                registry.opsLog = {};
                 registry.compressionHistory = [];
 
                 renderChangesPanel();
