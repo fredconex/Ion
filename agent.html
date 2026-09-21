@@ -4188,6 +4188,14 @@ const fs = (() => {
             } else if (op.kind === 'mkdir') {
                 // directories don't affect modifiedFiles
             } else {
+                // First time we touch a pre-existing file this session: capture the
+                // pre-edit content as the baseline. op.previousContent is the OLD
+                // content (available at the fs.write call site); op.content is NEW.
+                // Without this, recomputeLineStats compares against '' and reports
+                // the whole file as "added".
+                if (b.originalFiles[p] === undefined) {
+                    b.originalFiles[p] = op.previousContent !== undefined ? op.previousContent : null;
+                }
                 if (b.originalFiles[p] !== undefined && b.originalFiles[p] === op.content) {
                     ctx.modifiedFiles.delete(p);
                 } else {
@@ -4197,10 +4205,9 @@ const fs = (() => {
 
             if (!b._lastKnownContent) b._lastKnownContent = {};
             if (op.kind === 'delete') delete b._lastKnownContent[p];
-            else if (op.content !== undefined) b._lastKnownContent[p] = op.content;
         }
 
-        recomputeLineStats(ctx, sid);
+        await recomputeLineStats(ctx, sid);
         await persistCheckpoint(sid);
         if (ctx.isLive) { renderChangesPanel(); renderExplorerTree(); updateStatusInfo(); }
     }
@@ -4220,10 +4227,21 @@ const fs = (() => {
         const sid = opts.sessionId || state.activeSessionId;
         if (isSecurityProtectedPath(path)) return { error: `ERROR: ${path} is a protected path.` };
         const existed = await fileExistsOnDisk(path) || registry.files[path] !== undefined;
+        // Capture the pre-write content for the session baseline BEFORE rawWrite
+        // mutates registry.files. Without this, the first edit of a pre-existing
+        // workspace file leaves originalFiles[p] undefined and every line ends up
+        // counted as "added" (baseline == '').
+        let previousContent;
+        if (existed) {
+            previousContent = registry.files[path];
+            if (previousContent === undefined) {
+                previousContent = await readFileContent(path);
+            }
+        }
         await rawWrite(path, content);
         // track=false: disk-only mutation that must not be recorded (discard/reset paths).
         if (opts.track !== false) {
-            await record({ kind: existed ? 'write' : 'create', path, content, mode: opts.mode || 'ui' }, sid);
+            await record({ kind: existed ? 'write' : 'create', path, content, previousContent, mode: opts.mode || 'ui' }, sid);
         }
         return { ok: true };
     }
@@ -5689,7 +5707,7 @@ window.revertFileToCheckpoint = async (filepath, timelineIndex) => {
         } else {
             state.modifiedFiles.add(filepath);
         }
-        recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
+        await recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
 
         await persistCheckpoint();
         renderChangesPanel();
@@ -5796,7 +5814,7 @@ window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
         }
     }
 
-    recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
+    await recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
     await persistCheckpoint();
     renderChangesPanel();
     renderExplorerTree();
@@ -6075,7 +6093,7 @@ window.discardFile = async (filepath) => {
         state.modifiedFiles.delete(filepath);
         registry.opsLog[filepath] = [];
         if (registry.originalFiles[filepath] === null) delete registry.originalFiles[filepath];
-        recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
+        await recomputeLineStats(sessionCtx(state.activeSessionId), state.activeSessionId);
         await persistCheckpoint();
         renderChangesPanel();
         renderExplorerTree();
@@ -12354,18 +12372,75 @@ if (btnExitWorkspace) {
     });
 }
 
+// Detects whether a string is non-text (binary content) by sampling the first few KB.
+function isBinaryContent(s) {
+    if (!s) return false;
+    const sampleLen = Math.min(s.length, 4096);
+    const sample = s.slice(0, sampleLen);
+    const nullCount = (sample.match(/\u0000/g) || []).length;
+    const nonPrintableCount = (sample.match(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\uFFFF]/g) || []).length;
+    const replacementCount = (sample.match(/\uFFFD/g) || []).length;
+    return sampleLen > 0 && (
+        nullCount > 0 ||
+        (nonPrintableCount / sampleLen) > 0.05 ||
+        (replacementCount / sampleLen) > 0.02
+    );
+}
+
+// Counts newline-terminated lines; '' counts as zero lines.
+function lineCount(text) {
+    return text === '' ? 0 : text.split('\n').length;
+}
+
+// O(n log m) greedy matcher: returns the number of lines of `a` that can be
+// matched, in order, to positions in `b`. This is a valid lower bound on the LCS
+// length (it takes the earliest available continuation each step, the standard
+// greedy LCS heuristic). Used only for the large-file fallback where exact LCS
+// is too expensive; counting matched lines on BOTH sides so removed and added
+// are reported independently instead of collapsing to the net delta.
+function greedyLcsCount(a, b) {
+    // Map of line -> sorted ascending list of positions in b.
+    const bPositions = new Map();
+    for (let j = 0; j < b.length; j++) {
+        let arr = bPositions.get(b[j]);
+        if (!arr) { arr = []; bPositions.set(b[j], arr); }
+        arr.push(j);
+    }
+    let matched = 0;
+    let nextPos = 0; // smallest index in b we may still use
+    for (let i = 0; i < a.length; i++) {
+        const arr = bPositions.get(a[i]);
+        if (!arr) continue;
+        // Binary search for the first position >= nextPos.
+        let lo = 0, hi = arr.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (arr[mid] >= nextPos) hi = mid; else lo = mid + 1;
+        }
+        if (lo < arr.length) {
+            matched++;
+            nextPos = arr[lo] + 1;
+        }
+    }
+    return matched;
+}
+
 // Computes added/removed line counts via LCS-based diff; capped for very large files with a length-delta fallback to avoid O(n*m) blowups.
 function computeLineDiffCounts(beforeText, afterText) {
     if (beforeText === afterText) return { added: 0, removed: 0 };
+    // Binary files have no meaningful "lines" - ignore line-diff computation for them entirely
+    // (returning 0/0 rather than running LCS or a net-delta heuristic on unparseable content).
+    if (isBinaryContent(beforeText) || isBinaryContent(afterText)) return { added: 0, removed: 0 };
     // ''.split('\n') yields [''], a phantom line - treat empty text as zero lines so new/deleted files don't count as +1/-1.
     const a = beforeText === '' ? [] : beforeText.split('\n');
     const b = afterText === '' ? [] : afterText.split('\n');
     const n = a.length, m = b.length;
     const LCS_LINE_CAP = 4000;
     if (n * m > LCS_LINE_CAP * LCS_LINE_CAP || n > LCS_LINE_CAP * 4 || m > LCS_LINE_CAP * 4) {
-        // Too large for exact LCS; approximate from the net line-count delta.
-        const delta = m - n;
-        return delta >= 0 ? { added: delta, removed: 0 } : { added: 0, removed: -delta };
+        // Too large for exact LCS; use an O(n log m) greedy line-matcher that counts matched
+        // lines on BOTH sides, so added and removed are both reported correctly (no swallowing).
+        const matched = greedyLcsCount(a, b);
+        return { added: m - matched, removed: n - matched };
     }
     // Standard LCS length table.
     const dp = new Array(n + 1);
@@ -12380,29 +12455,37 @@ function computeLineDiffCounts(beforeText, afterText) {
 }
 
 // Recomputes +added/-removed line counts from scratch for each modified file (baseline vs live content) - idempotent so it can't drift across edits/reverts.
-function recomputeLineStats(ctx, sid, filePath, currentContent) {
-    // Cache each modified file's live content so files touched earlier still contribute rather than being skipped.
-    if (!ctx.baseline._lastKnownContent) ctx.baseline._lastKnownContent = {};
-    if (filePath !== undefined) {
-        if (currentContent === undefined) {
-            delete ctx.baseline._lastKnownContent[filePath];
-        } else {
-            ctx.baseline._lastKnownContent[filePath] = currentContent;
-        }
-    }
-
+async function recomputeLineStats(ctx, sid) {
+    // Recomputes +added/-removed by diffing each modified file's baseline against
+    // its CURRENT content (not against intermediate checkpoints). This is
+    // idempotent: it can never drift, and reverting an edit automatically lowers
+    // the count because the opsLog truncation changes what "current" means.
     let totalAdded = 0, totalRemoved = 0;
+
     for (const fp of ctx.modifiedFiles) {
-        const before = ctx.baseline.originalFiles[fp];
-        const after = ctx.isLive && registry.files[fp] !== undefined
-            ? registry.files[fp]
-            : ctx.baseline._lastKnownContent[fp];
-        const beforeText = (before === undefined || before === null) ? '' : before;
-        const afterText = (after === undefined || after === null) ? '' : after;
+        // Baseline: the file's original content before this session touched it.
+        // A null sentinel means "created this session" → empty baseline.
+        const baselineRaw = ctx.baseline.originalFiles[fp];
+        const beforeText = (baselineRaw === undefined || baselineRaw === null) ? '' : baselineRaw;
+
+        // Current: prefer live disk content, fall back to re-reading from disk for
+        // non-live sessions so we always diff baseline → truth.
+        let afterText;
+        if (ctx.isLive && registry.files[fp] !== undefined) {
+            afterText = registry.files[fp];
+        } else if (!ctx.isLive) {
+            // Non-live session: re-read from disk so we always diff baseline → truth.
+            // (readFileContent is already async-safe and cached.)
+            afterText = await readFileContent(fp) || '';
+        } else {
+            afterText = '';
+        }
+
         const { added, removed } = computeLineDiffCounts(beforeText, afterText);
         totalAdded += added;
         totalRemoved += removed;
     }
+
     if (state.sessions[sid]) {
         state.sessions[sid].linesAdded = totalAdded;
         state.sessions[sid].linesRemoved = totalRemoved;
