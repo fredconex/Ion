@@ -35,6 +35,9 @@
             --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Source Code Pro', Menlo, Monaco, Consolas, monospace;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        /* Disable font ligatures (e.g. JetBrains Mono / Fira Code merging "//" or "!=" into a
+           single glyph) so characters like a second slash don't render visually different. */
+        html { font-variant-ligatures: none; -webkit-font-feature-settings: "liga" 0, "calt" 0; font-feature-settings: "liga" 0, "calt" 0; }
         body {
             height: 100vh; width: 100vw;
             background-image:
@@ -2141,6 +2144,24 @@
             position: relative; background: var(--bg-input);
             border: 1px solid var(--border); border-radius: 10px; padding: 4px;
         }
+        #queued-prompt-banner {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 10px; margin-bottom: 6px;
+            background: var(--bg-input); border: 1px dashed var(--border-highlight);
+            border-radius: 8px; color: var(--dim); font-size: 11.5px;
+        }
+        #queued-prompt-banner .icon { font-size: 14px; color: var(--dim); flex-shrink: 0; }
+        #queued-prompt-banner .queued-prompt-text {
+            flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+            white-space: nowrap; color: var(--dim);
+        }
+        #queued-prompt-banner .queued-prompt-cancel {
+            background: transparent; border: none; color: var(--dim);
+            cursor: pointer; padding: 2px; border-radius: 4px;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        #queued-prompt-banner .queued-prompt-cancel:hover { color: var(--red); background: rgba(224, 108, 117, 0.15); }
+        #prompt-input-row.has-queued-prompt { opacity: 0.6; }
         #prompt-attach {
             font-weight: bold; user-select: none;
             background: transparent; border: none; padding: 0;
@@ -3209,6 +3230,8 @@
 
                     <div id="prompt-attachments"></div>
 
+                    <div id="queued-prompt-banner" style="display:none;"></div>
+
                     <div id="prompt-input-row">
                         <button id="prompt-attach" type="button" title="Attach files or images">
                             <span class="icon" style="font-size:16px;">add</span>
@@ -3431,7 +3454,8 @@ const state = {
     promptIdToMsgIdx: {},
     sessionIds: null,
     sessionMeta: null,
-    _lastSavedIndex: null
+    _lastSavedIndex: null,
+    queuedPrompts: {}
 };
 
 window.skipCurrentThinking = function(e) {
@@ -11846,7 +11870,7 @@ function inlineMarkdown(text) {
     s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
     s = s.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
-    s = s.replace(/(?<!_)_([^_\n]+)_(?!_)/g, '<em>$1</em>');
+    s = s.replace(/(^|[^\w])_([^_\n]+)_(?![\w])/g, (m, pre, inner) => `${pre}<em>${inner}</em>`);
     s = s.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
     return s;
 }
@@ -12481,6 +12505,20 @@ function abortGeneration({ toast = null, showResumeUI = true, sessionId } = {}) 
 
     if (toast) showToast(toast, 'info');
     if (sid === state.activeSessionId) focusPrompt();
+
+    // If a prompt was queued while this generation was running, don't auto-fire it on a
+    // manual stop — restore it to the input box so the user can review before sending.
+    const queued = state.queuedPrompts[sid];
+    if (queued) {
+        delete state.queuedPrompts[sid];
+        if (sid === state.activeSessionId) {
+            input.value = queued.val;
+            state.attachedReferences = queued.attachedReferences || [];
+            renderAttachmentChips();
+            resizePrompt();
+            renderQueuedPromptBanner();
+        }
+    }
 }
 
 function renderGenStats(sessionId) {
@@ -14020,9 +14058,81 @@ input.addEventListener('keydown', async (e) => {
     }
 });
 
+const queuedPromptBanner = document.getElementById('queued-prompt-banner');
+
+function renderQueuedPromptBanner() {
+    const queued = state.queuedPrompts[state.activeSessionId];
+    const row = document.getElementById('prompt-input-row');
+    if (!queued) {
+        queuedPromptBanner.style.display = 'none';
+        queuedPromptBanner.innerHTML = '';
+        if (row) row.classList.remove('has-queued-prompt');
+        return;
+    }
+    queuedPromptBanner.style.display = 'flex';
+    if (row) row.classList.add('has-queued-prompt');
+    queuedPromptBanner.innerHTML = `
+        <span class="icon">schedule</span>
+        <span class="queued-prompt-text">Queued: ${escapeHTML(queued.val || '(referenced items)')}</span>
+        <button class="queued-prompt-cancel" title="Cancel queued prompt">
+            <span class="icon" style="font-size:13px;">close</span>
+        </button>
+    `;
+    queuedPromptBanner.querySelector('.queued-prompt-cancel').addEventListener('click', () => {
+        delete state.queuedPrompts[state.activeSessionId];
+        renderQueuedPromptBanner();
+    });
+}
+
+function queuePrompt(sessionId, val, attachedReferences) {
+    state.queuedPrompts[sessionId] = { val, attachedReferences: attachedReferences || [] };
+    if (sessionId === state.activeSessionId) renderQueuedPromptBanner();
+}
+
+// Called once a session's generation finishes, so a prompt typed while the agent was
+// still working gets sent automatically for the next turn instead of being lost.
+function drainQueuedPrompt(sessionId) {
+    const queued = state.queuedPrompts[sessionId];
+    if (!queued) return;
+    delete state.queuedPrompts[sessionId];
+    if (sessionId === state.activeSessionId) renderQueuedPromptBanner();
+    if (isSessionRunning(sessionId)) return;
+
+    const wasActive = state.activeSessionId;
+    if (sessionId !== state.activeSessionId) {
+        // Prompt was queued against a background session; switch context to submit
+        // on its behalf, then restore whichever session the user is currently viewing.
+        state.activeSessionId = sessionId;
+    }
+    const prevVal = input.value;
+    const prevAttachments = state.attachedReferences;
+    input.value = queued.val;
+    state.attachedReferences = queued.attachedReferences || [];
+    submitPrompt().finally(() => {
+        if (state.activeSessionId === sessionId && wasActive !== sessionId) {
+            state.activeSessionId = wasActive;
+        }
+        if (wasActive !== sessionId) {
+            input.value = prevVal;
+            state.attachedReferences = prevAttachments;
+        }
+    });
+}
+
 async function submitPrompt() {
         if (isSessionRunning(state.activeSessionId)) {
-            showToast('Task already running in this session — press Esc to cancel', 'info');
+            const val = input.value.trim();
+            const hasAttachments = state.attachedReferences.length > 0;
+            if (!val && !hasAttachments) {
+                showToast('Task already running in this session — press Esc to cancel', 'info');
+                return;
+            }
+            queuePrompt(state.activeSessionId, val, state.attachedReferences);
+            input.value = "";
+            resizePrompt();
+            state.attachedReferences = [];
+            renderAttachmentChips();
+            showToast('Prompt queued — it will send once the current task finishes', 'info');
             return;
         }
 
@@ -14964,6 +15074,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
     }
     await saveSession(runSessionId);
     if (isRunLive()) focusPrompt();
+    drainQueuedPrompt(runSessionId);
 }
 
 document.getElementById('btn-about-toggle').addEventListener('click', () => {
