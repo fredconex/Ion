@@ -7415,6 +7415,7 @@ async function clearAllSessions() {
     state.messages = [];
     term.innerHTML = '';
     resetScrollState();
+    clearSessionAttachments(newId, { purgeDB: true });
 
     await restoreActiveSessionContent();
     await persistCheckpoint();
