@@ -1823,7 +1823,7 @@
             align-items: center; gap: 4px; transition: all 0.15s ease;
         }
         #image-zoom-bar .img-zoom-btn:hover { background: var(--border); border-color: var(--magenta); color: var(--magenta); }
-        #img-scale-label { min-width: 52px; justify-content: center; cursor: pointer; title: "Click to reset to 100%"; }
+        #img-scale-label { min-width: 52px; justify-content: center; cursor: pointer;}
         #editor-binary-msg { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); max-width: 90%; text-align: center; }
         #html-preview-frame {
             display: none; width: 100%; height: 100%;
@@ -7331,7 +7331,6 @@ async function deleteSession(sessionId, e) {
         await saveActiveSession();
         renderSessionPopoverList();
         hideSessionPopover();
-        showToast('Cleared active session', 'success');
         focusPrompt();
         updateWelcomeVisibility();
         return;
@@ -7426,7 +7425,6 @@ async function clearAllSessions() {
     updateStatusInfo();
     renderSessionPopoverList();
     hideSessionPopover();
-    showToast('All sessions cleared', 'success');
     focusPrompt();
 }
 
