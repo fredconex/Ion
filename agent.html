@@ -4229,8 +4229,8 @@ async function handler(args, api) {
             resolve({
                 dataUrl: canvas.toDataURL('image/png'),
                 crop: hasCrop ? { x: sx, y: sy, width: sw, height: sh } : null,
-                outputWidth: outW,
-                outputHeight: outH,
+                width: outW,
+                height: outH,
                 sourceWidth: naturalW,
                 sourceHeight: naturalH
             });
