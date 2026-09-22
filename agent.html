@@ -3767,15 +3767,15 @@ function seedBuiltinToolSources() {
 
         preview_image: buildToolFileSource({
             name: 'preview_image',
-            description: 'View an image file (or a cropped region of it) as an actual image (png/jpg/jpeg/gif/bmp/webp/svg/ico). Pass filepath alone to see the whole image, or add x/y/width/height (in the original image pixel coordinates) to zoom into a specific region — useful for reading small text or inspecting detail in a screenshot.',
+            description: 'View an image file (or a cropped region of it) as an actual image (png/jpg/jpeg/gif/bmp/webp/svg/ico). Pass filepath alone to see the whole image, or add x/y/width/height to zoom into a specific region — useful for reading small text or inspecting detail in a screenshot. Coordinates are normalized fractions in the range 0.0-1.0 relative to the image dimensions (0.0 is left/top, 1.0 is right/bottom).',
             parameters: {
                 type: "object",
                 properties: {
                     filepath: { type: "string", description: "Path to an image in the open workspace." },
-                    x: { type: "integer", description: "Left edge of the crop region, in original image pixels. Omit to view the full image." },
-                    y: { type: "integer", description: "Top edge of the crop region, in original image pixels." },
-                    width: { type: "integer", description: "Width of the crop region, in original image pixels." },
-                    height: { type: "integer", description: "Height of the crop region, in original image pixels." }
+                    x: { type: "number", description: "Left edge of the crop region, normalized fraction 0.0-1.0 (0.0 is left, 1.0 is right). Omit to view the full image." },
+                    y: { type: "number", description: "Top edge of the crop region, normalized fraction 0.0-1.0 (0.0 is top, 1.0 is bottom)." },
+                    width: { type: "number", description: "Width of the crop region, normalized fraction 0.0-1.0 (1.0 spans the full width)." },
+                    height: { type: "number", description: "Height of the crop region, normalized fraction 0.0-1.0 (1.0 spans the full height)." }
                 },
                 required: ["filepath"]
             },
@@ -4196,13 +4196,16 @@ async function handler(args, api) {
         img.onload = () => {
             const naturalW = img.naturalWidth || img.width;
             const naturalH = img.naturalHeight || img.height;
+            // Inputs are normalized fractions 0.0-1.0 relative to image dimensions. Convert to pixels.
             let sx = 0, sy = 0, sw = naturalW, sh = naturalH;
             const hasCrop = [x, y, width, height].some(v => v !== undefined && v !== null);
             if (hasCrop) {
-                sx = Math.max(0, Math.min(naturalW - 1, Math.round(x || 0)));
-                sy = Math.max(0, Math.min(naturalH - 1, Math.round(y || 0)));
-                sw = Math.max(1, Math.min(naturalW - sx, Math.round(width || (naturalW - sx))));
-                sh = Math.max(1, Math.min(naturalH - sy, Math.round(height || (naturalH - sy))));
+                const rawX = (x ?? 0) * naturalW, rawY = (y ?? 0) * naturalH;
+                const rawW = (width ?? (1 - (x ?? 0))) * naturalW, rawH = (height ?? (1 - (y ?? 0))) * naturalH;
+                sx = Math.max(0, Math.min(naturalW - 1, Math.round(rawX)));
+                sy = Math.max(0, Math.min(naturalH - 1, Math.round(rawY)));
+                sw = Math.max(1, Math.min(naturalW - sx, Math.round(rawW)));
+                sh = Math.max(1, Math.min(naturalH - sy, Math.round(rawH)));
             }
             const MAX_SIDE = 1568;
             const MIN_ZOOM_SIDE = 768;
