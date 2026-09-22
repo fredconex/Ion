@@ -3256,6 +3256,7 @@ const TOOLS_DIR = '.agent/tools';
 const MODELS_FILE = '.agent/models.json';
 const CONFIG_FILE = '.agent/config.json';
 const PROMPTS_DIR = '.agent/prompts';
+const ATTACHMENTS_DIR = '.agent/attachments';
 const PROMPT_MODE_ORDER = ['plan', 'ask', 'code', 'title'];
 const MODE_PROMPT_FILES = {
     plan: '.agent/prompts/plan.md',
@@ -4133,6 +4134,12 @@ async function handler(args, api) {
     async function readImageDataUrl(filepath) {
     if (!isImageFilePath(filepath)) return null;
 
+    // Virtual files (e.g. session attachments) store their content directly as
+    // a data URL string in registry.files rather than via a disk handle.
+    if (registry.meta[filepath]?.virtual && typeof registry.files[filepath] === 'string' && registry.files[filepath].startsWith('data:')) {
+        return registry.files[filepath];
+    }
+
     let handle = registry.meta[filepath]?.handle || null;
     if (!handle && rootHandle) {
         try { handle = await getHandleByPath(filepath); } catch (e) { handle = null; }
@@ -4213,16 +4220,24 @@ async function handler(args, api) {
     return path === CUSTOM_TOOLS_DIR ||
            path === TOOLS_DIR ||
            path === PROMPTS_DIR ||
+           path === ATTACHMENTS_DIR ||
            path.startsWith(CUSTOM_TOOLS_DIR + '/');
     }
 
 const VIRTUAL_AGENT_FILES = [MODELS_FILE, CONFIG_FILE];
 function isVirtualAgentFile(path) {
-    return VIRTUAL_AGENT_FILES.includes(path) || isToolFilePath(path) || !!PROMPT_FILE_MODES[path];
+    return VIRTUAL_AGENT_FILES.includes(path) || isToolFilePath(path) || isAttachmentPath(path) || !!PROMPT_FILE_MODES[path];
 }
 
 function isToolFilePath(path) {
     return path.startsWith(TOOLS_DIR + '/') && path.endsWith('.js');
+}
+
+// Session attachments: virtual, read-only files under .agent/attachments.
+// Always visible to tools regardless of the "hide .agent files" toggle, and
+// always excluded from writes/edits/deletes/renames.
+function isAttachmentPath(path) {
+    return path === ATTACHMENTS_DIR || path.startsWith(ATTACHMENTS_DIR + '/');
 }
 
 function isPromptFileMode(path) {
@@ -4235,6 +4250,7 @@ function isSensitiveUserFile(path) {
 }
 
 function shouldHideFromTools(path) {
+    if (isAttachmentPath(path)) return false; // attachments are always readable by tools
     if (AppConfig.get('hide-agent-files', 'true') !== 'true') {
         return false;
     }
@@ -7028,6 +7044,9 @@ async function saveSession(sessionId) {
             modifiedFiles: state.sessions[id].modifiedFiles,
             runningTimeMs: state.sessions[id].runningTimeMs || 0
         };
+        if (isLive) {
+            patch.attachments = serializeLiveAttachments();
+        }
         if (gen.postCompressTokenOverride != null) {
             patch.postCompressTokenOverride = gen.postCompressTokenOverride;
         }
@@ -7141,6 +7160,7 @@ async function restoreActiveSessionContent() {
     }
 
     await loadCheckpointForSession(state.activeSessionId);
+    restoreSessionAttachments(state.activeSessionId);
 
     if (current.chatHTML) {
         term.innerHTML = current.chatHTML;
@@ -7191,6 +7211,7 @@ async function switchSession(sessionId) {
     }
     const outgoingId = state.activeSessionId;
     await saveActiveSession();
+    snapshotSessionAttachments(outgoingId);
 
     state.activeSessionId = sessionId;
     await ensureSessionLoaded(sessionId);
@@ -7225,6 +7246,7 @@ function reconcileLiveGenUI(outgoingId, incomingId) {
 
 async function createNewSession(title) {
     await saveActiveSession();
+    clearSessionAttachments();
     const id = 'sess_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
 
     state.sessions[id] = {
@@ -7271,6 +7293,7 @@ async function deleteSession(sessionId, e) {
         registry.opsLog = {};
         registry.compressionHistory = [];
         state.modifiedFiles.clear();
+        clearSessionAttachments();
         await persistCheckpoint();
 
         renderChangesPanel();
@@ -7292,6 +7315,11 @@ async function deleteSession(sessionId, e) {
 
     await deleteBaselineFromDB(currentWsName(), sessionId);
     await deleteSessionRecordFromDB(getWorkspaceSessionKey(), sessionId);
+    if (state.activeSessionId === sessionId) {
+        clearSessionAttachments(sessionId, { purgeDB: false });
+    } else if (state.sessions[sessionId]) {
+        delete state.sessions[sessionId]._attachments;
+    }
     delete state.sessions[sessionId];
     state.sessionIds = (state.sessionIds || []).filter(id => id !== sessionId);
     if (state.activeSessionId === sessionId) {
@@ -7818,6 +7846,24 @@ async function switchTab(tabId) {
             return;
         }
 
+        if (isImage && meta?.virtual) {
+            // Virtual image files (e.g. session attachments) store their content
+            // as a data URL directly in registry.files - no disk handle to read.
+            const dataUrl = await readImageDataUrl(tabId);
+            if (dataUrl) {
+                monacoContainer.style.display = 'none';
+                htmlPreviewFrame.style.display = 'none';
+                editorBinaryNotice.style.display = 'flex';
+                editorImagePreview.src = dataUrl;
+                editorImagePreview.style.display = 'block';
+                showImgZoomBar(true);
+                editorBinaryMsg.innerText = `${tabId.split('/').pop()} (${formatFileSize(meta.size || 0)})`;
+                editorModeToggle.style.display = 'none';
+                btnTabSave.style.display = 'none';
+                return;
+            }
+        }
+
         if (isImage && rootHandle) {
             try {
                 const handle = await getHandleByPath(tabId);
@@ -7998,6 +8044,160 @@ function attachReference(refObj) {
     focusPrompt();
 }
 
+// Writes an attached image/paste into the virtual, read-only .agent/attachments
+// directory so tools can reference it like a normal file instead of having its
+// full content dropped inline into the prompt. Returns the virtual file path.
+// Idempotent per ref (re-sending an edited prompt won't duplicate the file).
+// Re-registers meta entries for whatever attachment content already lives in
+// registry.files. Needed because syncWorkspace() rebuilds registry.meta from a
+// fresh disk scan (which knows nothing about in-memory attachments), so this
+// must be called alongside the other registerXVirtualFile() functions there.
+
+// Approximate decoded byte size of a data URL, for display purposes.
+function dataUrlByteSize(dataUrl) {
+    const idx = (dataUrl || '').indexOf(',');
+    const b64 = idx === -1 ? '' : dataUrl.slice(idx + 1);
+    if (!b64) return (dataUrl || '').length;
+    const padding = b64.endsWith('==') ? 2 : (b64.endsWith('=') ? 1 : 0);
+    return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
+}
+
+function registerAttachmentsVirtualFiles() {
+    const paths = Object.keys(registry.files).filter(isAttachmentPath);
+    if (!paths.length) return;
+    registry.meta[ATTACHMENTS_DIR] = { kind: 'directory' };
+    paths.forEach(fp => {
+        const content = registry.files[fp] || '';
+        const isImg = isImageFilePath(fp);
+        registry.meta[fp] = {
+            kind: 'file',
+            size: isImg ? dataUrlByteSize(content) : content.length,
+            isBinary: isImg,
+            virtual: true,
+            readOnly: true,
+            attachment: true
+        };
+    });
+}
+
+function materializeAttachment(ref) {
+    if (ref.materializedPath && registry.meta[ref.materializedPath] !== undefined) {
+        return ref.materializedPath;
+    }
+
+    const rawName = (ref.name || 'attachment').split('/').pop().split('\\').pop();
+    let base = rawName.replace(/[^a-zA-Z0-9._-]/g, '_') || 'attachment';
+    let candidate = `${ATTACHMENTS_DIR}/${base}`;
+    let n = 1;
+    while (registry.meta[candidate] !== undefined) {
+        const dotIdx = base.lastIndexOf('.');
+        const stem = dotIdx > 0 ? base.slice(0, dotIdx) : base;
+        const ext = dotIdx > 0 ? base.slice(dotIdx) : '';
+        candidate = `${ATTACHMENTS_DIR}/${stem}_${n}${ext}`;
+        n++;
+    }
+
+    const content = ref.type === 'image' ? ref.dataUrl : (ref.content || '');
+    registry.files[candidate] = content;
+    registry.meta[ATTACHMENTS_DIR] = { kind: 'directory' };
+    registry.meta[candidate] = {
+        kind: 'file',
+        size: ref.type === 'image' ? dataUrlByteSize(content) : content.length,
+        isBinary: ref.type === 'image',
+        virtual: true,
+        readOnly: true,
+        attachment: true
+    };
+
+    ref.materializedPath = candidate;
+    renderExplorerTree();
+    return candidate;
+}
+
+// Removes every materialized attachment file from the virtual filesystem
+// (and any saved snapshot for the given/current session, in memory and -
+// unless the session record itself is being deleted separately - in
+// IndexedDB). Used when a session is actually being wiped (/clear, collapsing
+// the last remaining session, deleting the active session) - as opposed to
+// switching away, where attachments should be preserved and swapped back in
+// later (see snapshotSessionAttachments/restoreSessionAttachments).
+function clearSessionAttachments(sessionId, opts = {}) {
+    let removedAny = false;
+    Object.keys(registry.meta).forEach(fp => {
+        if (isAttachmentPath(fp) && fp !== ATTACHMENTS_DIR) {
+            delete registry.meta[fp];
+            delete registry.files[fp];
+            removedAny = true;
+        }
+    });
+    delete registry.meta[ATTACHMENTS_DIR];
+    const sid = sessionId || state.activeSessionId;
+    if (state.sessions[sid]) {
+        delete state.sessions[sid]._attachments;
+        delete state.sessions[sid].attachments;
+    }
+    if (opts.purgeDB !== false) {
+        patchSessionRecordInDB(getWorkspaceSessionKey(), sid, { attachments: null }).catch(() => {});
+    }
+    if (removedAny) renderExplorerTree();
+}
+
+// Serializes the currently-live .agent/attachments/* entries into a plain
+// object suitable for IndexedDB storage (and for the in-memory session-switch
+// snapshot, which uses the same shape).
+function serializeLiveAttachments() {
+    const files = {};
+    const meta = {};
+    let any = false;
+    Object.keys(registry.meta).forEach(fp => {
+        if (isAttachmentPath(fp) && fp !== ATTACHMENTS_DIR) {
+            meta[fp] = registry.meta[fp];
+            files[fp] = registry.files[fp];
+            any = true;
+        }
+    });
+    return any ? { files, meta } : null;
+}
+
+// Moves the currently-live .agent/attachments/* entries out of the registry
+// and stores them on the (outgoing) session record, so they can be swapped
+// back in immediately if the user returns to this session later in the same
+// page load. Persistence across a reload is handled separately by saveSession
+// writing the same shape into IndexedDB (see the `attachments` field there).
+function snapshotSessionAttachments(sessionId) {
+    const sid = sessionId || state.activeSessionId;
+    const session = state.sessions[sid];
+    const saved = serializeLiveAttachments();
+    Object.keys(registry.meta).forEach(fp => {
+        if (isAttachmentPath(fp)) delete registry.meta[fp];
+    });
+    Object.keys(registry.files).forEach(fp => {
+        if (isAttachmentPath(fp)) delete registry.files[fp];
+    });
+    if (session) {
+        if (saved) session._attachments = saved;
+        else delete session._attachments;
+    }
+}
+
+// Restores a session's previously-snapshotted attachments (if any) into the
+// live registry, so tools/explorer see the same attachment files the session
+// had when it was last active. Prefers the in-memory snapshot (fast, same
+// page load); falls back to whatever was persisted to IndexedDB (survives a
+// reload) when there is no in-memory snapshot yet.
+function restoreSessionAttachments(sessionId) {
+    const sid = sessionId || state.activeSessionId;
+    const session = state.sessions[sid];
+    const saved = session && (session._attachments || session.attachments);
+    if (!saved || !saved.files) return;
+    registry.meta[ATTACHMENTS_DIR] = { kind: 'directory' };
+    Object.keys(saved.files).forEach(fp => {
+        registry.files[fp] = saved.files[fp];
+        registry.meta[fp] = saved.meta[fp];
+    });
+    if (session) session._attachments = saved;
+}
+
 function removeReference(idx) {
     state.attachedReferences.splice(idx, 1);
     renderAttachmentChips();
@@ -8169,6 +8369,9 @@ async function readFileContent(filepath) {
         return modePromptFileContent(filepath);
     }
     if (isToolFilePath(filepath)) {
+        return registry.files[filepath] !== undefined ? registry.files[filepath] : "";
+    }
+    if (isAttachmentPath(filepath)) {
         return registry.files[filepath] !== undefined ? registry.files[filepath] : "";
     }
     if (!rootHandle) return registry.files[filepath] !== undefined ? registry.files[filepath] : "";
@@ -8666,6 +8869,7 @@ async function syncWorkspace(silent = true) {
         registerModelsVirtualFile();
         registerConfigVirtualFile();
         registerPromptsVirtualFile();
+        registerAttachmentsVirtualFiles();
 
         if (structChanged || !silent) {
             renderExplorerTree();
@@ -12919,6 +13123,15 @@ async function writeDisk(filePath, content, opts) {
         return { output: `ERROR: ${filePath} is read-only to tools. This is an app/settings file the model cannot change.` };
     }
 
+    if (isAttachmentPath(filePath)) {
+        if (isFromLLMTool) {
+            print(`<span class="red">[blocked] ${escapeHTML(filePath)} is a read-only session attachment and can't be written by a tool call.</span>`, "", sessionId);
+            return { output: `ERROR: ${filePath} is a read-only session attachment. Attachments cannot be created, edited, or deleted by tools.` };
+        }
+        print(`<span class="red">[blocked] Session attachments are read-only and cannot be modified.</span>`, "", sessionId);
+        return;
+    }
+
     if (isToolFilePath(filePath) && isFromLLMTool) {
         const toolName = filePath.slice((TOOLS_DIR + '/').length, -3);
         const existingTool = toolRegistry[toolName];
@@ -13906,6 +14119,7 @@ async function submitPrompt() {
                 registry.originalFiles = {};
                 registry.opsLog = {};
                 registry.compressionHistory = [];
+                clearSessionAttachments();
 
                 renderChangesPanel();
                 updateStatusInfo();
@@ -13969,14 +14183,16 @@ async function submitPrompt() {
                         </div>
                     `;
                 } else if (ref.type === 'image') {
-                    fullPromptForLLM += `[Image attached: ${ref.name}]\n\n`;
+                    const attPath = materializeAttachment(ref);
+                    fullPromptForLLM += `[Image attached: ${attPath}. The full image is provided directly above as visual input; use the preview_image tool with x/y/width/height on this path to zoom into a specific region if needed.]\n\n`;
                     chatAttachmentsHTML += `
                         <div class="chat-attachment-image" title="Click to preview: ${escapeHTML(ref.name)}" data-attachment-id="${ref.attachmentId}">
                             <img src="${ref.dataUrl}" alt="${escapeHTML(ref.name)}">
                         </div>
                     `;
                 } else if (ref.type === 'paste') {
-                    fullPromptForLLM += `Pasted text (${ref.name}):\n\`\`\`\n${ref.content}\n\`\`\`\n\n`;
+                    const attPath = materializeAttachment(ref);
+                    fullPromptForLLM += `Pasted text attached: ${attPath} (${ref.lineCount} lines). Use the read tool to fetch its content if needed.\n\n`;
                     chatAttachmentsHTML += `
                         <div class="prompt-chip attachment-paste" title="Click to preview" data-attachment-id="${ref.attachmentId}">
                             <span class="icon" style="font-size:12px; color:var(--yellow);">description</span>
