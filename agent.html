@@ -436,7 +436,7 @@
         .newtool-source-tab:hover { color: var(--fg); }
         .newtool-source-tab.active { background: rgba(86, 182, 194, 0.14); color: var(--cyan); }
         .newtool-pane { display: none; }
-        .newtool-pane.active { display: flex; flex-direction: column; flex: 1; }
+        .newtool-pane.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
         #newtool-dropzone {
             margin-top: 14px;
             border: 1.5px dashed var(--border-highlight); border-radius: 8px;
@@ -479,9 +479,9 @@
         #newtool-modal-error {
             display: none; font-size: 11px; color: var(--red); margin-top: 8px; line-height: 1.4;
         }
-        #newtool-modal-body { overflow-y: auto; }
+        #newtool-modal-body { min-height: 0; }
         #newtool-col-local, #newtool-col-browse {
-            min-width: 0; flex-direction: column; flex: 1;
+            min-width: 0; flex-direction: column; flex: 1; min-height: 0;
         }
         .newtool-blank-source-row {
             display: flex; flex-direction: column; flex: 1;
