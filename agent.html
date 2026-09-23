@@ -483,6 +483,27 @@
         #newtool-col-local, #newtool-col-browse {
             min-width: 0; flex-direction: column; flex: 1;
         }
+        .newtool-blank-source-row {
+            display: flex; flex-direction: column; flex: 1;
+            margin-top: 12px; gap: 6px; min-height: 0;
+        }
+        .newtool-blank-source-row label { font-size: 11px; color: var(--dim); font-family: var(--font-mono); }
+        .newtool-source-editor {
+            flex: 1; min-height: 80px;
+            resize: none; outline: none;
+            background: rgba(0,0,0,0.25); color: var(--fg);
+            border: 1px solid var(--border); border-radius: 8px;
+            padding: 10px 12px; font-family: var(--font-mono); font-size: 12px;
+            line-height: 1.5; box-sizing: border-box;
+        }
+        .newtool-source-editor::-webkit-scrollbar-thumb { cursor: pointer; }
+        .newtool-create-btn {
+            font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+        }
+        .newtool-inferred-filename {
+            font-family: var(--font-mono); font-size: 11px; color: var(--dim);
+            opacity: 0.8; margin-top: 4px;
+        }
         #newtool-col-local.active, #newtool-col-browse.active {
             display: flex;
         }
@@ -2705,9 +2726,16 @@
                 </div>
 
                 <div id="newtool-col-local" class="newtool-pane" data-pane="blank">
-                    <div class="settings-field-row">
-                        <label for="newtool-name-input">Tool name</label>
-                        <input type="text" id="newtool-name-input" placeholder="e.g. my_tool" autocomplete="off" spellcheck="false">
+                    <input type="text" id="newtool-name-input" autocomplete="off" spellcheck="false" style="display:none">
+                    <div class="newtool-blank-source-row">
+                        <label for="newtool-source-editor">Tool source</label>
+                        <textarea
+                            id="newtool-source-editor"
+                            class="newtool-source-editor"
+                            spellcheck="false"
+                            placeholder="// Write the tool source here.
+// The tool name is inferred from the TOOL_META.name in this code."
+                        ></textarea>
                     </div>
                 </div>
 
@@ -2744,6 +2772,7 @@
             </div>
             <div id="newtool-modal-footer">
                 <button id="newtool-cancel" class="btn-confirm">Done</button>
+                <button id="newtool-create" class="btn-confirm primary newtool-create-btn">Create</button>
                 <button id="newtool-install" class="btn-confirm primary" title="Install this tool" style="display:none;">Install</button>
             </div>
         </div>
@@ -13787,9 +13816,7 @@ const TOOL_API_METHODS = {
             const handle = await getHandleByPath(fp);
             if (!handle) return `ERROR: ${fp} not found`;
             const file = await handle.getFile();
-            if (file.size > MAX_BYTES) {
-                return `ERROR: ${fp} is ${formatFileSize(file.size)}, exceeding the ${formatFileSize(MAX_BYTES)} readFileBytes limit.`;
-            }
+
             const buf = await file.arrayBuffer();
             return new Uint8Array(buf);
         } catch (e) {
@@ -15147,9 +15174,56 @@ const newToolFilePickedName = document.getElementById('newtool-file-picked-name'
 const newToolFilePickedDesc = document.getElementById('newtool-file-picked-desc');
 const newToolErrorEl = document.getElementById('newtool-modal-error');
 const newToolInstallBtn = document.getElementById('newtool-install');
+const newToolSourceEditor = document.getElementById('newtool-source-editor');
+const newToolCreateBtn = document.getElementById('newtool-create');
+
+// Default source shown when the modal opens; the tool name is inferred from TOOL_META.name.
+const newToolDefaultSource = `const TOOL_META = {
+    name: "my_tool",
+    description: "Tool description.",
+    parameters: {
+        type: "object",
+        properties: {
+            message: {
+                type: "string",
+                description: "Message to process and display."
+            }
+        },
+        required: ["message"]
+    },
+    modes: ["plan", "ask", "code"],
+    expanded: true,
+    settings: [
+        {
+            key: "accentColor",
+            label: "Accent Color",
+            type: "string",
+            default: "#4f8cff",
+            description: "Badge color for the UI card."
+        }
+    ]
+};
+
+async function handler(args, api) {
+    const { message } = args;
+    const color = await api.getSetting?.("accentColor") || "#4f8cff";
+
+    const output = \`Received message: \${message}\`;
+
+    const displayHtml = \`<div style="padding: 12px; border-radius: 6px; border: 1px solid #333; background: #1e1e1e; font-family: sans-serif;">
+        <span style="display: inline-block; padding: 4px 8px; border-radius: 4px; background: \${color}; color: #fff; font-size: 11px; font-weight: 600; line-height: 1;">HELLO WORLD</span>
+        <div style="margin-top: 8px; color: #ddd; font-size: 13px;">\${message}</div>
+    </div>\`;
+
+    return { output, displayHtml };
+}
+`;
 
 let newToolDroppedSource = null; // raw text content of the dropped/picked .js file
 let newToolNameAutoFilled = false; // whether the name field was auto-filled from a file (vs typed by the user)
+
+// (The Blank pane no longer uses a name field; the name is inferred from the source
+//  via deriveToolNameFromFile / TOOL_META.name at creation time.)
 
 // --- Browse GitHub tab (custom_tools directory) ---
 const GITHUB_TOOLS_REPO = 'fredconex/Ion-tools';   // owner/repo
@@ -15342,8 +15416,9 @@ function newToolClearFile() {
 }
 
 function newToolUpdateCreateLabel() {
-    // Footer shows "Install" at the Create position only once a file is
-    // uploaded/dropped; otherwise just "Done".
+    // Create only applies to the Blank pane. Browse installs per-row, and an
+    // uploaded/dropped file installs via its own Install button.
+    newToolCreateBtn.style.display = newToolActivePane === 'blank' ? '' : 'none';
     newToolInstallBtn.style.display = newToolDroppedSource ? '' : 'none';
 }
 
@@ -15362,7 +15437,7 @@ function setNewToolPane(pane) {
     // file installs via its own Install button instead of Create.
     newToolUpdateCreateLabel();
     if (pane === 'blank') {
-        setTimeout(() => newToolNameInput.focus(), 0);
+        setTimeout(() => newToolSourceEditor.focus(), 0);
     }
 }
 
@@ -15373,6 +15448,7 @@ newToolSourceTabs.forEach(tab => {
 function openNewToolModal() {
     newToolNameInput.value = '';
     newToolNameAutoFilled = false;
+    newToolSourceEditor.value = newToolDefaultSource;
     newToolClearFile();
     newToolBrowseSelected = null;
     newToolBrowseSearch.value = '';
@@ -15491,6 +15567,38 @@ document.getElementById('newtool-install').addEventListener('click', async () =>
 newToolNameInput.addEventListener('input', () => {
     newToolNameAutoFilled = false;
     newToolShowError('');
+});
+
+// Blank pane: create the tool from the source code; the name is inferred from TOOL_META.name.
+newToolCreateBtn.addEventListener('click', () => {
+    const source = newToolSourceEditor.value;
+    if (!source.trim()) {
+        newToolShowError('Please write the tool source code.');
+        newToolSourceEditor.focus();
+        return;
+    }
+    const name = deriveToolNameFromFile(null, source);
+    if (!name || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+        newToolShowError('Could not infer a tool name from the source. Add a valid "name" to TOOL_META.');
+        newToolSourceEditor.focus();
+        return;
+    }
+    const result = createToolFile(name, source);
+    if (!result.ok) {
+        newToolShowError(result.error);
+        return;
+    }
+    closeNewToolModal();
+    renderExplorerTree();
+    renderToolsList();
+    showToast(`Created ${result.path}`, 'success');
+});
+
+newToolSourceEditor.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        newToolCreateBtn.click();
+    }
 });
 
 newToolInstallBtn.addEventListener('click', async () => {
