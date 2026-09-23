@@ -1693,7 +1693,7 @@
             animation: running-tool-shimmer 1.6s linear infinite;
         }
         .running-tool-box .running-tool-spinner { color: var(--cyan); }
-        .tool-ui-wait { margin: 6px 0; }
+        .tool-ui-wait { margin: 0; width: 100%; }
         .tool-ui-wait [data-choice] { transition: background 0.15s, opacity 0.15s; }
         .tool-ui-wait:not(.tool-ui-answered):not(.tool-ui-cancelled) [data-choice]:hover { background: rgba(255,255,255,0.1) !important; }
         .tool-ui-wait.tool-ui-answered [data-choice], .tool-ui-wait.tool-ui-cancelled [data-choice] { cursor: default !important; }
@@ -11980,7 +11980,7 @@ function renderRunningToolBox(toolName, args, container = null, sessionId) {
     if (sid !== state.activeSessionId) return null;
 
     const box = document.createElement('div');
-    box.className = 'tool-box collapsed running-tool-box';
+    box.className = 'tool-box done-box running-tool-box';
 
     let summaryText = "";
     if (toolName === 'read') summaryText = `${args.filepath || ''} (lines ${args.start_line || 1}-${args.end_line || 'end'})`;
@@ -12002,6 +12002,7 @@ function renderRunningToolBox(toolName, args, container = null, sessionId) {
             <span class="spinner-icon running-tool-spinner" style="font-size:12px; margin-left:auto;">${frames[0]}</span>
             <span class="dim running-tool-label" style="font-size:11px;">running...</span>
         </div>
+        <div class="tool-box-body"></div>
     `);
 
     const gen = getGenState(sid);
@@ -14006,8 +14007,7 @@ const TOOL_API_METHODS = {
                 req.done = true;
                 pendingUIQueue = pendingUIQueue.filter(r => r !== req);
                 if (req.el) {
-                    req.el.querySelectorAll('button, input, select, textarea').forEach(b => { b.disabled = true; });
-                    req.el.classList.add(cancelled ? 'tool-ui-cancelled' : 'tool-ui-answered');
+                    req.el.remove(); // Clean up temporary element
                 }
                 updateGenGlow();
                 resolve(cancelled ? { choice: null, cancelled: true } : { choice });
@@ -14031,9 +14031,17 @@ const TOOL_API_METHODS = {
                     finish(btn.dataset.choice, false);
                 });
                 req.el = el;
-                const anchor = document.querySelector('.running-tool-box');
-                const target = anchor && anchor.parentNode ? anchor.parentNode : term;
-                target.appendChild(el);
+
+                // CHANGE HERE: Mount inside the tool box body instead of anchor.parentNode
+                const runningBox = document.querySelector('.running-tool-box');
+                const boxBody = runningBox ? runningBox.querySelector('.tool-box-body') : null;
+
+                if (boxBody) {
+                    boxBody.appendChild(el);
+                } else {
+                    const target = (runningBox && runningBox.parentNode) ? runningBox.parentNode : term;
+                    target.appendChild(el);
+                }
                 smartScroll();
             };
 
