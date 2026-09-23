@@ -1680,6 +1680,11 @@
             animation: running-tool-shimmer 1.6s linear infinite;
         }
         .running-tool-box .running-tool-spinner { color: var(--cyan); }
+        .tool-ui-wait { margin: 6px 0; }
+        .tool-ui-wait [data-choice] { transition: background 0.15s, opacity 0.15s; }
+        .tool-ui-wait:not(.tool-ui-answered):not(.tool-ui-cancelled) [data-choice]:hover { background: rgba(255,255,255,0.1) !important; }
+        .tool-ui-wait.tool-ui-answered [data-choice], .tool-ui-wait.tool-ui-cancelled [data-choice] { cursor: default !important; }
+        .tool-ui-wait.tool-ui-cancelled { opacity: 0.5; }
         @keyframes running-tool-shimmer { 0% { background-position: 120% 0; } 100% { background-position: -20% 0; } }
         @media (prefers-reduced-motion: reduce) {
             .running-tool-box .tool-box-header { animation: none; background: rgba(86, 182, 194, 0.08); }
@@ -3631,9 +3636,11 @@ function buildToolFileSource(meta, handlerBody) {
         modes: Array.isArray(meta.modes) ? meta.modes : ['plan', 'ask', 'code'],
         permission: ['never', 'ask', 'always'].includes(meta.permission) ? meta.permission : 'ask',
         toolBox: Number(meta.toolBox) === 0 ? 0 : 1,
-        settings: Array.isArray(meta.settings) ? meta.settings : undefined
+        settings: Array.isArray(meta.settings) ? meta.settings : undefined,
+        interactive: meta.interactive ? true : undefined
     };
     if (metaObj.settings === undefined) delete metaObj.settings;
+    if (metaObj.interactive === undefined) delete metaObj.interactive;
     const metaJson = JSON.stringify(metaObj, null, 4).replace(/\n/g, '\n');
     return `// ${meta.name} - tool definition.
 const TOOL_META = ${metaJson};
@@ -3904,6 +3911,7 @@ function rebuildToolRegistryFromFiles() {
             permission: permState[meta.name] !== undefined ? permState[meta.name] : defaultPermission,
             toolBox: Number(meta.toolBox) === 0 ? 0 : 1,
             expanded: !!meta.expanded,
+            interactive: !!meta.interactive,
             settings: settingsDefs,
             settingsValues,
             code: extractHandlerBody(source),
@@ -5588,7 +5596,8 @@ function updateGenGlow() {
     const enabled = AppConfig.get('glow-enabled', 'true') !== 'false';
     let status = null;
     if (activeGen.retryStatusActive) status = 'retrying';
-    else if (permQueue.some(r => r.sessionId === state.activeSessionId)) status = 'asking';
+    else if (permQueue.some(r => r.sessionId === state.activeSessionId)
+          || pendingUIQueue.some(r => r.sessionId === state.activeSessionId)) status = 'asking';
     else if (activeGen.isRunning) status = 'generating';
 
     glowEl.classList.toggle('on', enabled && !!status);
@@ -7276,6 +7285,7 @@ async function switchSession(sessionId) {
     renderSessionPopoverList();
     hideSessionPopover();
     reconcileLiveGenUI(outgoingId, sessionId);
+    remountPendingUIForSession(sessionId);
     refreshPermBanner();
     focusPrompt();
 }
@@ -10643,6 +10653,18 @@ const permMsg = document.getElementById('perm-message');
 const permRejectReason = document.getElementById('perm-reject-reason');
 
 let permQueue = [];
+// Tool-rendered UIs (api.showUI) currently waiting on the user. Mirrors permQueue so that
+// Stop / abort can cancel them and the run can never hang forever on an unanswered card.
+let pendingUIQueue = [];
+
+function remountPendingUIForSession(sid) {
+    pendingUIQueue.filter(r => r.sessionId === sid).forEach(r => { try { r.mount(); } catch (_) {} });
+}
+
+function cancelPendingUIForSession(sid) {
+    const mine = pendingUIQueue.filter(r => r.sessionId === sid);
+    mine.forEach(r => { try { r.finish(null, true); } catch (_) {} });
+}
 
 document.getElementById('btn-perm-allow').addEventListener('click', () => closePerm(true));
 document.getElementById('btn-perm-deny').addEventListener('click', () => closePerm(false, permRejectReason.value.trim()));
@@ -12501,6 +12523,8 @@ function abortGeneration({ toast = null, showResumeUI = true, sessionId } = {}) 
     const gen = getGenState(sid);
     const wasRunning = !!(gen.activeController || gen.isRunning);
 
+    cancelPendingUIForSession(sid);
+
     const queuedForThisSession = permQueue.find(r => r.sessionId === sid);
     if (queuedForThisSession && sid === state.activeSessionId && permBanner.style.display === 'flex') {
         closePerm(false, 'Cancelled - generation stopped');
@@ -13715,7 +13739,9 @@ function cleanupText(text) {
     return s.replace(/\\s+$/gm, '').replace(/\\n{3,}/g, '\\n\\n').trim();
 }
 
+let __lastDisplayHtml = null;
 async function runTool(runId, toolMeta, args) {
+    __lastDisplayHtml = null;
     const api = {
         mode: toolMeta.mode,
         planFile: toolMeta.planFile,
@@ -13729,31 +13755,26 @@ async function runTool(runId, toolMeta, args) {
         isSensitiveFile: (fp) => callApi(runId, 'isSensitiveFile', [fp]),
         applySearchReplace: (original, searchBlock, replaceBlock) => applySearchReplace(original, searchBlock, replaceBlock),
         cleanupText: (text) => cleanupText(text),
-        // Reads a value the tool declared in TOOL_META.settings (by key), as configured by the user
-        // in Settings for this specific tool. Falls back to that setting's declared default.
-        getSetting: (key) => callApi(runId, 'getSetting', [key])
+        getSetting: (key) => callApi(runId, 'getSetting', [key]),
+        validateDisplayHtml: (html, opts) => callApi(runId, 'validateDisplayHtml', [html, opts || {}]),
+        showUI: (html, opts) => {
+            __lastDisplayHtml = String(html);
+            return callApi(runId, 'showUI', [String(html), opts || {}]);
+        }
     };
     try {
-        // toolMeta.code may declare top-level helpers; evaluate as a factory so they share scope with handler.
         const factory = new Function('args', 'api',
             toolMeta.code + '\\nreturn (typeof handler === "function") ? handler(args, api) : (() => { throw new Error("Tool file does not define an async function handler(args, api)."); })();'
         );
         const raw = await factory(args, api);
 
-        // Generic tool-result contract: a handler may return a plain string (as
-        // before), or an object of the shape { output, displayHtml }. "output" is
-        // the text that goes back to the model; "displayHtml" is optional markup
-        // shown in the chat UI only and never sent back into the conversation.
-        // This lets any tool (not just a specific named one) render rich HTML in
-        // chat without bloating the model's context on every call.
         let output, displayHtml = null;
         if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'output' in raw) {
             output = raw.output === undefined ? '(no output)' : String(raw.output);
-            if (typeof raw.displayHtml === 'string' && raw.displayHtml) {
-                displayHtml = raw.displayHtml;
-            }
+            displayHtml = (typeof raw.displayHtml === 'string' && raw.displayHtml) ? raw.displayHtml : __lastDisplayHtml;
         } else {
             output = raw === undefined ? '(no output)' : String(raw);
+            displayHtml = __lastDisplayHtml;
         }
 
         self.postMessage({ type: 'done', runId, output, displayHtml });
@@ -13860,7 +13881,129 @@ const TOOL_API_METHODS = {
     isSensitiveFile: async (toolName, [fp]) => isSensitiveUserFile(fp),
     // Generic per-tool settings lookup: reads TOOL_META.settings-declared values, configured
     // per tool in Settings > Tools, falling back to that setting's declared default.
-    getSetting: async (toolName, [key]) => getToolSettingValue(toolName, key)
+    getSetting: async (toolName, [key]) => getToolSettingValue(toolName, key),
+    validateDisplayHtml: async (toolName, [html, opts]) => {
+        if (typeof html !== 'string' || !html.trim()) {
+            return { ok: false, error: 'Empty displayHtml' };
+        }
+        const timeoutMs = (opts && opts.timeoutMs) || 4000;
+        // Tools can opt to be told about their own marker name; default generic.
+        const okMarker = (opts && opts.okMarker) || '__displayHtmlStatusOk';
+        const errMarker = (opts && opts.errMarker) || '__displayHtmlStatusErr';
+
+        return await new Promise((resolve) => {
+            let settled = false;
+            let iframe = null;
+            let hardTimer = null;
+            let settleTimer = null;
+
+            const cleanup = () => {
+                if (hardTimer) clearTimeout(hardTimer);
+                if (settleTimer) clearTimeout(settleTimer);
+                window.removeEventListener('message', onMessage);
+                try { if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe); } catch (e) {}
+            };
+            const finish = (result) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve(result);
+            };
+
+            const onMessage = (ev) => {
+                const d = ev && ev.data;
+                if (!d || typeof d !== 'object') return;
+                if (d[okMarker]) finish({ ok: true });
+                else if (d[errMarker]) finish({ ok: false, error: d[errMarker] || 'render error' });
+            };
+            window.addEventListener('message', onMessage);
+
+            iframe = document.createElement('iframe');
+            iframe.setAttribute('sandbox', 'allow-scripts'); // unique origin; postMessage still works
+            iframe.style.position = 'fixed';
+            iframe.style.left = '-10000px';
+            iframe.style.top = '-10000px';
+            iframe.style.width = '1px';
+            iframe.style.height = '1px';
+            iframe.style.opacity = '0';
+            iframe.style.pointerEvents = 'none';
+
+            iframe.addEventListener('load', () => {
+                // Fallback: if the HTML never posts a status marker, treat
+                // "no error within timeoutMs" as success.
+                settleTimer = setTimeout(() => finish({ ok: true }), timeoutMs);
+            }, { once: true });
+
+            hardTimer = setTimeout(
+                () => finish({ ok: false, error: 'Validation timed out' }),
+                timeoutMs + 3000
+            );
+
+            iframe.srcdoc = html;
+            document.body.appendChild(iframe);
+        });
+    },
+    showUI: async (toolName, [html, opts], sessionId) => {
+        const hasChoice = typeof html === 'string' && html.includes('data-choice');
+        const isInteractive = (opts && opts.autoResolve === false) || (hasChoice && (!opts || !opts.autoResolve));
+
+        // Display artifact: attach directly to tool execution and do not halt or mount extra external elements
+        if (!isInteractive) {
+            for (const [runId, entry] of toolWorkerPending) {
+                if (entry.toolName === toolName && entry.sessionId === (sessionId || state.activeSessionId)) {
+                    entry.displayHtml = html;
+                    break;
+                }
+            }
+            return { choice: null, autoResolved: true };
+        }
+
+        // Interactive choice (e.g. show_options): mount buttons and wait for user selection
+        return await new Promise((resolve) => {
+            const sid = sessionId || state.activeSessionId;
+            const req = { sessionId: sid, toolName, html, resolve, el: null, done: false };
+
+            const finish = (choice, cancelled) => {
+                if (req.done) return;
+                req.done = true;
+                pendingUIQueue = pendingUIQueue.filter(r => r !== req);
+                if (req.el) {
+                    req.el.querySelectorAll('button, input, select, textarea').forEach(b => { b.disabled = true; });
+                    req.el.classList.add(cancelled ? 'tool-ui-cancelled' : 'tool-ui-answered');
+                }
+                updateGenGlow();
+                resolve(cancelled ? { choice: null, cancelled: true } : { choice });
+            };
+            req.finish = finish;
+
+            req.mount = () => {
+                if (req.done) return;
+                if (req.el && req.el.isConnected) return;
+                const el = document.createElement('div');
+                el.className = 'tool-ui-wait';
+                el.innerHTML = req.html;
+                el.addEventListener('click', (ev) => {
+                    const btn = ev.target.closest('[data-choice]');
+                    if (!btn || req.done || btn.disabled) return;
+                    el.querySelectorAll('[data-choice]').forEach(b => {
+                        if (b !== btn) b.style.opacity = '0.4';
+                    });
+                    btn.classList.add('selected');
+                    btn.style.borderColor = 'var(--accent, #61afef)';
+                    finish(btn.dataset.choice, false);
+                });
+                req.el = el;
+                const anchor = document.querySelector('.running-tool-box');
+                const target = anchor && anchor.parentNode ? anchor.parentNode : term;
+                target.appendChild(el);
+                smartScroll();
+            };
+
+            pendingUIQueue.push(req);
+            if (sid === state.activeSessionId) req.mount();
+            updateGenGlow();
+        });
+    }
 };
 
 function getToolWorker() {
@@ -13889,7 +14032,7 @@ function getToolWorker() {
             toolWorkerPending.delete(msg.runId);
             clearTimeout(entry.timeoutId);
             if (msg.error) entry.reject(new Error(msg.error));
-            else entry.resolve({ output: msg.output, displayHtml: msg.displayHtml || null });
+            else entry.resolve({ output: msg.output, displayHtml: msg.displayHtml || entry.displayHtml || null });
         }
     });
     toolWorker.addEventListener('error', (e) => {
@@ -13905,21 +14048,24 @@ function getToolWorker() {
 }
 
 const TOOL_TIMEOUT_MS = 30000;
+// Tools that wait on a human (TOOL_META.interactive) get a generous ceiling instead.
+const INTERACTIVE_TOOL_TIMEOUT_MS = 5 * 60 * 1000;
 
 function runToolInWorker(toolName, toolMeta, args, sessionId) {
     const worker = getToolWorker();
     const runId = ++toolWorkerRunId;
+    const timeoutMs = toolMeta.interactive ? INTERACTIVE_TOOL_TIMEOUT_MS : TOOL_TIMEOUT_MS;
     return new Promise((resolve, reject) => {
         const timeoutId = setTimeout(() => {
             toolWorkerPending.delete(runId);
-            reject(new Error(`Tool "${toolName}" timed out after ${TOOL_TIMEOUT_MS / 1000}s.`));
+            reject(new Error(`Tool "${toolName}" timed out after ${timeoutMs / 1000}s.`));
             if (toolWorker) { toolWorker.terminate(); toolWorker = null; }
-        }, TOOL_TIMEOUT_MS);
+        }, timeoutMs);
         toolWorkerPending.set(runId, { resolve, reject, timeoutId, toolName, sessionId: sessionId || state.activeSessionId });
         worker.postMessage({
             type: 'run',
             runId,
-            toolMeta: { mode: state.mode, planFile: PLAN_FILE, code: toolMeta.code, toolName },
+            toolMeta: { mode: state.mode, planFile: PLAN_FILE, code: toolMeta.code, toolName, interactive: !!toolMeta.interactive },
             args
         });
     });
