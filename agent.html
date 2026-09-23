@@ -3874,6 +3874,7 @@ function rebuildToolRegistryFromFiles() {
             modes: Array.isArray(meta.modes) ? meta.modes : ['plan', 'ask', 'code'],
             permission: permState[meta.name] !== undefined ? permState[meta.name] : defaultPermission,
             toolBox: Number(meta.toolBox) === 0 ? 0 : 1,
+            expanded: !!meta.expanded,
             settings: settingsDefs,
             settingsValues,
             code: extractHandlerBody(source),
@@ -12047,7 +12048,7 @@ function markToolGroupFailed(container, toolName, detail) {
     indicator.insertAdjacentHTML('beforeend', `<div class="tool-group-fail-tooltip">${itemsHtml}</div>`);
 }
 
-function safeRenderToolCallBox(toolName, args, resultOutput, isDone = false, isError = false, container = null, existingBox = null, sessionId) {
+function safeRenderToolCallBox(toolName, args, resultOutput, isDone = false, isError = false, container = null, existingBox = null, sessionId, displayHtml = null) {
     const sid = sessionId || state.activeSessionId;
     if (sid !== state.activeSessionId) {
         const isBuiltinBadge = ['read', 'edit', 'write', 'grep', 'find', 'rename'].includes(toolName);
@@ -12068,7 +12069,7 @@ function safeRenderToolCallBox(toolName, args, resultOutput, isDone = false, isE
         return null;
     }
     try {
-        return renderToolCallBox(toolName, args, resultOutput, isDone, isError, container, existingBox);
+        return renderToolCallBox(toolName, args, resultOutput, isDone, isError, container, existingBox, sid, displayHtml);
     } catch (renderErr) {
         console.error('renderToolCallBox failed, falling back to plain output:', renderErr);
         try {
@@ -12180,7 +12181,7 @@ function renderPendingToolPreview(toolBuffer, sessionId) {
     if (lastLine) updateSpinnerText(`${last.name}: ${lastLine}`, sid);
 }
 
-function renderToolCallBox(toolName, args, resultOutput, isDone = false, isError = false, container = null, existingBox = null, sessionId) {
+function renderToolCallBox(toolName, args, resultOutput, isDone = false, isError = false, container = null, existingBox = null, sessionId, displayHtml = null) {
     const sid = sessionId || state.activeSessionId;
     const gen = getGenState(sid);
     stopRunningToolBox(existingBox);
@@ -12238,6 +12239,13 @@ function renderToolCallBox(toolName, args, resultOutput, isDone = false, isError
             </div>
             <div class="tool-output-text"><span class="dim">[result]</span> ${escapeHTML(resultOutput)}</div>
         `;
+    } else if (displayHtml) {
+        // Rich UI-only markup (e.g. HTML/image previews). This is never what was sent to
+        // the model as the tool result — that's resultOutput, kept separate on purpose so
+        // large rendered payloads don't get fed back into context.
+        innerContentHTML = displayHtml;
+    } else if (toolName === 'render_artifact') {
+        innerContentHTML = resultOutput;
     } else {
         innerContentHTML = `
             <div class="tool-output-text${isError ? ' error-output-text' : ''}">${escapeHTML(resultOutput || '(empty response)')}</div>
@@ -13701,8 +13709,25 @@ async function runTool(runId, toolMeta, args) {
         const factory = new Function('args', 'api',
             toolMeta.code + '\\nreturn (typeof handler === "function") ? handler(args, api) : (() => { throw new Error("Tool file does not define an async function handler(args, api)."); })();'
         );
-        const output = await factory(args, api);
-        self.postMessage({ type: 'done', runId, output: output === undefined ? '(no output)' : String(output) });
+        const raw = await factory(args, api);
+
+        // Generic tool-result contract: a handler may return a plain string (as
+        // before), or an object of the shape { output, displayHtml }. "output" is
+        // the text that goes back to the model; "displayHtml" is optional markup
+        // shown in the chat UI only and never sent back into the conversation.
+        // This lets any tool (not just a specific named one) render rich HTML in
+        // chat without bloating the model's context on every call.
+        let output, displayHtml = null;
+        if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'output' in raw) {
+            output = raw.output === undefined ? '(no output)' : String(raw.output);
+            if (typeof raw.displayHtml === 'string' && raw.displayHtml) {
+                displayHtml = raw.displayHtml;
+            }
+        } else {
+            output = raw === undefined ? '(no output)' : String(raw);
+        }
+
+        self.postMessage({ type: 'done', runId, output, displayHtml });
     } catch (e) {
         self.postMessage({ type: 'done', runId, error: e.message || String(e) });
     }
@@ -13837,7 +13862,7 @@ function getToolWorker() {
             toolWorkerPending.delete(msg.runId);
             clearTimeout(entry.timeoutId);
             if (msg.error) entry.reject(new Error(msg.error));
-            else entry.resolve(msg.output);
+            else entry.resolve({ output: msg.output, displayHtml: msg.displayHtml || null });
         }
     });
     toolWorker.addEventListener('error', (e) => {
@@ -13929,6 +13954,7 @@ async function executePreviewImage(args) {
     }
 }
 
+
 async function executeTool(name, args, sessionId) {
     const tool = toolRegistry[name];
     if (!tool) return { output: `ERROR: Unknown tool ${name}` };
@@ -13942,8 +13968,9 @@ async function executeTool(name, args, sessionId) {
     }
 
     try {
-        const output = await runToolInWorker(name, tool, args, sessionId);
-        return { output: output === undefined ? '(no output)' : String(output) };
+        const result = await runToolInWorker(name, tool, args, sessionId);
+        const output = result.output === undefined ? '(no output)' : String(result.output);
+        return result.displayHtml ? { output, displayHtml: result.displayHtml } : { output };
     } catch(e) {
         return { output: `ERROR: Tool "${name}" failed: ${e.message}` };
     }
@@ -14925,7 +14952,21 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                             }
                         }
                     } else {
-                        safeRenderToolCallBox(call.function.name, args, resStr, false, resIsError, toolGroupContainer, runningBox, runSessionId);
+                        // Check if tool should be auto-expanded (setting override or TOOL_META.expanded)
+                        const autoExpandSetting = getToolSettingValue(call.function.name, 'autoExpand');
+                        const shouldExpand = autoExpandSetting !== undefined ? !!autoExpandSetting : !!(matchingTool && matchingTool.expanded);
+
+                        if (shouldExpand && toolGroupContainer) {
+                            toolGroupContainer.classList.remove('collapsed');
+                        }
+
+                        // resObj.displayHtml is a generic, opt-in field any tool's handler can
+                        // return alongside "output" (see the worker's runTool / TOOL_META
+                        // contract). It's UI-only rendered markup — deliberately kept separate
+                        // from resStr, which is the only thing that goes back to the model
+                        // below. This lets any HTML-producing tool render rich output in chat
+                        // without that markup ever bloating the model's context.
+                        safeRenderToolCallBox(call.function.name, args, resStr, shouldExpand, resIsError, toolGroupContainer, runningBox, runSessionId, resObj.displayHtml || null);
                     }
 
                     if (resObj.__imageDataUrl && isRunLive()) {
