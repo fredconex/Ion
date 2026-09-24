@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- CSP: script-src limited to self/jsdelivr/blob/data (Monaco + tool worker need unsafe-inline/eval); connect-src broad so user-configured LLM endpoints work; object-src none & base-uri self close bypasses; frame-ancestors omitted (ignored via meta - use HTTP header if needed). -->
+    <!-- CSP: scripts limited to self/jsdelivr/blob/data (Monaco and the tool worker need unsafe-inline/eval); connect-src is broad for user-configured LLM endpoints. -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net blob: data: 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: http: data: blob:; object-src 'none'; base-uri 'self';">
     <title>Ion - Untitled Session</title>
     <link id="ion-favicon" rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 6L3 12L7 18' stroke='%2356b6c2' stroke-width='2'/%3E%3Cpath d='M13 4L8 12H16L11 20' stroke='%23a855f7' stroke-width='2'/%3E%3Cpath d='M17 6L21 12L17 18' stroke='%2356b6c2' stroke-width='2'/%3E%3C/svg%3E">
@@ -35,8 +35,7 @@
             --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Source Code Pro', Menlo, Monaco, Consolas, monospace;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        /* Disable font ligatures (e.g. JetBrains Mono / Fira Code merging "//" or "!=" into a
-           single glyph) so characters like a second slash don't render visually different. */
+        /* Disable font ligatures so sequences like "//" or "!=" render as separate characters. */
         html { font-variant-ligatures: none; -webkit-font-feature-settings: "liga" 0, "calt" 0; font-feature-settings: "liga" 0, "calt" 0; }
         body {
             height: 100vh; width: 100vw;
@@ -274,8 +273,7 @@
             display: flex; align-items: center; justify-content: center;
         }
         .btn-del-session:hover { color: var(--red); background: rgba(224, 108, 117, 0.15); }
-        /* Changes panel: Modified Files and Graph each take half the vertical
-           space (50/50 flex split), each with its own scroll. */
+        /* Changes panel: Modified Files and Graph each take half the height and scroll independently. */
         #sidebar-view-changes { display: flex; flex-direction: column; overflow: hidden; }
         #changes-subview-files {
             display: flex; flex-direction: column;
@@ -793,7 +791,7 @@
         #about-modal .about-link:hover { background: rgba(255, 255, 255, 0.06); color: var(--cyan); }
         #about-modal .about-link .icon { font-size: 17px; color: var(--dim); }
         #about-modal .about-link:hover .icon { color: var(--cyan); }
-        /* ---- Git-graph style commit timeline (VS Code "Graph" look) ---- */
+        /* Git-graph style commit timeline */
         #checkpoint-timeline-list {
             overflow-y: auto; padding: 4px 0 8px 0; flex: 1; min-height: 0;
         }
@@ -982,7 +980,7 @@
             color: var(--dim);
             user-select: none;
         }
-        /* Add styling for number input arrows */
+        /* Hide number input spinners */
         input[type="number"]::-webkit-inner-spin-button,
         input[type="number"]::-webkit-outer-spin-button {
             -webkit-appearance: none;
@@ -4407,11 +4405,7 @@ const registry = {
     treeRoot: { name: "", path: "", kind: "directory", children: {} }
 };
 
-// ---------------------------------------------------------------------------
-// fs.*  — single entry point for every workspace mutation.
-// Every change (create/write/edit/rename/delete/mkdir) is recorded as an op in
-// the owning session's opsLog, mirroring a git-style operation timeline.
-// ---------------------------------------------------------------------------
+// fs.*: single entry point for workspace mutations; every change is logged as an op in the session's opsLog.
 const fs = (() => {
     function currentPromptCtx(sessionId) {
         const gen = getGenState(sessionId || state.activeSessionId);
@@ -4426,8 +4420,7 @@ const fs = (() => {
         return b.opsLog[filePath];
     }
 
-    // Records an op, updates modifiedFiles + line stats, persists. The single
-    // source of truth for "something happened to this file".
+    // Records an op, updates modifiedFiles and line stats, and persists.
     async function record(op, sessionId) {
         const sid = sessionId || state.activeSessionId;
         const ctx = sessionCtx(sid);
@@ -4438,12 +4431,7 @@ const fs = (() => {
         if (op.prompt === undefined) op.prompt = currentPromptCtx(sid);
 
         if (op.kind === 'rename') {
-            // Git-style rename tracking: history follows the path (like `git log
-            // --follow`) instead of splitting into two disconnected timelines.
-            // The old path's ops (its full prior history plus a trailing
-            // 'rename-out' marker) are moved onto the new path's log, prefixed
-            // before a 'rename-in' marker and anything the new path already had
-            // logged (e.g. a path that was renamed, then renamed again).
+            // Like `git log --follow`: the old path's history moves onto the new path, before a 'rename-in' marker.
             const priorLog = ensureLog(op.from, sid);
             priorLog.push({ kind: 'rename-out', ts: op.ts, prompt: op.prompt, to: op.to, mode: op.mode });
             const renameIn = { kind: 'rename-in', ts: op.ts, prompt: op.prompt, from: op.from, mode: op.mode };
@@ -4461,9 +4449,7 @@ const fs = (() => {
             };
             move(b.originalFiles);
 
-            // A rename is always a workspace change — the destination path is new
-            // even when its content matches the source, so it must show up in the
-            // Changes panel and in every prompt/commit timeline.
+            // A rename always counts as a change, even when content is identical.
             ctx.modifiedFiles.delete(op.from);
             ctx.modifiedFiles.add(op.to);
 
@@ -4483,11 +4469,7 @@ const fs = (() => {
             } else if (op.kind === 'mkdir') {
                 // directories don't affect modifiedFiles
             } else {
-                // First time we touch a pre-existing file this session: capture the
-                // pre-edit content as the baseline. op.previousContent is the OLD
-                // content (available at the fs.write call site); op.content is NEW.
-                // Without this, recomputeLineStats compares against '' and reports
-                // the whole file as "added".
+                // First touch of a pre-existing file: capture its old content as the baseline (else the whole file counts as "added").
                 if (b.originalFiles[p] === undefined) {
                     b.originalFiles[p] = op.previousContent !== undefined ? op.previousContent : null;
                 }
@@ -4522,10 +4504,7 @@ const fs = (() => {
         const sid = opts.sessionId || state.activeSessionId;
         if (isSecurityProtectedPath(path)) return { error: `ERROR: ${path} is a protected path.` };
         const existed = await fileExistsOnDisk(path) || registry.files[path] !== undefined;
-        // Capture the pre-write content for the session baseline BEFORE rawWrite
-        // mutates registry.files. Without this, the first edit of a pre-existing
-        // workspace file leaves originalFiles[p] undefined and every line ends up
-        // counted as "added" (baseline == '').
+        // Capture pre-write content before rawWrite overwrites registry.files.
         let previousContent;
         if (existed) {
             previousContent = registry.files[path];
@@ -4560,11 +4539,7 @@ const fs = (() => {
         if (res.error) return res;
         // track=false: disk-only rename that must not be recorded (discard/reset paths).
         if (opts.track === false) return { ok: true, resolvedNewPath: res.resolvedNewPath || to };
-        // rawRename may resolve to a different path than requested (it forces the
-        // file to stay in its original directory, stripping any directory
-        // component off `to`). Record against that actual resolved path, not the
-        // raw `to` the caller passed in — otherwise tracking points at a path
-        // nothing was ever written to, while the real file sits untracked.
+        // rawRename keeps the file in its original directory, so log the resolved path, not the requested one.
         const actualTo = res.resolvedNewPath || to;
         await record({ kind: 'rename', from, to: actualTo, mode: opts.mode || 'ui' }, sid);
         return { ok: true, resolvedNewPath: actualTo };
@@ -4695,7 +4670,7 @@ let rootHandle = null;
 
 const IGNORED_DIRS = new Set(['node_modules', '.git', 'venv', '__pycache__', 'target', 'build', 'dist']);
 
-// ---- Protected paths (security) ---- Patterns match full path and basename; gitignore-style globs ('*', trailing '/' = dir-only).
+// Protected paths: gitignore-style globs matched against full path and basename ('*' wildcard, trailing '/' = dir-only).
 const PROTECTED_PATTERNS = [
     '.git',
     '.env',
@@ -4748,7 +4723,7 @@ function matchesPattern(pattern, fullPath, baseName, isDir) {
         pat = pat.slice(0, -1);
     }
     if (dirOnly && !isDir) {
-        // A dir-only pattern can still match files inside it (via isUnderDirPattern); here only dirs.
+        // Dir-only patterns match directories here; files inside are handled by isUnderDirPattern.
         return false;
     }
 
@@ -4774,7 +4749,7 @@ function isUnderDirPattern(pattern, fullPath) {
     return false;
 }
 
-// Known directory-like patterns (no trailing slash) that should also protect everything nested underneath them.
+// A matching segment protects everything beneath it (e.g. "repo/.git/config").
 const IMPLICIT_DIR_PATTERNS = new Set(['.git', '__pycache__']);
 
 function isHardProtectedPath(path) {
@@ -4813,7 +4788,7 @@ function parseGitignoreContent(text) {
         .filter(l => l && !l.startsWith('#'));
 }
 
-// Populated when a .gitignore is read into the registry; maps directory path -> raw pattern lines.
+// Maps directory path to the raw pattern lines of its .gitignore.
 function registerGitignoreRules(gitignorePath, content) {
     const dir = dirnameOf(gitignorePath);
     gitignoreCache.set(dir, parseGitignoreContent(content));
@@ -4862,13 +4837,7 @@ const SLASH_COMMANDS = [
 const DEFAULT_CONTEXT_WINDOW = 32768;
 
 function seedDefaultModels() {
-    // Providers are a flat array. Each provider has one endpoint (url/key)
-    // and a list of selectable `models`. A model is just its `name` (also
-    // used directly as the API model id sent to the endpoint) plus its own
-    // `context_window`, since context length varies per-model even within
-    // one provider. `vision: true` marks models that accept image input; a
-    // missing/false value means text-only (tools with `require_vision` are
-    // withheld and image attachments are disabled for that model).
+    // Flat array of providers (url/key + models). A model's `name` is its API id; `vision: true` enables image input and vision-only tools.
     return [
         {
             provider: "Llama.cpp (local:8080)",
@@ -4948,7 +4917,7 @@ function seedDefaultModels() {
 
 let MODEL_PROVIDERS = seedDefaultModels();
 
-// Pretty-prints providers with each model on one compact line, since plain JSON.stringify(..., null, 2) would explode each model across several lines.
+// Pretty-prints providers with one compact line per model.
 function modelsFileContent() {
     const indentProvider = '  ';
     const indentModel = '    ';
@@ -4978,7 +4947,7 @@ function saveModels() {
     registerModelsVirtualFile();
 }
 
-// Providers must be an array of { provider, url, models: [{name, context_window, vision?}] }; anything else is rejected so callers fall back to defaults.
+// Accepts only an array of { provider, url, models: [{name, ...}] }; anything else falls back to defaults.
 function isValidProvidersShape(data) {
     return Array.isArray(data) && data.every(p =>
         p && typeof p === 'object' &&
@@ -4988,16 +4957,14 @@ function isValidProvidersShape(data) {
     );
 }
 
-// A model's `vision` flag is strictly opt-in: only a real `true` (or the strings "true"/"1",
-// which people tend to type when hand-editing models.json) enables it. Anything else - missing,
-// false, null, garbage - means text-only, so an unknown model is never sent images it can't take.
+// Vision is opt-in: only `true` (or "true"/"1"/"yes" strings from hand-edited JSON) enables it.
 function normalizeVisionFlag(v) {
     if (v === true) return true;
     if (typeof v === 'string') return ['true', '1', 'yes'].includes(v.trim().toLowerCase());
     return false;
 }
 
-// Flatten providers -> selectable model entries, each carrying its provider + model config; keyed by (providerName, modelName) since a model's `name` IS its API id.
+// Flattens providers into model entries, keyed by (providerName, modelName).
 function getAllModelEntries() {
     const out = [];
     if (!Array.isArray(MODEL_PROVIDERS)) return out;
@@ -5978,13 +5945,7 @@ function recomputeModifiedFromOps(filepath) {
     else state.modifiedFiles.delete(filepath);
 }
 
-// Derives a checkpoint timeline from the session's op log. Entries are:
-//   baseline    — original content before this session touched the file
-//   checkpoint  — state after a create/write/edit op
-//   delete      — file was removed; content is empty
-//   current     — live content on disk right now
-// Rename-in/rename-out and mkdir markers are shown by the UI but are not
-// content checkpoints.
+// Builds a checkpoint timeline (baseline, checkpoint, delete, current) from the op log; rename/mkdir markers are not content checkpoints.
 function getFileTimeline(filepath) {
     const b = registry;
     const ops = (b.opsLog && b.opsLog[filepath]) || [];
@@ -6073,12 +6034,10 @@ window.revertFileToCheckpoint = async (filepath, timelineIndex) => {
         if (target.kind === 'delete') {
             action = { kind: 'delete', filepath };
         } else if (target.kind === 'rename-out') {
-            // At this point `filepath` no longer exists (it was renamed to op.to),
-            // so reverting to it means the file at this path is gone.
+            // The path no longer exists at this point (renamed away), so revert deletes it.
             action = { kind: 'delete', filepath };
         } else if (target.kind === 'rename-in' || target.kind === 'mkdir') {
-            // Defensive: structural checkpoint reached without a self-contained
-            // content action; the op-log truncation already reflects the state.
+            // Structural checkpoint: the log truncation already reflects the state.
             action = null;
         } else if (target.kind === 'baseline') {
             const original = registry.originalFiles[filepath];
@@ -6139,14 +6098,11 @@ function getAllPromptGroups() {
 }
 
 window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
-    // A prompt is a commit: reverting to before it drops that prompt AND every
-    // later prompt (git `reset --hard <commit>` semantics).
-    // Accept a single id (string) or an array of ids (for reverting a range).
+    // Like `git reset --hard`: drops this prompt and every later one. Accepts one id or an array.
     const idSet = new Set(Array.isArray(promptId) ? promptId : [promptId]);
     const files = getAllTrackedFiles();
 
-    // Earliest ts among the matching prompts' ops is the cut point: everything
-    // at or after it is dropped.
+    // The earliest matching op timestamp is the cut point.
     let cutTs = Infinity;
     let cutFound = false;
     for (const filepath of files) {
@@ -6165,8 +6121,7 @@ window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
         return;
     }
 
-    // Forget ids = every prompt whose ops land at/after the cut, so the whole
-    // later history is discarded, not just the named prompt.
+    // Forget every prompt at or after the cut, not just the named one.
     const forgetIds = new Set();
     for (const filepath of files) {
         const timeline = getFileTimeline(filepath);
@@ -6178,8 +6133,7 @@ window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
         }
     }
 
-    // Build an action for every tracked file reflecting its pre-cut state:
-    // replay only the ops that survive the cut (ts < cutTs) from the baseline.
+    // Replay only ops before the cut from the baseline to get each file's pre-cut state.
     const actions = [];
     for (const filepath of files) {
         const timeline = getFileTimeline(filepath);
@@ -6194,8 +6148,7 @@ window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
             else if (entry.kind === 'checkpoint') { present = true; content = entry.content; }
         }
 
-        // A rename-in at/after the cut means the file was renamed after the cut,
-        // so its pre-cut location is a different path. Move it back first.
+        // A rename after the cut means the pre-cut path differs; move the file back first.
         const renameIdx = timeline.findIndex(e => e.kind === 'rename-in' && (e.ts || 0) >= cutTs);
         let moveBackTo = null;
         if (renameIdx !== -1) {
@@ -6212,8 +6165,7 @@ window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
         }
     }
 
-    // Renames must run before restores/deletes so the restored content lands
-    // at its final path (a file renamed back to its old path first, then restored).
+    // Renames run first so restored content lands at its final path.
     const renamed = actions.filter(a => a.kind === 'rename');
     const rest = actions.filter(a => a.kind !== 'rename');
     rest.sort((a, b) => (a.kind === 'restore' ? 0 : 1) - (b.kind === 'restore' ? 0 : 1));
@@ -6253,15 +6205,7 @@ function promptGroupKey(entry) {
     return `__solo_${entry.index}`;
 }
 
-// ---------------------------------------------------------------------------
-// Git-graph style commit timeline. Renders inline in the sidebar's Changes ▸
-// Graph tab (VS Code "Git Graph" look): one vertical rail with a dot per
-// commit, newest at top, each row expandable to show the files it touched.
-// Two modes share this rendering:
-//   "all"  — one dot per prompt (+ a dot per file's original baseline),
-//            like the repo-wide commit graph.
-//   "file" — one dot per checkpoint for a single file (drill-down).
-// ---------------------------------------------------------------------------
+// Git-graph timeline in the Changes panel: "all" mode shows one dot per prompt, "file" mode one per checkpoint.
 
 const graphBadgeLabelMap = {
     baseline: 'Baseline',
@@ -6491,22 +6435,8 @@ window.hideCheckpointTimeline = () => {
     window.showAllCheckpoints();
 };
 
-// ---------------------------------------------------------------------------
-// executeRevertPlan — the single entry point for every revert/discard path.
-// Checkpoint-modal reverts, per-file discard, discard-all, and
-// delete-message-and-revert all build a list of actions and route them here
-// so behavior is identical everywhere.
-//
-// Action shapes:
-//   { kind: 'restore', filepath, content }    — write content back to filepath
-//   { kind: 'delete',  filepath }             — remove filepath
-//   { kind: 'rename',  filepath, targetPath } — move filepath back to targetPath
-//
-// Options:
-//   forgetPromptIds: string[] — remove any op whose prompt.id is in the list
-//                               (the "commits" being dropped) from every file
-//   clearOpsFor:     string[] — wipe the whole opsLog entry for these files
-// ---------------------------------------------------------------------------
+// Single entry point for all reverts. Actions: {kind:'restore',filepath,content} | {kind:'delete',filepath} | {kind:'rename',filepath,targetPath}.
+// Options: forgetPromptIds drops ops by prompt id; clearOpsFor wipes a file's opsLog.
 async function executeRevertPlan(actions, opts = {}) {
     const forgetIds = opts.forgetPromptIds ? new Set(opts.forgetPromptIds) : null;
     const clearFor = opts.clearOpsFor ? new Set(opts.clearOpsFor) : null;
@@ -6520,8 +6450,7 @@ async function executeRevertPlan(actions, opts = {}) {
                     showToast(`Revert error (${action.filepath}): ${res.error}`, 'error');
                     continue;
                 }
-                // rawRename moves disk content but doesn't touch tracking state;
-                // carry the op log and baseline across so history follows the path.
+                // rawRename skips tracking; carry the op log and baseline to the new path.
                 if (registry.opsLog[action.filepath]) {
                     registry.opsLog[action.targetPath] = registry.opsLog[action.filepath];
                     delete registry.opsLog[action.filepath];
@@ -6530,8 +6459,7 @@ async function executeRevertPlan(actions, opts = {}) {
                     registry.originalFiles[action.targetPath] = registry.originalFiles[action.filepath];
                     delete registry.originalFiles[action.filepath];
                 }
-                // Follow open tabs and Monaco models so the UI doesn't point
-                // at a path that no longer exists.
+                // Update open tabs and Monaco models to the new path.
                 if (state.openTabs.includes(action.filepath)) {
                     state.openTabs[state.openTabs.indexOf(action.filepath)] = action.targetPath;
                 }
@@ -6559,8 +6487,7 @@ async function executeRevertPlan(actions, opts = {}) {
         }
     }
 
-    // Trim op logs. A prompt is a commit: forgetting its id drops every op it
-    // produced, regardless of which file that op landed on.
+    // A prompt is a commit: forgetting its id drops all its ops from every file.
     if (forgetIds) {
         for (const fp of Object.keys(registry.opsLog)) {
             const kept = (registry.opsLog[fp] || []).filter(op => !(op.prompt && forgetIds.has(op.prompt.id)));
@@ -6591,9 +6518,7 @@ async function executeRevertPlan(actions, opts = {}) {
     return applied;
 }
 
-// Authoritative reconstruction of state.modifiedFiles from baselines + op logs.
-// Called after every batch of revert actions so the Changes panel can never
-// drift out of sync with what's actually on disk.
+// Rebuilds state.modifiedFiles from baselines and op logs after every revert batch.
 function recomputeAllModifiedFromOps() {
     const all = new Set([
         ...Object.keys(registry.originalFiles),
@@ -6607,8 +6532,7 @@ function recomputeAllModifiedFromOps() {
 
         let modified = false;
         if (hasBaseline) {
-            // File existed before this session: modified if it's gone, or if
-            // its live content differs from the pre-session baseline.
+            // Pre-existing file: modified if gone or its content differs from the baseline.
             if (!fileExists) modified = true;
             else if (registry.files[fp] !== registry.originalFiles[fp]) modified = true;
         } else if (fileExists && ops.length > 0) {
@@ -7756,8 +7680,7 @@ function applyImgTransform(animate) {
     imgScaleLabel.textContent = Math.round(imgZoom * 100) + '%';
 }
 
-// Zooms to `z`. When (cx, cy) is given (offsets from the image's un-transformed centre, in px)
-// the point under that position stays fixed on screen, so wheel-zoom goes toward the cursor.
+// Zooms to `z`; with (cx, cy) offsets from the image centre, that point stays fixed (zoom toward cursor).
 function setImgZoom(z, animate, cx = 0, cy = 0) {
     const next = Math.max(IMG_ZOOM_MIN, Math.min(IMG_ZOOM_MAX, z));
     const ratio = next / imgZoom;
@@ -7781,8 +7704,7 @@ function imgZoomBy(delta, cx = 0, cy = 0) {
     setImgZoom(imgZoom + (delta > 0 ? IMG_ZOOM_STEP_PCT / 100 : -IMG_ZOOM_STEP_PCT / 100), true, cx, cy);
 }
 
-// Offset of a client-space point from the centre of the image's untransformed box. The transform
-// origin is the centre, so this is the coordinate space setImgZoom's pan compensation works in.
+// Offset of a client point from the image's untransformed centre, the space setImgZoom works in.
 function imgOffsetFromCentre(clientX, clientY) {
     const r = editorImagePreview.getBoundingClientRect();
     // getBoundingClientRect reflects the current transform; its centre = untransformed centre + pan.
@@ -7803,8 +7725,7 @@ editorBinaryNotice.addEventListener('wheel', (e) => {
     imgZoomBy(e.deltaY < 0 ? 1 : -1, o.x, o.y);
 }, { passive: false });
 
-// Drag to pan. Pointer events + capture, so the drag keeps tracking when the cursor leaves the
-// image (which is small when zoomed out), and it works for mouse, pen and touch alike.
+// Drag to pan; pointer capture keeps tracking outside the image and works for mouse, pen, and touch.
 (function wireImgPan() {
     let drag = null;
     editorImagePreview.addEventListener('pointerdown', (e) => {
@@ -8113,8 +8034,7 @@ async function switchTab(tabId) {
         }
 
         if (isImage && meta?.virtual) {
-            // Virtual image files (e.g. session attachments) store their content
-            // as a data URL directly in registry.files - no disk handle to read.
+            // Virtual images store a data URL in registry.files; there is no disk handle.
             const dataUrl = await readImageDataUrl(tabId);
             if (dataUrl) {
                 monacoContainer.style.display = 'none';
@@ -9185,7 +9105,7 @@ btnReloadTree.addEventListener('click', async () => await syncWorkspace(false));
 setInterval(() => syncWorkspace(true), 3000);
 window.addEventListener('focus', () => syncWorkspace(true));
 
-// Walks the whole tree once to find/parse every .gitignore, so parent-dir rules are known before filtering.
+// Pre-scans every .gitignore so parent rules are known before filtering.
 async function prescanGitignoreFiles(handle, path = "") {
     for await (const entry of handle.values()) {
         if (IGNORED_DIRS.has(entry.name)) continue;
@@ -9331,7 +9251,7 @@ function selectAutocompleteItem(item) {
 const term = document.getElementById('chat');
 const input = document.getElementById('cmd');
 
-// --- Prompt rail (right-side scroll markers) ---
+// Prompt rail (right-side scroll markers)
 const promptRail = document.getElementById('prompt-rail');
 let promptRailTicks = [];
 
@@ -9348,7 +9268,7 @@ function readFileAsDataURL(file) {
     });
 }
 
-// Re-encode an image file as a PNG data-URL so the model always receives PNG regardless of source format.
+// Re-encodes an image as a PNG data URL.
 async function toPngDataUrl(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -9522,10 +9442,7 @@ function rebuildPromptRailTicks() {
     });
 }
 
-// Highlight the tick nearest the current scroll position.
-// Measure distance from the viewport center to each wrap's *vertical center*
-// so tall messages (especially the last one) still get highlighted instead of
-// a previous message whose top happens to sit closest to the viewport top.
+// Highlights the tick nearest the viewport center, measured to each message's vertical center so tall messages win.
 function updatePromptRail() {
     const wraps = term.querySelectorAll('.chat-prompt-wrap');
     if (!wraps.length) return;
@@ -9541,9 +9458,7 @@ function updatePromptRail() {
     });
 }
 
-// Observe new prompts being added.
-//
-// Watch only direct children of #chat; rebuild is gated on prompt-wrap count so spinner reorders/streaming writes don't tear down ticks (which caused flicker).
+// Watch direct children of #chat; rebuild only when the prompt count changes to avoid flicker.
 let _railWrapCount = -1;
 let _railRaf = null;
 const railObserver = new MutationObserver(() => {
@@ -9653,7 +9568,7 @@ input.addEventListener('input', () => {
 const settingsPopover = document.getElementById('settings-popover');
 const btnSettingsToggle = document.getElementById('btn-settings-toggle');
 
-// --- Top-of-prompt model select dropdown (custom: native <select> can't render bold model + dim provider per row) ---
+// Custom model dropdown (a native <select> can't style the model and provider differently).
 const modelSelectBtn = document.getElementById('model-select-btn');
 const modelSelectOverlay = document.getElementById('model-select-overlay');
 const modelSelectDropdown = document.getElementById('model-select-dropdown');
@@ -9733,7 +9648,7 @@ modelSelectConfigBtn.addEventListener('click', (e) => {
     openModelsModal();
 });
 
-// --- Models modal: friendly add/remove UI over .agent/models.json (two-pane: provider list left, selected provider details right) ---
+// Models modal: two-pane add/remove UI over .agent/models.json.
 const modelsModalOverlay = document.getElementById('models-modal-overlay');
 const modelsModalClose = document.getElementById('models-modal-close');
 const modelsModalEditJson = document.getElementById('models-modal-edit-json');
@@ -9753,7 +9668,7 @@ function closeModelsModal() {
     modelsModalOverlay.style.display = 'none';
 }
 
-// Persists MODEL_PROVIDERS via the same path as a manual JSON edit so validation, virtual file, dropdown and explorer stay in sync.
+// Persists MODEL_PROVIDERS and refreshes the dropdown and explorer.
 function commitModelsChange() {
     saveModels();
     renderModelDropdown();
@@ -9764,7 +9679,7 @@ function mmNewProvider() {
     return { provider: 'New Provider', url: '', key: '', models: [{ name: '', context_window: DEFAULT_CONTEXT_WINDOW, vision: false }] };
 }
 
-// Renders both panes; focusField optionally names an input to focus/select in the detail pane after render.
+// Renders both panes; focusField optionally names an input to focus afterward.
 function renderModelsModal(focusField) {
     const hasProviders = Array.isArray(MODEL_PROVIDERS) && MODEL_PROVIDERS.length > 0;
     if (hasProviders) {
@@ -10060,7 +9975,7 @@ function getModelValueFromLine(lineContent) {
     return '';
 }
 
-// Finds the config for the model line under the cursor by walking up to the parent provider to read url/key; handles both compact single-line and pretty-printed multi-line models.
+// Finds url/key for the model under the cursor via its parent provider; handles compact and multi-line models.
 function findModelInfoForLine(filepath, targetLine) {
     if (!filepath || !filepath.endsWith('models.json')) return null;
     if (!monacoEditor) return null;
@@ -10118,14 +10033,12 @@ function findModelInfoForLine(filepath, targetLine) {
         providerFrame = stack.length ? stack[stack.length - 1] : modelFrame;
         modelContent = readObjectContent(modelFrame);
     } else if (sawSelfContained) {
-        // A complete {..} sits entirely on this line (compact model).
-        // Whatever was already open before this line is the provider.
+        // A complete {..} on this line (compact model); the enclosing object is the provider.
         if (!stack.length) return null;
         providerFrame = stack[stack.length - 1];
         modelContent = lineText(targetLine);
     } else {
-        // No braces at all on this line: we're inside whatever object was
-        // already open (e.g. a bare "context_window": N, line).
+        // No braces on this line: we're inside an already-open object.
         if (!stack.length) return null;
         const modelFrame = stack[stack.length - 1];
         providerFrame = stack.length >= 2 ? stack[stack.length - 2] : modelFrame;
@@ -10237,8 +10150,7 @@ function showModelPicker(targetLine, targetColumn, editorOffset, currentModelNam
         error: null,
         filter: '',
         selectedIdx: 0,
-        // When set, selecting a model calls this instead of editing the Monaco buffer
-        // (used by the Models modal's inline picker button).
+        // When set, selection calls this instead of editing the Monaco buffer.
         onSelect: onSelect || null
     };
 
@@ -10534,8 +10446,7 @@ const toolsListEl = document.getElementById('tools-list');
 const PERMISSION_LABELS = { never: 'never', ask: 'ask', always: 'always' };
 const MODE_LABELS = { plan: 'Plan', ask: 'Ask', code: 'Code' };
 
-// Renders one input row for a tool-declared setting, wired to read/write it via
-// getToolSettingValue/setToolSettingValue. Returns an HTMLElement.
+// Renders one input row for a tool-declared setting.
 function buildToolSettingRow(tool, def) {
     const row = document.createElement('div');
     row.className = 'ct-tool-setting-row';
@@ -10751,8 +10662,7 @@ function setToolPermission(name, val) {
     saveToolPermState(permState);
 }
 
-// Per-tool custom settings (declared by each tool's TOOL_META.settings), stored as
-// { [toolName]: { [settingKey]: value } }.
+// Per-tool settings from TOOL_META.settings, stored as { [toolName]: { [key]: value } }.
 function loadToolSettingsState() {
     try {
         const stored = JSON.parse(localStorage.getItem('tool_settings_state') || '{}');
@@ -10887,8 +10797,7 @@ const permMsg = document.getElementById('perm-message');
 const permRejectReason = document.getElementById('perm-reject-reason');
 
 let permQueue = [];
-// Tool-rendered UIs (api.showUI) currently waiting on the user. Mirrors permQueue so that
-// Stop / abort can cancel them and the run can never hang forever on an unanswered card.
+// Pending api.showUI cards; mirrors permQueue so Stop can cancel them.
 let pendingUIQueue = [];
 
 function remountPendingUIForSession(sid) {
@@ -12804,8 +12713,7 @@ function abortGeneration({ toast = null, showResumeUI = true, sessionId } = {}) 
     if (toast) showToast(toast, 'info');
     if (sid === state.activeSessionId) focusPrompt();
 
-    // If a prompt was queued while this generation was running, don't auto-fire it on a
-    // manual stop — restore it to the input box so the user can review before sending.
+    // On manual stop, restore a queued prompt to the input instead of auto-sending it.
     const queued = state.queuedPrompts[sid];
     if (queued) {
         delete state.queuedPrompts[sid];
@@ -13217,7 +13125,7 @@ if (btnExitWorkspace) {
     });
 }
 
-// Detects whether a string is non-text (binary content) by sampling the first few KB.
+// Detects binary content by sampling the first few KB.
 function isBinaryContent(s) {
     if (!s) return false;
     const sampleLen = Math.min(s.length, 4096);
@@ -13237,12 +13145,7 @@ function lineCount(text) {
     return text === '' ? 0 : text.split('\n').length;
 }
 
-// O(n log m) greedy matcher: returns the number of lines of `a` that can be
-// matched, in order, to positions in `b`. This is a valid lower bound on the LCS
-// length (it takes the earliest available continuation each step, the standard
-// greedy LCS heuristic). Used only for the large-file fallback where exact LCS
-// is too expensive; counting matched lines on BOTH sides so removed and added
-// are reported independently instead of collapsing to the net delta.
+// Greedy O(n log m) lower bound on LCS length; only used for the large-file fallback.
 function greedyLcsCount(a, b) {
     // Map of line -> sorted ascending list of positions in b.
     const bPositions = new Map();
@@ -13270,7 +13173,7 @@ function greedyLcsCount(a, b) {
     return matched;
 }
 
-// Computes added/removed line counts via LCS-based diff; capped for very large files with a length-delta fallback to avoid O(n*m) blowups.
+// Counts added/removed lines via LCS diff, with a set-overlap fallback for very large diffs.
 function trimCommonLines(a, b) {
     let start = 0;
     while (start < a.length && start < b.length && a[start] === b[start]) start++;
@@ -13288,20 +13191,14 @@ function computeLineDiffCounts(beforeText, afterText) {
     const aFull = normA === '' ? [] : normA.split('\n');
     const bFull = normB === '' ? [] : normB.split('\n');
 
-    // Drop identical leading/trailing lines first. This is git-hunk behavior:
-    // context lines around an edit aren't changes. It also shrinks the region
-    // to something exact LCS can handle on all but truly scattered rewrites.
+    // Trim identical leading/trailing lines first (like git hunks), which also shrinks the LCS region.
     const { a, b } = trimCommonLines(aFull, bFull);
     const n = a.length, m = b.length;
     if (n === 0 && m === 0) return { added: 0, removed: 0 };
 
     const LCS_LINE_CAP = 4000;
     if (n * m > LCS_LINE_CAP * LCS_LINE_CAP || n > LCS_LINE_CAP * 4 || m > LCS_LINE_CAP * 4) {
-        // Large scattered diff. Greedy LCS collapses on files with thousands
-        // of duplicate lines (blank lines, </div>, }); the walker's cursor
-        // races ahead of the real matches and matched drops to ~40%. A set
-        // overlap can't under-count that badly — it's the honest lower bound
-        // on how many lines are still shared between the two sides.
+        // Large diff: greedy LCS under-counts with many duplicate lines, so use set overlap instead.
         const aSet = new Set(a);
         const bSet = new Set(b);
         let aMatched = 0;
@@ -13323,28 +13220,20 @@ function computeLineDiffCounts(beforeText, afterText) {
     return { added: m - lcsLen, removed: n - lcsLen };
 }
 
-// Recomputes +added/-removed line counts from scratch for each modified file (baseline vs live content) - idempotent so it can't drift across edits/reverts.
+// Recomputes +added/-removed from baseline vs current content, so it can't drift.
 async function recomputeLineStats(ctx, sid) {
-    // Recomputes +added/-removed by diffing each modified file's baseline against
-    // its CURRENT content (not against intermediate checkpoints). This is
-    // idempotent: it can never drift, and reverting an edit automatically lowers
-    // the count because the opsLog truncation changes what "current" means.
     let totalAdded = 0, totalRemoved = 0;
 
     for (const fp of ctx.modifiedFiles) {
-        // Baseline: the file's original content before this session touched it.
-        // A null sentinel means "created this session" → empty baseline.
+        // Baseline is the pre-session content; a null sentinel means created this session.
         const baselineRaw = ctx.baseline.originalFiles[fp];
         const beforeText = (baselineRaw === undefined || baselineRaw === null) ? '' : baselineRaw;
 
-        // Current: prefer live disk content, fall back to re-reading from disk for
-        // non-live sessions so we always diff baseline → truth.
+        // Use live content for the active session, otherwise re-read from disk.
         let afterText;
         if (ctx.isLive && registry.files[fp] !== undefined) {
             afterText = registry.files[fp];
         } else if (!ctx.isLive) {
-            // Non-live session: re-read from disk so we always diff baseline → truth.
-            // (readFileContent is already async-safe and cached.)
             afterText = await readFileContent(fp) || '';
         } else {
             afterText = '';
@@ -13638,20 +13527,10 @@ function detectIndentation(lines) {
     return { type: 'space4', char: '    ' };
 }
 
-// Applies a search/replace edit to a file, transparently handling both LF
-// and CRLF line endings:
-//   - The file's original EOL style (LF vs CRLF) is preserved on output,
-//     so editing a CRLF file doesn't silently rewrite every line to LF
-//     (and vice versa).
-//   - The search and replace blocks may use either style (or a mix); they
-//     are normalized to bare LF for matching, then the result is converted
-//     back to the file's EOL style.
-//   - A line-by-line, trim-insensitive fallback catches indentation drift
-//     between the search block and the file.
-// Returns { content, lineNumber } or throws if the search block isn't found.
+// Applies a search/replace edit, preserving the file's LF/CRLF style and falling back to a trim-insensitive line match.
+// Returns { content, lineNumber }; throws if the search block isn't found.
 function applySearchReplace(original, searchBlock, replaceBlock) {
-    // Detect the file's EOL style. If it contains at least one CRLF pair we
-    // treat it as CRLF, otherwise LF. Empty / undefined input -> LF.
+    // Treat the file as CRLF if it contains any CRLF pair, otherwise LF.
     const usesCRLF = String(original == null ? '' : original).includes('\r\n');
 
     // Normalize all inputs to bare LF so matching is EOL-agnostic.
@@ -13664,9 +13543,7 @@ function applySearchReplace(original, searchBlock, replaceBlock) {
     const sBlock = normalize(searchBlock);
     const rBlock = normalize(replaceBlock);
 
-    // --- Fast path: exact substring match on the normalized content. ---
-    // Uses indexOf + slice (instead of String.replace) so any '$' characters
-    // in the replacement text are treated literally, not as backreferences.
+    // Fast path: exact match; indexOf + slice keeps '$' in the replacement literal.
     const directIdx = orig.indexOf(sBlock);
     if (directIdx !== -1) {
         const before = orig.slice(0, directIdx);
@@ -13676,9 +13553,7 @@ function applySearchReplace(original, searchBlock, replaceBlock) {
         return { content: toFileEol(res), lineNumber: startLine };
     }
 
-    // --- Fallback: line-by-line, trim-aware match. Handles cases where the
-    //     search block has slightly different indentation or trailing
-    //     whitespace than the file. ---
+    // Fallback: line-by-line trim-aware match for indentation or trailing-whitespace drift.
     const origLines = orig.split('\n');
     const sLines    = sBlock.split('\n');
     const rLines    = rBlock.split('\n');
@@ -14170,8 +14045,7 @@ const TOOL_API_METHODS = {
             iframe.style.pointerEvents = 'none';
 
             iframe.addEventListener('load', () => {
-                // Fallback: if the HTML never posts a status marker, treat
-                // "no error within timeoutMs" as success.
+                // If no status marker is posted, treat no error within timeoutMs as success.
                 settleTimer = setTimeout(() => finish({ ok: true }), timeoutMs);
             }, { once: true });
 
@@ -14188,7 +14062,7 @@ const TOOL_API_METHODS = {
         const hasChoice = typeof html === 'string' && html.includes('data-choice');
         const isInteractive = (opts && opts.autoResolve === false) || (hasChoice && (!opts || !opts.autoResolve));
 
-        // Display artifact: attach directly to tool execution and do not halt or mount extra external elements
+        // Display-only: attach to the tool run without blocking or mounting extra elements.
         if (!isInteractive) {
             for (const [runId, entry] of toolWorkerPending) {
                 if (entry.toolName === toolName && entry.sessionId === (sessionId || state.activeSessionId)) {
@@ -14234,7 +14108,7 @@ const TOOL_API_METHODS = {
                 });
                 req.el = el;
 
-                // CHANGE HERE: Mount inside the tool box body instead of anchor.parentNode
+                // Mount inside the tool box body.
                 const runningBox = document.querySelector('.running-tool-box');
                 const boxBody = runningBox ? runningBox.querySelector('.tool-box-body') : null;
 
@@ -14341,9 +14215,7 @@ function describeToolAction(name, args) {
 
 let toolPreviewCounter = 0;
 
-// Stores a preview_image result as an image attachment so it can be opened in the viewer tab.
-// Named after the file, with a note when it is a cropped region (the tab shows exactly what the
-// model was shown, not the whole source file).
+// Stores a preview_image result as an attachment; cropped regions are labeled as such.
 function registerToolPreviewImage(dataUrl, args) {
     toolPreviewCounter++;
     const base = String((args && args.filepath) || 'image').split('/').pop().split('\\').pop() || 'image';
@@ -14424,14 +14296,9 @@ async function executeTool(name, args, sessionId) {
     }
 }
 
-// Text-only models can't take image parts (many servers reject them with a 400), and the history may
-// still hold images from turns that ran on a vision model. This returns a copy of `msgs` with every
-// image_url part swapped for a short text placeholder. It never mutates stored history, so switching
-// back to a vision model restores the real images.
+// Returns a copy of msgs with image parts replaced by text placeholders for text-only models; stored history is untouched.
 function stripImagesFromMessages(msgs) {
-    // The prompt text written on a vision-model turn says the image is "provided directly above as
-    // visual input" and points at preview_image. Once the image is gone, that sentence would be a
-    // false claim (and preview_image isn't offered), so rewrite it to match what is actually sent.
+    // Rewrite the "image provided above" note so it doesn't claim an image that was stripped.
     const staleClaim = /(\[Image attached: [^\]]*?\.) The full image is provided directly above as visual input;[^\]]*\]/g;
     const rewrite = (text) => typeof text === 'string'
         ? text.replace(staleClaim, '$1 The selected model cannot view images, so the image was NOT sent to it; do not describe or guess its contents.]')
@@ -14595,8 +14462,7 @@ function queuePrompt(sessionId, val, attachedReferences) {
     if (sessionId === state.activeSessionId) renderQueuedPromptBanner();
 }
 
-// Called once a session's generation finishes, so a prompt typed while the agent was
-// still working gets sent automatically for the next turn instead of being lost.
+// Sends a prompt queued during generation once the session finishes.
 function drainQueuedPrompt(sessionId) {
     const queued = state.queuedPrompts[sessionId];
     if (!queued) return;
@@ -14606,8 +14472,7 @@ function drainQueuedPrompt(sessionId) {
 
     const wasActive = state.activeSessionId;
     if (sessionId !== state.activeSessionId) {
-        // Prompt was queued against a background session; switch context to submit
-        // on its behalf, then restore whichever session the user is currently viewing.
+        // The prompt was queued on a background session; switch to it to submit, then restore.
         state.activeSessionId = sessionId;
     }
     const prevVal = input.value;
@@ -14911,9 +14776,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
     const activeTools = getToolsForMode(runMode, !!runModelVision);
     const runModeSession = state.sessions[runSessionId];
 
-    // The system prompt is derived purely from the current mode, so build it
-    // fresh each run. This is effectively free and can never be stale — no
-    // cached prompt to keep in sync, no mode-tracking to maintain.
+    // The system prompt depends only on the mode, so rebuild it each run.
     const currentSystemPrompt = buildDynamicSystemPrompt(runMode);
     if (runModeSession) {
         runModeSession.systemPrompt = currentSystemPrompt;
@@ -14940,7 +14803,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                 runGen.thinkingTimerInterval = null;
             }
 
-            // --- FIX: Reset stream-specific state for each HTTP request iteration ---
+            // Reset per-request stream state.
             let assistantText = "";
             let streamDiv = null;
             let reasoningText = "";
@@ -15196,9 +15059,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                     renderPending = false;
 
                     if (isRunLive()) {
-                        // reasoningText is the accumulator fed by delta.reasoning_content.
-                        // assistantText is the accumulator fed by delta.content.
-                        // They are already clean — no parsing needed.
+                        // reasoningText and assistantText are already-clean accumulators.
 
                         if (reasoningText && !thinkingFinished) {
                             if (!thoughtDiv) {
@@ -15226,8 +15087,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                             if (lastLine) updateSpinnerText(lastLine, runSessionId);
                         }
 
-                        // Once we start receiving visible content, the thinking
-                        // phase is over.
+                        // Visible content means thinking is over.
                         if (assistantText.trim() && thoughtDiv && !thinkingFinished) {
                             stopThinkingTimer(thoughtDiv);
                         }
@@ -15441,12 +15301,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                             toolGroupContainer.classList.remove('collapsed');
                         }
 
-                        // resObj.displayHtml is a generic, opt-in field any tool's handler can
-                        // return alongside "output" (see the worker's runTool / TOOL_META
-                        // contract). It's UI-only rendered markup — deliberately kept separate
-                        // from resStr, which is the only thing that goes back to the model
-                        // below. This lets any HTML-producing tool render rich output in chat
-                        // without that markup ever bloating the model's context.
+                        // displayHtml is opt-in, UI-only markup kept separate from resStr so it never reaches the model's context.
                         safeRenderToolCallBox(call.function.name, args, resStr, shouldExpand, resIsError, toolGroupContainer, runningBox, runSessionId, resObj.displayHtml || null);
                     }
 
@@ -15454,9 +15309,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                         const target = toolGroupContainer ? (toolGroupContainer.querySelector('.tool-group-body') || toolGroupContainer) : term;
                         const thumbEl = document.createElement('div');
                         thumbEl.className = 'tool-preview-image-thumb';
-                        // Register the exact image the model saw (which is a crop when x/y/width/height
-                        // were passed) as a viewable attachment. The data-attachment-id + <img> pair is
-                        // what lets the tab rebuild itself from restored chat HTML after a reload.
+                        // Register the exact image the model saw; the id + <img> pair lets the tab rebuild after a reload.
                         const previewAtt = registerToolPreviewImage(resObj.__imageDataUrl, args);
                         thumbEl.setAttribute('data-attachment-id', previewAtt.attachmentId);
                         thumbEl.title = `Click to open in a tab: ${previewAtt.name}`;
@@ -15623,7 +15476,7 @@ document.getElementById('about-modal-overlay').addEventListener('click', (e) => 
     }
 });
 
-// --- New Tool modal (name entry + .js import / GitHub browse) ---
+// New Tool modal (blank / import / GitHub browse)
 const newToolModalOverlay = document.getElementById('newtool-modal-overlay');
 const newToolNameInput = document.getElementById('newtool-name-input');
 const newToolDropzone = document.getElementById('newtool-dropzone');
@@ -15682,10 +15535,9 @@ async function handler(args, api) {
 let newToolDroppedSource = null; // raw text content of the dropped/picked .js file
 let newToolNameAutoFilled = false; // whether the name field was auto-filled from a file (vs typed by the user)
 
-// (The Blank pane no longer uses a name field; the name is inferred from the source
-//  via deriveToolNameFromFile / TOOL_META.name at creation time.)
+// The Blank pane infers the tool name from TOOL_META.name at creation.
 
-// --- Browse GitHub tab (custom_tools directory) ---
+// Browse GitHub tab
 const GITHUB_TOOLS_REPO = 'fredconex/Ion-tools';   // owner/repo
 const GITHUB_TOOLS_BRANCH = 'main';          // branch to browse
 const GITHUB_TOOLS_PATH = '';    // directory containing .js tools
@@ -15735,7 +15587,7 @@ async function loadGithubToolsList(forceRefresh) {
 }
 
 function isGithubEntryInstalled(entry) {
-    // Prefer accurate check via parsed TOOL_META.name if fetched; else fall back to matching by on-disk file name.
+    // Prefer the parsed TOOL_META.name; otherwise match by file name.
     if (entry._source) {
         const name = deriveToolNameFromFile(entry.name, entry._source);
         return !!toolRegistry[name];
@@ -15876,8 +15728,7 @@ function newToolClearFile() {
 }
 
 function newToolUpdateCreateLabel() {
-    // Create only applies to the Blank pane. Browse installs per-row, and an
-    // uploaded/dropped file installs via its own Install button.
+    // Create is for the Blank pane; Browse installs per row and imports use the Install button.
     newToolCreateBtn.style.display = newToolActivePane === 'blank' ? '' : 'none';
     newToolInstallBtn.style.display = newToolDroppedSource ? '' : 'none';
 }
@@ -15892,9 +15743,6 @@ function setNewToolPane(pane) {
     newToolSourceTabs.forEach(tab => tab.classList.toggle('active', tab.dataset.pane === pane));
     newToolPanes.forEach(p => p.classList.toggle('active', p.dataset.pane === pane));
     newToolShowError('');
-    // Footer Create button only drives the Blank and Import-file flows;
-    // Browse GitHub installs directly from each row, and an uploaded/dropped
-    // file installs via its own Install button instead of Create.
     newToolUpdateCreateLabel();
     if (pane === 'blank') {
         setTimeout(() => newToolSourceEditor.focus(), 0);
