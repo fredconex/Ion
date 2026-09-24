@@ -714,7 +714,7 @@
             color: var(--fg); padding: 5px 8px; border-radius: 6px;
             font-family: var(--font-mono); font-size: 11.5px; outline: none;
         }
-        .mm-model-row .mm-model-name-wrap { position: relative; flex: 2; min-width: 0; display: flex; }
+        .mm-model-row .mm-model-name-wrap { position: relative; flex: 2 1 0; min-width: 0; display: flex; }
         .mm-model-row .mm-model-name { flex: 1; min-width: 0; padding-right: 26px; }
         .mm-model-search-btn {
             position: absolute; right: 3px; top: 50%; transform: translateY(-50%);
@@ -723,8 +723,31 @@
         }
         .mm-model-search-btn:hover { color: var(--cyan); background: rgba(86,182,194,0.12); }
         .mm-model-search-btn .icon { font-size: 14px; }
-        .mm-model-row .mm-model-ctx { flex: 1; min-width: 0; }
+        .mm-model-row .mm-model-ctx { flex: 1 1 0; min-width: 0; width: 0; }
         .mm-model-row .mm-model-ctx::placeholder { color: var(--dim); }
+        .mm-model-vision-btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+            flex: 0 0 62px; width: 62px; box-sizing: border-box; overflow: hidden; white-space: nowrap;
+            background: transparent; border: 1px solid var(--border);
+            color: var(--dim); padding: 4px 0; border-radius: 6px;
+            font-family: inherit; font-size: 10.5px; cursor: pointer;
+            transition: all 0.12s ease; user-select: none;
+        }
+        .mm-model-vision-btn .icon { font-size: 14px; flex: 0 0 auto; width: 14px; overflow: hidden; }
+        .mm-model-vision-btn:hover { color: var(--fg); border-color: var(--border-highlight); }
+        .mm-model-vision-btn.on {
+            color: var(--green); border-color: rgba(152,195,121,0.45);
+            background: rgba(152,195,121,0.10);
+        }
+        .mm-model-vision-btn.on:hover { border-color: var(--green); }
+        .mm-models-cols {
+            display: flex; align-items: center; gap: 6px; padding: 0 0 2px;
+            font-size: 9.5px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.3px;
+        }
+        .mm-models-cols .c-name { flex: 2 1 0; min-width: 0; }
+        .mm-models-cols .c-ctx { flex: 1 1 0; min-width: 0; padding: 0 9px; /* = the ctx input's 8px padding + 1px border, so the 2:1 split matches the rows */ }
+        .mm-models-cols .c-vision { flex: 0 0 62px; width: 62px; }
+        .mm-models-cols .c-rm { flex: 0 0 23px; width: 23px; }
         .mm-add-model-btn {
             display: inline-flex; align-items: center; gap: 4px;
             background: transparent; border: 1px dashed var(--border-highlight);
@@ -738,7 +761,8 @@
         }
         .mm-model-remove-btn {
             background: transparent; border: none; color: var(--dim);
-            cursor: pointer; padding: 4px; border-radius: 4px; display: flex; flex-shrink: 0;
+            cursor: pointer; padding: 4px; border-radius: 4px; display: flex; flex: 0 0 23px; width: 23px;
+            box-sizing: border-box; overflow: hidden; justify-content: center;
         }
         .mm-model-remove-btn:hover { color: var(--red); background: rgba(224,108,117,0.15); }
         .mm-model-remove-btn .icon { font-size: 15px; }
@@ -1051,6 +1075,9 @@
         .ct-icon-btn.lock-btn.locked { color: var(--yellow, #e0af68); }
         .ct-icon-btn.lock-btn.locked:hover { color: var(--yellow, #e0af68); background: rgba(224,175,104,0.15); }
         .ct-item-badge.builtin { background: rgba(158,206,106,0.15); color: var(--green, #9ece6a); }
+        .ct-item-badge.vision { background: rgba(152,195,121,0.15); color: var(--green, #98c379); }
+        .ct-item-badge.vision.inactive { background: rgba(115,119,145,0.15); color: var(--dim); }
+        .ct-item-badge .icon { font-size: 10px; vertical-align: -1px; margin-right: 2px; }
         .ct-item-badge.broken { background: rgba(224,108,117,0.15); color: var(--red, #e06c75); }
         .ct-empty-note { font-size: 10.5px; color: var(--dim); padding: 4px 0 8px; }
         .ct-item-wrap { display: flex; flex-direction: column; border-bottom: 1px solid rgba(255, 255, 255, 0.03); }
@@ -1849,7 +1876,10 @@
             max-width: 80%; max-height: 60%; border-radius: 8px;
             border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
             transform-origin: center center; transition: transform 0.1s ease;
+            cursor: grab; user-select: none; -webkit-user-drag: none; touch-action: none;
         }
+        #editor-image-preview.panning { cursor: grabbing; transition: none; }
+        #editor-binary-notice { overflow: hidden; }
         #image-zoom-bar {
             display: none; align-items: center; gap: 4px;
             position: absolute; top: 10px; right: 10px; z-index: 2;
@@ -2071,6 +2101,7 @@
             color: var(--dim); font-size: 8px; flex-shrink: 1; min-width: 0;
         }
         #model-select-btn .msb-caret { color: var(--dim); font-size: 14px; flex-shrink: 0; margin-left: 2px; }
+        .msd-vision-icon { font-size: 13px; color: var(--green); vertical-align: -2px; margin-left: 4px; opacity: 0.85; }
         #model-select-overlay {
             display: none; position: fixed; inset: 0; z-index: 1200;
         }
@@ -2164,6 +2195,8 @@
             color: var(--yellow); background: rgba(229, 192, 123, 0.1);
             border-color: rgba(229, 192, 123, 0.28); cursor: pointer;
         }
+        .tool-preview-image-thumb { display: inline-block; cursor: zoom-in; }
+        .tool-preview-image-thumb img { transition: border-color 0.12s ease, box-shadow 0.12s ease; }
         .chat-attachment-image {
             display: inline-flex; border-radius: 8px; overflow: hidden;
             border: 1px solid var(--border); cursor: zoom-in;
@@ -3650,10 +3683,12 @@ function buildToolFileSource(meta, handlerBody) {
         permission: ['never', 'ask', 'always'].includes(meta.permission) ? meta.permission : 'ask',
         toolBox: Number(meta.toolBox) === 0 ? 0 : 1,
         settings: Array.isArray(meta.settings) ? meta.settings : undefined,
-        interactive: meta.interactive ? true : undefined
+        interactive: meta.interactive ? true : undefined,
+        require_vision: meta.require_vision ? true : undefined
     };
     if (metaObj.settings === undefined) delete metaObj.settings;
     if (metaObj.interactive === undefined) delete metaObj.interactive;
+    if (metaObj.require_vision === undefined) delete metaObj.require_vision;
     const metaJson = JSON.stringify(metaObj, null, 4).replace(/\n/g, '\n');
     return `// ${meta.name} - tool definition.
 const TOOL_META = ${metaJson};
@@ -3829,7 +3864,8 @@ function seedBuiltinToolSources() {
                 required: ["filepath"]
             },
             modes: ['plan', 'ask', 'code'],
-            permission: 'always'
+            permission: 'always',
+            require_vision: true
         }, `
     return "ERROR: preview_image should be handled natively; this stub should not run.";
 `),
@@ -3882,7 +3918,7 @@ function forgetPersistedToolFile(name) {
 }
 
 function toolMetaError(name, msg) {
-    return { name, description: '', parameters: { type: "object", properties: {} }, modes: [], permission: 'never', toolBox: 1, code: '', locked: true, builtin: false, error: msg, settings: [], settingsValues: {} };
+    return { name, description: '', parameters: { type: "object", properties: {} }, modes: [], permission: 'never', toolBox: 1, code: '', locked: true, builtin: false, error: msg, settings: [], settingsValues: {}, require_vision: false };
 }
 
 function rebuildToolRegistryFromFiles() {
@@ -3925,6 +3961,7 @@ function rebuildToolRegistryFromFiles() {
             toolBox: Number(meta.toolBox) === 0 ? 0 : 1,
             expanded: !!meta.expanded,
             interactive: !!meta.interactive,
+            require_vision: !!meta.require_vision,
             settings: settingsDefs,
             settingsValues,
             code: extractHandlerBody(source),
@@ -3965,6 +4002,28 @@ function getAllTools() {
     return Object.values(toolRegistry);
 }
 
+// One-time, non-destructive upgrade for installs that persisted an older built-in tool file.
+// Tool sources live in localStorage and win over the seeded ones, so `preview_image` saved before
+// the vision feature existed has no `require_vision` and would still be offered to text-only
+// models. If (and only if) that key is absent from its TOOL_META, add `require_vision: true`
+// in place, leaving any user edits to the rest of the file untouched. An explicit
+// `require_vision: false` is respected.
+function migrateBuiltinToolVisionFlag(persisted) {
+    const name = 'preview_image';
+    if (wasToolEverDeleted(name)) return;
+    const fp = toolFilePath(name);
+    const src = registry.files[fp];
+    if (typeof src !== 'string') return;
+    const m = src.match(/(?:const|let|var)\s+TOOL_META\s*=\s*\{/);
+    if (!m) return;
+    const meta = parseToolMeta(src);
+    if (!meta || Object.prototype.hasOwnProperty.call(meta, 'require_vision')) return;
+    const insertAt = m.index + m[0].length;
+    const migrated = src.slice(0, insertAt) + '\n    "require_vision": true,' + src.slice(insertAt);
+    registry.files[fp] = migrated;
+    persistToolFile(name, migrated);
+}
+
 function registerToolsVirtualFiles() {
     registry.meta[CUSTOM_TOOLS_DIR] = { kind: 'directory' };
     registry.meta[TOOLS_DIR] = { kind: 'directory' };
@@ -3976,6 +4035,8 @@ function registerToolsVirtualFiles() {
         if (wasToolEverDeleted(name)) return;
         registry.files[toolFilePath(name)] = persisted[name];
     });
+
+    migrateBuiltinToolVisionFlag(persisted);
 
     BUILTIN_TOOL_NAMES.forEach(name => {
         const fp = toolFilePath(name);
@@ -4805,7 +4866,9 @@ function seedDefaultModels() {
     // and a list of selectable `models`. A model is just its `name` (also
     // used directly as the API model id sent to the endpoint) plus its own
     // `context_window`, since context length varies per-model even within
-    // one provider.
+    // one provider. `vision: true` marks models that accept image input; a
+    // missing/false value means text-only (tools with `require_vision` are
+    // withheld and image attachments are disabled for that model).
     return [
         {
             provider: "Llama.cpp (local:8080)",
@@ -4836,7 +4899,7 @@ function seedDefaultModels() {
             url: "https://openrouter.ai/api/v1",
             key: "",
             models: [
-                { name: "anthropic/claude-3.5-sonnet", context_window: 200000 },
+                { name: "anthropic/claude-3.5-sonnet", context_window: 200000, vision: true },
                 { name: "openrouter/free", context_window: 128000 }
             ]
         },
@@ -4845,7 +4908,7 @@ function seedDefaultModels() {
             url: "https://api.openai.com/v1",
             key: "",
             models: [
-                { name: "gpt-4o", context_window: 128000 }
+                { name: "gpt-4o", context_window: 128000, vision: true }
             ]
         },
         {
@@ -4915,7 +4978,7 @@ function saveModels() {
     registerModelsVirtualFile();
 }
 
-// Providers must be an array of { provider, url, models: [{name, context_window}] }; anything else is rejected so callers fall back to defaults.
+// Providers must be an array of { provider, url, models: [{name, context_window, vision?}] }; anything else is rejected so callers fall back to defaults.
 function isValidProvidersShape(data) {
     return Array.isArray(data) && data.every(p =>
         p && typeof p === 'object' &&
@@ -4923,6 +4986,15 @@ function isValidProvidersShape(data) {
         Array.isArray(p.models) &&
         p.models.every(m => m && typeof m === 'object' && typeof m.name === 'string')
     );
+}
+
+// A model's `vision` flag is strictly opt-in: only a real `true` (or the strings "true"/"1",
+// which people tend to type when hand-editing models.json) enables it. Anything else - missing,
+// false, null, garbage - means text-only, so an unknown model is never sent images it can't take.
+function normalizeVisionFlag(v) {
+    if (v === true) return true;
+    if (typeof v === 'string') return ['true', '1', 'yes'].includes(v.trim().toLowerCase());
+    return false;
 }
 
 // Flatten providers -> selectable model entries, each carrying its provider + model config; keyed by (providerName, modelName) since a model's `name` IS its API id.
@@ -4938,7 +5010,8 @@ function getAllModelEntries() {
                 displayName: shortenModelName(rawName),
                 url: p.url || '',
                 key: p.key || '',
-                contextWindow: Number(m.context_window) > 0 ? Number(m.context_window) : DEFAULT_CONTEXT_WINDOW
+                contextWindow: Number(m.context_window) > 0 ? Number(m.context_window) : DEFAULT_CONTEXT_WINDOW,
+                vision: normalizeVisionFlag(m.vision)
             });
         });
     });
@@ -4978,14 +5051,43 @@ function renderModelDropdown() {
     nameEl.textContent = entry ? (entry.displayName || shortenModelName(entry.name)) : 'No model';
     providerEl.textContent = entry ? entry.providerName : '';
     if (_modelSelectState.visible) renderModelSelectList();
+    applyVisionCapabilityToUI();
 }
 
 function getCurrentModelInfo() {
     const sel = getSelectedModelKey();
     const entry = sel && findModelEntry(sel.providerName, sel.modelName);
     return entry
-        ? { url: entry.url, model: entry.name, key: entry.key, contextWindow: entry.contextWindow }
-        : { url: '', model: '', key: '', contextWindow: DEFAULT_CONTEXT_WINDOW };
+        ? { url: entry.url, model: entry.name, key: entry.key, contextWindow: entry.contextWindow, vision: entry.vision }
+        : { url: '', model: '', key: '', contextWindow: DEFAULT_CONTEXT_WINDOW, vision: false };
+}
+
+// True when the currently selected model is configured with vision (image input) support.
+function currentModelHasVision() {
+    return !!getCurrentModelInfo().vision;
+}
+
+// Keeps everything that depends on the selected model's vision capability in sync: the attach
+// menu's "Images" entry, any image chips already staged in the prompt, and the tool list badges.
+// Call after any change to the selected model or to models.json.
+function applyVisionCapabilityToUI() {
+    const hasVision = currentModelHasVision();
+
+    const imageItem = document.querySelector('#attach-menu .attach-menu-item[data-attach-type="image"]');
+    if (imageItem) imageItem.style.display = hasVision ? '' : 'none';
+
+    if (!hasVision && Array.isArray(state.attachedReferences)) {
+        const before = state.attachedReferences.length;
+        state.attachedReferences = state.attachedReferences.filter(ref => ref.type !== 'image');
+        const dropped = before - state.attachedReferences.length;
+        if (dropped > 0) {
+            renderAttachmentChips();
+            showToast(`Removed ${dropped} image attachment${dropped === 1 ? '' : 's'}: the selected model does not support vision`, 'info');
+        }
+    }
+
+    // Only re-render the tool list once its container exists (it doesn't during early startup).
+    if (document.getElementById('tools-list')) renderToolsList();
 }
 
 const _modelsEndpointCache = {};
@@ -7642,35 +7744,93 @@ const imgZoomIn = document.getElementById('img-zoom-in');
 const imgZoomOut = document.getElementById('img-zoom-out');
 
 const IMG_ZOOM_MIN = 0.2;
-const IMG_ZOOM_MAX = 4;
+const IMG_ZOOM_MAX = 8;
 const IMG_ZOOM_STEP_PCT = 20;
 let imgZoom = 1;
+let imgPanX = 0;
+let imgPanY = 0;
 
-function setImgZoom(z, animate) {
-    imgZoom = Math.max(IMG_ZOOM_MIN, Math.min(IMG_ZOOM_MAX, z));
-    if (animate) editorImagePreview.style.transition = 'transform 0.1s ease';
-    editorImagePreview.style.transform = `scale(${imgZoom})`;
+function applyImgTransform(animate) {
+    editorImagePreview.style.transition = animate ? 'transform 0.1s ease' : 'none';
+    editorImagePreview.style.transform = `translate(${imgPanX}px, ${imgPanY}px) scale(${imgZoom})`;
     imgScaleLabel.textContent = Math.round(imgZoom * 100) + '%';
+}
+
+// Zooms to `z`. When (cx, cy) is given (offsets from the image's un-transformed centre, in px)
+// the point under that position stays fixed on screen, so wheel-zoom goes toward the cursor.
+function setImgZoom(z, animate, cx = 0, cy = 0) {
+    const next = Math.max(IMG_ZOOM_MIN, Math.min(IMG_ZOOM_MAX, z));
+    const ratio = next / imgZoom;
+    imgPanX = cx - (cx - imgPanX) * ratio;
+    imgPanY = cy - (cy - imgPanY) * ratio;
+    imgZoom = next;
+    applyImgTransform(animate);
+}
+
+function resetImgView(animate) {
+    imgZoom = 1; imgPanX = 0; imgPanY = 0;
+    applyImgTransform(animate);
 }
 
 function showImgZoomBar(show) {
     imageZoomBar.style.display = show ? 'flex' : 'none';
-    if (show) setImgZoom(1, false);
+    if (show) resetImgView(false);
 }
 
-function imgZoomBy(delta) {
-    setImgZoom(imgZoom + (delta > 0 ? IMG_ZOOM_STEP_PCT / 100 : -IMG_ZOOM_STEP_PCT / 100), true);
+function imgZoomBy(delta, cx = 0, cy = 0) {
+    setImgZoom(imgZoom + (delta > 0 ? IMG_ZOOM_STEP_PCT / 100 : -IMG_ZOOM_STEP_PCT / 100), true, cx, cy);
+}
+
+// Offset of a client-space point from the centre of the image's untransformed box. The transform
+// origin is the centre, so this is the coordinate space setImgZoom's pan compensation works in.
+function imgOffsetFromCentre(clientX, clientY) {
+    const r = editorImagePreview.getBoundingClientRect();
+    // getBoundingClientRect reflects the current transform; its centre = untransformed centre + pan.
+    const cxScreen = r.left + r.width / 2;
+    const cyScreen = r.top + r.height / 2;
+    return { x: clientX - (cxScreen - imgPanX), y: clientY - (cyScreen - imgPanY) };
 }
 
 imgZoomIn.addEventListener('click', () => imgZoomBy(1));
 imgZoomOut.addEventListener('click', () => imgZoomBy(-1));
-imgScaleLabel.addEventListener('click', () => setImgZoom(1, true));
+imgScaleLabel.addEventListener('click', () => resetImgView(true));
+imgScaleLabel.title = 'Click to reset zoom and position (or double-click the image)';
 
 editorBinaryNotice.addEventListener('wheel', (e) => {
     if (editorImagePreview.style.display === 'none') return;
     e.preventDefault();
-    imgZoomBy(e.deltaY < 0 ? 1 : -1);
+    const o = imgOffsetFromCentre(e.clientX, e.clientY);
+    imgZoomBy(e.deltaY < 0 ? 1 : -1, o.x, o.y);
 }, { passive: false });
+
+// Drag to pan. Pointer events + capture, so the drag keeps tracking when the cursor leaves the
+// image (which is small when zoomed out), and it works for mouse, pen and touch alike.
+(function wireImgPan() {
+    let drag = null;
+    editorImagePreview.addEventListener('pointerdown', (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+        drag = { id: e.pointerId, startX: e.clientX, startY: e.clientY, panX: imgPanX, panY: imgPanY };
+        editorImagePreview.classList.add('panning');
+        try { editorImagePreview.setPointerCapture(e.pointerId); } catch (_) {}
+        e.preventDefault();
+    });
+    editorImagePreview.addEventListener('pointermove', (e) => {
+        if (!drag || e.pointerId !== drag.id) return;
+        imgPanX = drag.panX + (e.clientX - drag.startX);
+        imgPanY = drag.panY + (e.clientY - drag.startY);
+        applyImgTransform(false);
+    });
+    const end = (e) => {
+        if (!drag || (e && e.pointerId !== drag.id)) return;
+        try { editorImagePreview.releasePointerCapture(drag.id); } catch (_) {}
+        drag = null;
+        editorImagePreview.classList.remove('panning');
+    };
+    editorImagePreview.addEventListener('pointerup', end);
+    editorImagePreview.addEventListener('pointercancel', end);
+    editorImagePreview.addEventListener('lostpointercapture', () => end());
+    editorImagePreview.addEventListener('dblclick', () => resetImgView(true));
+})();
 const attachmentTextPreview = document.getElementById('attachment-text-preview');
 const htmlPreviewFrame = document.getElementById('html-preview-frame');
 
@@ -7924,6 +8084,8 @@ async function switchTab(tabId) {
             editorBinaryMsg.innerText = att.name;
         } else {
             editorBinaryNotice.style.display = 'none';
+            editorImagePreview.style.display = 'none';
+            showImgZoomBar(false);
             attachmentTextPreview.style.display = 'block';
             attachmentTextPreview.textContent = att.content;
         }
@@ -8314,6 +8476,10 @@ async function handleAttachFile(file) {
     const isText = file.type && file.type.startsWith('text/') || ['txt','md','json','js','html','css','csv','log','py','rs','java','go','sh','yml','yaml','xml','ts','tsx','jsx','ini','toml','srt','vtt'].includes(ext);
     try {
         if (isImage) {
+            if (!currentModelHasVision()) {
+                showToast(`Cannot attach ${file.name || 'image'}: the selected model does not support vision`, 'error');
+                return;
+            }
             const dataUrl = await toPngDataUrl(file);
             pastedImageCounter++;
             attachReference({
@@ -8375,8 +8541,16 @@ async function handleAttachFile(file) {
         item.addEventListener('click', (e) => {
             e.stopPropagation();
             const type = item.getAttribute('data-attach-type');
-            if (type === 'image') attachInput.click();
-            else attachDocInput.click();
+            if (type === 'image') {
+                if (!currentModelHasVision()) {
+                    showToast('The selected model does not support vision', 'error');
+                    closeMenu();
+                    return;
+                }
+                attachInput.click();
+            } else {
+                attachDocInput.click();
+            }
             closeMenu();
         });
     });
@@ -9207,6 +9381,10 @@ input.addEventListener('paste', async (e) => {
     const imageItem = Array.from(items).find(it => it.type && it.type.startsWith('image/'));
     if (imageItem) {
         e.preventDefault();
+        if (!currentModelHasVision()) {
+            showToast('Cannot paste image: the selected model does not support vision', 'error');
+            return;
+        }
         const file = imageItem.getAsFile();
         if (!file) return;
         try {
@@ -9399,7 +9577,7 @@ function focusPrompt() {
 }
 
 term.addEventListener('click', (e) => {
-    const attachedImg = e.target.closest('.chat-attachment-image[data-attachment-id]');
+    const attachedImg = e.target.closest('.chat-attachment-image[data-attachment-id], .tool-preview-image-thumb[data-attachment-id]');
     if (attachedImg) {
         window.openAttachmentTab(attachedImg.getAttribute('data-attachment-id'));
         return;
@@ -9529,7 +9707,7 @@ function renderModelSelectList() {
         if (isCurrent) classes.push('current');
         const displayName = e.displayName || e.name;
         return `<div class="${classes.join(' ')}" data-idx="${i}" data-provider-name="${escapeHTML(e.providerName)}" data-model-name="${escapeHTML(e.name)}" title="${escapeHTML(e.name)} — ${escapeHTML(e.providerName)}">
-            <span class="msd-item-name">${escapeHTML(displayName)}${isCurrent ? ' ✓' : ''}</span>
+            <span class="msd-item-name">${escapeHTML(displayName)}${isCurrent ? ' ✓' : ''}${e.vision ? ' <span class="icon msd-vision-icon" title="Supports vision (image input)">visibility</span>' : ''}</span>
             <span class="msd-item-provider">${escapeHTML(e.providerName)}</span>
         </div>`;
     }).join('');
@@ -9583,7 +9761,7 @@ function commitModelsChange() {
 }
 
 function mmNewProvider() {
-    return { provider: 'New Provider', url: '', key: '', models: [{ name: '', context_window: DEFAULT_CONTEXT_WINDOW }] };
+    return { provider: 'New Provider', url: '', key: '', models: [{ name: '', context_window: DEFAULT_CONTEXT_WINDOW, vision: false }] };
 }
 
 // Renders both panes; focusField optionally names an input to focus/select in the detail pane after render.
@@ -9628,6 +9806,9 @@ function renderModelsModal(focusField) {
                 </button>
             </div>
             <input type="text" class="mm-model-ctx" data-field="context_window" placeholder="context window" value="${m.context_window != null ? escapeHTML(String(m.context_window)) : ''}" />
+            <button type="button" class="mm-model-vision-btn${normalizeVisionFlag(m.vision) ? ' on' : ''}" aria-pressed="${normalizeVisionFlag(m.vision)}" title="${normalizeVisionFlag(m.vision) ? 'Vision enabled: this model can receive images. Click to disable.' : 'Vision disabled: image attachments and vision-only tools are unavailable. Click to enable.'}">
+                <span class="icon">${normalizeVisionFlag(m.vision) ? 'visibility' : 'visibility_off'}</span><span>Vision</span>
+            </button>
             <button type="button" class="mm-model-remove-btn" title="Remove model">
                 <span class="icon">close</span>
             </button>
@@ -9652,6 +9833,7 @@ function renderModelsModal(focusField) {
             </div>
         </div>
         <div class="mm-models-label">Models</div>
+        ${(p.models || []).length ? `<div class="mm-models-cols"><span class="c-name">Model id</span><span class="c-ctx">Context</span><span class="c-vision">Vision</span><span class="c-rm"></span></div>` : ''}
         ${modelRows || '<div class="mm-empty" style="padding:8px 0;">No models yet</div>'}
         <button type="button" class="mm-add-model-btn"><span class="icon">add</span><span>Add Model</span></button>
     `;
@@ -9714,6 +9896,17 @@ function wireModelsDetailEvents() {
         });
     });
 
+    // Toggle vision capability for a model
+    mmDetailEl.querySelectorAll('.mm-model-vision-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const mi = Number(btn.closest('.mm-model-row').getAttribute('data-mi'));
+            const model = MODEL_PROVIDERS[pi].models[mi];
+            model.vision = !normalizeVisionFlag(model.vision);
+            commitModelsChange();
+            renderModelsModal();
+        });
+    });
+
     // Remove a single model
     mmDetailEl.querySelectorAll('.mm-model-remove-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -9749,7 +9942,7 @@ function wireModelsDetailEvents() {
         addModelBtn.addEventListener('click', () => {
             MODEL_PROVIDERS[pi].models = MODEL_PROVIDERS[pi].models || [];
             const newIdx = MODEL_PROVIDERS[pi].models.length;
-            MODEL_PROVIDERS[pi].models.push({ name: '', context_window: DEFAULT_CONTEXT_WINDOW });
+            MODEL_PROVIDERS[pi].models.push({ name: '', context_window: DEFAULT_CONTEXT_WINDOW, vision: false });
             commitModelsChange();
             renderModelsModal(`.mm-model-row[data-mi="${newIdx}"] .mm-model-name`);
         });
@@ -10416,6 +10609,9 @@ function buildToolRow(tool) {
     let badge = '';
     if (tool.error) {
         badge = `<span class="ct-item-badge broken" title="${escapeHTML(tool.error)}">broken</span>`;
+    } else if (tool.require_vision) {
+        const visionOk = currentModelHasVision();
+        badge = `<span class="ct-item-badge vision${visionOk ? '' : ' inactive'}" title="${visionOk ? 'Requires a vision-capable model (the selected model supports vision)' : 'Requires a vision-capable model - unavailable while the selected model has no vision'}"><span class="icon">${visionOk ? 'visibility' : 'visibility_off'}</span>vision</span>`;
     }
 
     const modesLabel = (tool.modes || []).map(m => MODE_LABELS[m] || m).join(', ') || 'no modes';
@@ -13351,7 +13547,7 @@ async function writeDisk(filePath, content, opts) {
             MODEL_PROVIDERS = parsed;
         } catch(e) {
             print(`<span class="red">[models] Invalid JSON, not saved: ${escapeHTML(e.message)}</span>`);
-            return { output: `ERROR: ${MODELS_FILE} must be an array of providers, each with {provider, url, models: [{name, model, context_window}]}. ${e.message}` };
+            return { output: `ERROR: ${MODELS_FILE} must be an array of providers, each with {provider, url, models: [{name, context_window, vision}]}. ${e.message}` };
         }
         saveModels();
         registerModelsVirtualFile();
@@ -13594,9 +13790,15 @@ function validateToolArgs(name, args, rawArgsStr, parseError) {
     return { valid: errors.length === 0, errors };
 }
 
-function getToolsForMode(mode) {
+// A tool that declares `require_vision` in its TOOL_META is only usable when the selected model
+// supports vision; `hasVision` defaults to the currently selected model.
+function isToolAvailableForVision(tool, hasVision = currentModelHasVision()) {
+    return !tool.require_vision || !!hasVision;
+}
+
+function getToolsForMode(mode, hasVision = currentModelHasVision()) {
     return getAllTools()
-        .filter(t => !t.error && t.permission !== 'never' && (t.modes || []).includes(mode))
+        .filter(t => !t.error && t.permission !== 'never' && (t.modes || []).includes(mode) && isToolAvailableForVision(t, hasVision))
         .map(t => ({
             type: "function",
             function: {
@@ -14137,6 +14339,27 @@ function describeToolAction(name, args) {
     }
 }
 
+let toolPreviewCounter = 0;
+
+// Stores a preview_image result as an image attachment so it can be opened in the viewer tab.
+// Named after the file, with a note when it is a cropped region (the tab shows exactly what the
+// model was shown, not the whole source file).
+function registerToolPreviewImage(dataUrl, args) {
+    toolPreviewCounter++;
+    const base = String((args && args.filepath) || 'image').split('/').pop().split('\\').pop() || 'image';
+    const isCrop = args && ['x', 'y', 'width', 'height'].some(k => args[k] !== undefined && args[k] !== null);
+    const att = {
+        type: 'image',
+        name: isCrop ? `${base} (region)` : base,
+        dataUrl,
+        mimeType: 'image/png',
+        attachmentId: `prev_${Date.now().toString(36)}_${toolPreviewCounter}`,
+        fromTool: 'preview_image'
+    };
+    state.attachmentStore[att.attachmentId] = att;
+    return att;
+}
+
 async function executePreviewImage(args) {
     const fp = args.filepath;
     if (!fp) return { output: 'ERROR: filepath is required.' };
@@ -14179,6 +14402,12 @@ async function executeTool(name, args, sessionId) {
     if (!tool) return { output: `ERROR: Unknown tool ${name}` };
     if (tool.error) return { output: `ERROR: Tool "${name}" is broken: ${tool.error}` };
 
+    // Defense in depth: such tools aren't offered to text-only models, but a model can still
+    // hallucinate a call (or the model may have been switched while a call was in flight).
+    if (!isToolAvailableForVision(tool)) {
+        return { output: `ERROR: Tool "${name}" requires a vision-capable model, but the selected model does not support vision.` };
+    }
+
     const perm = await checkPermission(name, describeToolAction(name, args), sessionId);
     if (!perm.allowed) return { output: `ERROR: ${perm.error}` };
 
@@ -14193,6 +14422,35 @@ async function executeTool(name, args, sessionId) {
     } catch(e) {
         return { output: `ERROR: Tool "${name}" failed: ${e.message}` };
     }
+}
+
+// Text-only models can't take image parts (many servers reject them with a 400), and the history may
+// still hold images from turns that ran on a vision model. This returns a copy of `msgs` with every
+// image_url part swapped for a short text placeholder. It never mutates stored history, so switching
+// back to a vision model restores the real images.
+function stripImagesFromMessages(msgs) {
+    // The prompt text written on a vision-model turn says the image is "provided directly above as
+    // visual input" and points at preview_image. Once the image is gone, that sentence would be a
+    // false claim (and preview_image isn't offered), so rewrite it to match what is actually sent.
+    const staleClaim = /(\[Image attached: [^\]]*?\.) The full image is provided directly above as visual input;[^\]]*\]/g;
+    const rewrite = (text) => typeof text === 'string'
+        ? text.replace(staleClaim, '$1 The selected model cannot view images, so the image was NOT sent to it; do not describe or guess its contents.]')
+        : text;
+    return msgs.map(m => {
+        if (!m) return m;
+        if (typeof m.content === 'string') {
+            const r = rewrite(m.content);
+            return r === m.content ? m : { ...m, content: r };
+        }
+        if (!Array.isArray(m.content)) return m;
+        if (!m.content.some(part => part && part.type === 'image_url')) return m;
+        const parts = m.content.map(part => (part && part.type === 'image_url')
+            ? { type: 'text', text: '[image omitted: the selected model does not support vision]' }
+            : (part && part.type === 'text' ? { ...part, text: rewrite(part.text) } : part));
+        // Collapse to a plain string when only text remains: the most widely compatible shape.
+        const text = parts.map(part => (part && part.type === 'text') ? part.text : '').filter(Boolean).join('\n');
+        return { ...m, content: text };
+    });
 }
 
 function sanitizeMessages(msgs) {
@@ -14542,7 +14800,11 @@ async function submitPrompt() {
                     `;
                 } else if (ref.type === 'image') {
                     const attPath = materializeAttachment(ref);
-                    fullPromptForLLM += `[Image attached: ${attPath}. The full image is provided directly above as visual input; use the preview_image tool with x/y/width/height on this path to zoom into a specific region if needed.]\n\n`;
+                    if (currentModelHasVision()) {
+                        fullPromptForLLM += `[Image attached: ${attPath}. The full image is provided directly above as visual input; use the preview_image tool with x/y/width/height on this path to zoom into a specific region if needed.]\n\n`;
+                    } else {
+                        fullPromptForLLM += `[Image attached: ${attPath}. The selected model cannot view images, so the image was NOT sent to it; do not describe or guess its contents.]\n\n`;
+                    }
                     chatAttachmentsHTML += `
                         <div class="chat-attachment-image" title="Click to preview: ${escapeHTML(ref.name)}" data-attachment-id="${ref.attachmentId}">
                             <img src="${ref.dataUrl}" alt="${escapeHTML(ref.name)}">
@@ -14572,9 +14834,9 @@ async function submitPrompt() {
             fullPromptForLLM = val;
         }
 
-        const attachedImageUrls = state.attachedReferences
-            .filter(ref => ref.type === 'image')
-            .map(ref => ref.dataUrl);
+        const attachedImageUrls = currentModelHasVision()
+            ? state.attachedReferences.filter(ref => ref.type === 'image').map(ref => ref.dataUrl)
+            : [];
 
         const modeCfg = MODE_CONFIG[state.mode];
         const modeBadgeHTML = `
@@ -14608,7 +14870,7 @@ async function submitPrompt() {
 
 async function runTask(task, blameId, imageUrls, sessionId) {
     const runSessionId = sessionId || state.activeSessionId;
-    const { url: apiUrl, model, key: apiKey } = getCurrentModelInfo();
+    const { url: apiUrl, model, key: apiKey, vision: runModelVision } = getCurrentModelInfo();
     const runCtx = sessionCtx(runSessionId);
     const runGen = getGenState(runSessionId);
     const isRunLive = () => runSessionId === state.activeSessionId;
@@ -14646,7 +14908,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
     let isDone = false;
 
     const runMode = state.mode;
-    const activeTools = getToolsForMode(runMode);
+    const activeTools = getToolsForMode(runMode, !!runModelVision);
     const runModeSession = state.sessions[runSessionId];
 
     // The system prompt is derived purely from the current mode, so build it
@@ -14693,7 +14955,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
             try {
             const reqMessages = sanitizeMessages([
                 { role: "system", content: currentSystemPrompt },
-                ...runCtx.messages
+                ...(runModelVision ? runCtx.messages : stripImagesFromMessages(runCtx.messages))
             ]);
 
             const headers = { "Content-Type": "application/json" };
@@ -15192,14 +15454,20 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                         const target = toolGroupContainer ? (toolGroupContainer.querySelector('.tool-group-body') || toolGroupContainer) : term;
                         const thumbEl = document.createElement('div');
                         thumbEl.className = 'tool-preview-image-thumb';
-                        thumbEl.innerHTML = `<img src="${resObj.__imageDataUrl}" alt="Preview of ${escapeHTML(args.filepath || '')}" style="max-width:280px; max-height:200px; border-radius:6px; border:1px solid var(--border); margin:4px 0; display:block;">`;
+                        // Register the exact image the model saw (which is a crop when x/y/width/height
+                        // were passed) as a viewable attachment. The data-attachment-id + <img> pair is
+                        // what lets the tab rebuild itself from restored chat HTML after a reload.
+                        const previewAtt = registerToolPreviewImage(resObj.__imageDataUrl, args);
+                        thumbEl.setAttribute('data-attachment-id', previewAtt.attachmentId);
+                        thumbEl.title = `Click to open in a tab: ${previewAtt.name}`;
+                        thumbEl.innerHTML = `<img src="${resObj.__imageDataUrl}" alt="${escapeHTML(previewAtt.name)}" style="max-width:280px; max-height:200px; border-radius:6px; border:1px solid var(--border); margin:4px 0; display:block;">`;
                         target.appendChild(thumbEl);
                         smartScroll();
                     }
 
                     runCtx.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: resStr });
 
-                    if (resObj.__imageDataUrl) {
+                    if (resObj.__imageDataUrl && runModelVision) {
                         runCtx.messages.push({
                             role: "user",
                             content: [
