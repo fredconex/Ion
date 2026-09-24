@@ -3710,11 +3710,11 @@ function seedBuiltinToolSources() {
             ]
         }, `
     if (await api.isBinary(args.filepath)) {
-        return \`ERROR: \${args.filepath} is a binary file and cannot be read as text.\`;
+        return { output: \`ERROR: \${args.filepath} is a binary file and cannot be read as text.\` };
     }
 
     const txt = await api.readFile(args.filepath);
-    if (txt === undefined) return \`ERROR: \${args.filepath} not found\`;
+    if (txt === undefined) return { output: \`ERROR: \${args.filepath} not found\` };
 
     const lines = txt.split('\\n');
     const totalLines = lines.length;
@@ -3723,9 +3723,13 @@ function seedBuiltinToolSources() {
     const requestedEnd = Math.min(totalLines, args.end_line || totalLines);
     const requestedLineCount = Math.max(0, requestedEnd - s + 1);
 
+    const range = \`lines \${s}-\${requestedEnd}\`;
+    const header = \`\${args.filepath} (\${range})\`;
+    await api.setHeaderMsg(header);
+
     if (requestedLineCount <= maxLines) {
         const content = lines.slice(s - 1, requestedEnd).map((l, i) => \`\${s + i} | \${l}\`).join('\\n');
-        return api.cleanupText(content);
+        return { output: api.cleanupText(content), summary: header };
     }
 
     const rangeLines = lines.slice(s - 1, requestedEnd);
@@ -3741,7 +3745,7 @@ function seedBuiltinToolSources() {
         }
     }
     const warning = \`\\n\\n..\\n[WARNING: Compact read used because the requested \${requestedLineCount} lines exceed the Read Lines limit of \${maxLines}. Content above is sampled across the requested range. For non-compact/full content, request a range of \${maxLines} lines or fewer.]\`;
-    return api.cleanupText(sampled.join('\\n') + warning);
+    return { output: api.cleanupText(sampled.join('\\n') + warning), summary: header };
 `),
 
         edit: buildToolFileSource({
@@ -3751,19 +3755,22 @@ function seedBuiltinToolSources() {
             modes: ['code'],
             permission: 'ask'
         }, `
-    if (api.mode === 'ask') return "ERROR: Ask mode is strictly read-only. File modification is disabled. Switch to Code mode to apply changes.";
-    if (api.mode === 'plan') return \`ERROR: Plan mode is for planning only. Do not edit source code files. Write the complete plan to \${api.planFile}.\`;
+    if (api.mode === 'ask') return { output: "ERROR: Ask mode is strictly read-only. File modification is disabled. Switch to Code mode to apply changes." };
+    if (api.mode === 'plan') return { output: \`ERROR: Plan mode is for planning only. Do not edit source code files. Write the complete plan to \${api.planFile}.\` };
 
-    if (!(await api.fileExists(args.filepath))) return \`ERROR: \${args.filepath} not found\`;
-    if (await api.isBinary(args.filepath)) return \`ERROR: \${args.filepath} is a binary file.\`;
+    if (!(await api.fileExists(args.filepath))) return { output: \`ERROR: \${args.filepath} not found\` };
+    if (await api.isBinary(args.filepath)) return { output: \`ERROR: \${args.filepath} is a binary file.\` };
+
+    const header = \`\${args.filepath}\`;
+    await api.setHeaderMsg(header);
 
     try {
         const originalContent = await api.readFile(args.filepath);
         const result = api.applySearchReplace(originalContent, args.search_block, args.replace_block || "");
         const err = await api.writeFile(args.filepath, result.content);
-        if (err) return err;
-        return \`Edited code block in \${args.filepath} at line \${result.lineNumber}\`;
-    } catch(e) { return \`ERROR: \${e.message}\`; }
+        if (err) return { output: err };
+        return { output: \`Edited code block in \${args.filepath} at line \${result.lineNumber}\`, summary: header };
+    } catch(e) { return { output: \`ERROR: \${e.message}\` }; }
 `),
 
         write: buildToolFileSource({
@@ -3773,16 +3780,19 @@ function seedBuiltinToolSources() {
             modes: ['plan', 'code'],
             permission: 'ask'
         }, `
-    if (api.mode === 'ask') return "ERROR: Ask mode is strictly read-only. File modification is disabled. Switch to Code mode to apply changes.";
+    if (api.mode === 'ask') return { output: "ERROR: Ask mode is strictly read-only. File modification is disabled. Switch to Code mode to apply changes." };
     if (api.mode === 'plan' && args.filepath !== api.planFile) {
-        return \`ERROR: Plan mode can ONLY write to "\${api.planFile}". You cannot create or modify other files until the plan is approved.\`;
+        return { output: \`ERROR: Plan mode can ONLY write to "\${api.planFile}". You cannot create or modify other files until the plan is approved.\` };
     }
+
+    const header = \`\${args.filepath}\`;
+    await api.setHeaderMsg(header);
 
     try {
         const err = await api.writeFile(args.filepath, args.content);
-        if (err) return err;
-        return \`Written \${args.filepath}\`;
-    } catch(e) { return \`ERROR: \${e.message}\`; }
+        if (err) return { output: err };
+        return { output: \`Written \${args.filepath}\`, summary: header };
+    } catch(e) { return { output: \`ERROR: \${e.message}\` }; }
 `),
 
         grep: buildToolFileSource({
@@ -3805,8 +3815,15 @@ function seedBuiltinToolSources() {
     const binaryFlags = await Promise.all(allFiles.map(f => api.isBinary(f)));
     const filesToSearch = allFiles.filter((f, i) => !binaryFlags[i]);
 
+    const scope = args.path || 'all files';
+    const header = \`pattern "\${args.pattern}" in \${scope}\`;
+    await api.setHeaderMsg(header);
+    let searched = 0;
+
     for (const fp of filesToSearch) {
         if (args.path && !fp.includes(args.path)) continue;
+        searched++;
+        if (searched % 10 === 0) await api.setHeaderMsg(\`\${header} (\${searched} files scanned)\`);
         const txt = await api.readFile(fp);
         const lines = txt.split('\\n');
         for (let i = 0; i < lines.length; i++) {
@@ -3818,7 +3835,9 @@ function seedBuiltinToolSources() {
         if (res.length >= maxLines) break;
     }
     const truncated = res.length >= maxLines;
-    return api.cleanupText(res.length ? res.join('\\n') : "(no matches)") + (truncated ? \`\\n\\n[truncated: showing \${maxLines} of many matches]\` : '');
+    const summary = \`Grep: \${res.length} match(es)\${truncated ? \` (truncated at \${maxLines})\` : ''}\`;
+    const output = api.cleanupText(res.length ? res.join('\\n') : "(no matches)") + (truncated ? \`\\n\\n[truncated: showing \${maxLines} of many matches]\` : '');
+    return { output, summary };
 `),
 
         find: buildToolFileSource({
@@ -3832,7 +3851,8 @@ function seedBuiltinToolSources() {
     const re = new RegExp(pat, 'i');
     const allFiles = await api.listFiles();
     const matches = allFiles.filter(f => re.test(f));
-    return matches.length ? matches.join('\\n') : "(no files matched)";
+    const summary = \`"\${args.pattern}": \${matches.length} file(s)\`;
+    return { output: matches.length ? matches.join('\\n') : "(no files matched)", summary };
 `),
 
         rename: buildToolFileSource({
@@ -3842,9 +3862,11 @@ function seedBuiltinToolSources() {
             modes: ['code'],
             permission: 'ask'
         }, `
+    const header = \`\${args.filepath} → \${args.new_name}\`;
+    await api.setHeaderMsg(header);
     const err = await api.renameFile(args.filepath, args.new_name);
-    if (err) return err;
-    return \`Renamed \${args.filepath} to \${args.new_name}\`;
+    if (err) return { output: err, summary: header };
+    return { output: \`\${args.filepath} to \${args.new_name}\`, summary: header };
 `),
 
         preview_image: buildToolFileSource({
@@ -3865,7 +3887,9 @@ function seedBuiltinToolSources() {
             permission: 'always',
             require_vision: true
         }, `
-    return "ERROR: preview_image should be handled natively; this stub should not run.";
+    const header = \`\${args.filepath}\`;
+    await api.setHeaderMsg(header);
+    return { output: "ERROR: preview_image should be handled natively; this stub should not run.", summary: header };
 `),
     };
 }
@@ -12088,13 +12112,7 @@ function renderRunningToolBox(toolName, args, container = null, sessionId) {
     box.className = 'tool-box done-box running-tool-box';
 
     let summaryText = "";
-    if (toolName === 'read') summaryText = `${args.filepath || ''} (lines ${args.start_line || 1}-${args.end_line || 'end'})`;
-    else if (toolName === 'edit') summaryText = `${args.filepath || ''}`;
-    else if (toolName === 'write') summaryText = `${args.filepath || ''}`;
-    else if (toolName === 'grep') summaryText = `"${args.pattern || ''}" in ${args.path || 'all files'}`;
-    else if (toolName === 'find') summaryText = `pattern "${args.pattern || ''}"`;
-    else if (toolName === 'rename') summaryText = `${args.filepath} → ${args.new_name}`;
-    else summaryText = summarizeToolArgs(args);
+
 
     const isBuiltinBadge = ['read', 'edit', 'write', 'grep', 'find', 'rename'].includes(toolName);
 
@@ -12243,17 +12261,20 @@ function markToolGroupFailed(container, toolName, detail) {
     indicator.insertAdjacentHTML('beforeend', `<div class="tool-group-fail-tooltip">${itemsHtml}</div>`);
 }
 
-function safeRenderToolCallBox(toolName, args, resultOutput, isDone = false, isError = false, container = null, existingBox = null, sessionId, displayHtml = null) {
+function safeRenderToolCallBox(toolName, args, resultOutput, isDone = false, isError = false, container = null, existingBox = null, sessionId, displayHtml = null, customSummary = null) {
     const sid = sessionId || state.activeSessionId;
     if (sid !== state.activeSessionId) {
         const isBuiltinBadge = ['read', 'edit', 'write', 'grep', 'find', 'rename'].includes(toolName);
         const errorIcon = isError ? '<span class="icon" style="font-size:14px; color:var(--red); margin-left:auto;">error</span>' : '';
+        const fallbackSummary = typeof customSummary === 'string' && customSummary
+            ? customSummary
+            : (isError ? (summarizeToolError(resultOutput) || '') : JSON.stringify(args || {}).slice(0, 60));
         const html = `<div class="tool-box done-box ${isError ? 'error-box' : ''}">
             <div class="tool-box-header">
                 <span class="icon icon-chevron">expand_more</span>
                 ${toolIOIndicatorHTML(toolName)}
                 <span class="tool-badge ${isBuiltinBadge ? toolName : 'custom-tool'}">${escapeHTML(toolName || 'tool')}</span>
-                <span class="tool-summary">${escapeHTML(JSON.stringify(args || {}).slice(0, 60))}</span>
+                <span class="tool-summary">${escapeHTML(fallbackSummary)}</span>
                 ${errorIcon}
             </div>
             <div class="tool-box-body">
@@ -12264,7 +12285,7 @@ function safeRenderToolCallBox(toolName, args, resultOutput, isDone = false, isE
         return null;
     }
     try {
-        return renderToolCallBox(toolName, args, resultOutput, isDone, isError, container, existingBox, sid, displayHtml);
+        return renderToolCallBox(toolName, args, resultOutput, isDone, isError, container, existingBox, sid, displayHtml, customSummary);
     } catch (renderErr) {
         console.error('renderToolCallBox failed, falling back to plain output:', renderErr);
         try {
@@ -12376,22 +12397,19 @@ function renderPendingToolPreview(toolBuffer, sessionId) {
     if (lastLine) updateSpinnerText(`${last.name}: ${lastLine}`, sid);
 }
 
-function renderToolCallBox(toolName, args, resultOutput, isDone = false, isError = false, container = null, existingBox = null, sessionId, displayHtml = null) {
+function renderToolCallBox(toolName, args, resultOutput, isDone = false, isError = false, container = null, existingBox = null, sessionId, displayHtml = null, customSummary = null) {
     const sid = sessionId || state.activeSessionId;
     const gen = getGenState(sid);
     stopRunningToolBox(existingBox);
     const box = existingBox || document.createElement('div');
     const isExpanded = isDone;
     box.className = `tool-box ${isExpanded ? 'done-box' : 'collapsed'} ${isError ? 'error-box' : ''}`;
-    
-    let summaryText = "";
-    if (toolName === 'read') summaryText = `${args.filepath || ''} (lines ${args.start_line || 1}-${args.end_line || 'end'})`;
-    else if (toolName === 'edit') summaryText = `${args.filepath || ''}`;
-    else if (toolName === 'write') summaryText = `${args.filepath || ''} (${formatFileSize(args.content?.length || 0)})`;
-    else if (toolName === 'grep') summaryText = `"${args.pattern || ''}" in ${args.path || 'all files'}`;
-    else if (toolName === 'find') summaryText = `pattern "${args.pattern || ''}"`;
-    else if (toolName === 'rename') summaryText = `${args.filepath} → ${args.new_name}`;
-    else summaryText = summarizeToolArgs(args);
+
+    // A tool can set the header live (setHeaderMsg) and/or return a final summary;
+    // either wins over the host's arg-based fallback.
+    let summaryText = typeof customSummary === 'string' && customSummary
+        ? customSummary
+        : (isError ? (summarizeToolError(resultOutput) || "") : "");
 
     let innerContentHTML = '';
 
@@ -12439,8 +12457,6 @@ function renderToolCallBox(toolName, args, resultOutput, isDone = false, isError
         // the model as the tool result — that's resultOutput, kept separate on purpose so
         // large rendered payloads don't get fed back into context.
         innerContentHTML = displayHtml;
-    } else if (toolName === 'render_artifact') {
-        innerContentHTML = resultOutput;
     } else {
         innerContentHTML = `
             <div class="tool-output-text${isError ? ' error-output-text' : ''}">${escapeHTML(resultOutput || '(empty response)')}</div>
@@ -13876,7 +13892,10 @@ async function runTool(runId, toolMeta, args) {
         showUI: (html, opts) => {
             __lastDisplayHtml = String(html);
             return callApi(runId, 'showUI', [String(html), opts || {}]);
-        }
+        },
+        // Live-updates the tool box header while the tool is still running.
+        // Pass null/empty to clear back to the host's default. Never sent to the model.
+        setHeaderMsg: (msg) => callApi(runId, 'setHeaderMsg', [msg == null ? '' : String(msg)])
     };
     try {
         const factory = new Function('args', 'api',
@@ -13884,16 +13903,17 @@ async function runTool(runId, toolMeta, args) {
         );
         const raw = await factory(args, api);
 
-        let output, displayHtml = null;
+        let output, displayHtml = null, summary = null;
         if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'output' in raw) {
             output = raw.output === undefined ? '(no output)' : String(raw.output);
             displayHtml = (typeof raw.displayHtml === 'string' && raw.displayHtml) ? raw.displayHtml : __lastDisplayHtml;
+            if (typeof raw.summary === 'string' && raw.summary.trim()) summary = raw.summary;
         } else {
             output = raw === undefined ? '(no output)' : String(raw);
             displayHtml = __lastDisplayHtml;
         }
 
-        self.postMessage({ type: 'done', runId, output, displayHtml });
+        self.postMessage({ type: 'done', runId, output, displayHtml, summary });
     } catch (e) {
         self.postMessage({ type: 'done', runId, error: e.message || String(e) });
     }
@@ -14125,6 +14145,25 @@ const TOOL_API_METHODS = {
             if (sid === state.activeSessionId) req.mount();
             updateGenGlow();
         });
+    },
+    setHeaderMsg: async (toolName, [msg], sessionId, entry) => {
+        // Only UI: updates the .tool-summary element in the currently running box.
+        // The value is also stashed on the pending entry so it survives as the
+        // final header if the tool never returns an explicit summary.
+        const text = (msg == null) ? '' : String(msg);
+        const liveEntry = entry || [...toolWorkerPending.values()]
+            .find(e => e.toolName === toolName && e.sessionId === (sessionId || state.activeSessionId));
+        // Skip redundant no-op updates: same text as what's already stashed/shown.
+        if (liveEntry && liveEntry.headerMsg === (text || null)) return null;
+        if (liveEntry) liveEntry.headerMsg = text || null;
+        if (!text) return null;
+        const box = liveEntry && liveEntry.box;
+        if (box && box.isConnected) {
+            const summaryEl = box.querySelector('.tool-summary');
+            // Also skip if the DOM already shows this exact text (avoids redundant reflow/flicker).
+            if (summaryEl && summaryEl.textContent !== text) summaryEl.textContent = text;
+        }
+        return null;
     }
 };
 
@@ -14143,7 +14182,7 @@ function getToolWorker() {
                 return;
             }
             try {
-                const value = await impl(entry.toolName, msg.args || [], entry.sessionId);
+                const value = await impl(entry.toolName, msg.args || [], entry.sessionId, entry);
                 toolWorker.postMessage({ type: 'api-result', id: msg.id, value });
             } catch (err) {
                 toolWorker.postMessage({ type: 'api-result', id: msg.id, error: err.message || String(err) });
@@ -14154,7 +14193,15 @@ function getToolWorker() {
             toolWorkerPending.delete(msg.runId);
             clearTimeout(entry.timeoutId);
             if (msg.error) entry.reject(new Error(msg.error));
-            else entry.resolve({ output: msg.output, displayHtml: msg.displayHtml || entry.displayHtml || null });
+            else {
+                const outputStr = msg.output === undefined ? '(no output)' : String(msg.output);
+                const failed = outputStr.startsWith('ERROR:');
+                entry.resolve({
+                    output: msg.output,
+                    displayHtml: msg.displayHtml || entry.displayHtml || null,
+                    summary: msg.summary || (failed ? null : entry.headerMsg) || null
+                });
+            }
         }
     });
     toolWorker.addEventListener('error', (e) => {
@@ -14173,7 +14220,7 @@ const TOOL_TIMEOUT_MS = 30000;
 // Tools that wait on a human (TOOL_META.interactive) get a generous ceiling instead.
 const INTERACTIVE_TOOL_TIMEOUT_MS = 5 * 60 * 1000;
 
-function runToolInWorker(toolName, toolMeta, args, sessionId) {
+function runToolInWorker(toolName, toolMeta, args, sessionId, runningBox) {
     const worker = getToolWorker();
     const runId = ++toolWorkerRunId;
     const timeoutMs = toolMeta.interactive ? INTERACTIVE_TOOL_TIMEOUT_MS : TOOL_TIMEOUT_MS;
@@ -14183,7 +14230,11 @@ function runToolInWorker(toolName, toolMeta, args, sessionId) {
             reject(new Error(`Tool "${toolName}" timed out after ${timeoutMs / 1000}s.`));
             if (toolWorker) { toolWorker.terminate(); toolWorker = null; }
         }, timeoutMs);
-        toolWorkerPending.set(runId, { resolve, reject, timeoutId, toolName, sessionId: sessionId || state.activeSessionId });
+        toolWorkerPending.set(runId, {
+            resolve, reject, timeoutId, toolName,
+            sessionId: sessionId || state.activeSessionId,
+            box: runningBox || null
+        });
         worker.postMessage({
             type: 'run',
             runId,
@@ -14269,30 +14320,56 @@ async function executePreviewImage(args) {
 }
 
 
-async function executeTool(name, args, sessionId) {
+// Turns a raw "ERROR: ..." output string into a short, header-friendly summary.
+// Keeps the header from either duplicating the full body text verbatim or falling
+// back to a generic arg dump when a tool actually failed.
+function summarizeToolError(errText) {
+    if (!errText) return null;
+    const stripped = String(errText).replace(/^ERROR:\s*/i, '').trim();
+    if (!stripped) return null;
+    const firstLine = stripped.split('\n')[0];
+    return firstLine.length > 120 ? firstLine.slice(0, 117) + '…' : firstLine;
+}
+
+async function executeTool(name, args, sessionId, runningBox) {
     const tool = toolRegistry[name];
-    if (!tool) return { output: `ERROR: Unknown tool ${name}` };
-    if (tool.error) return { output: `ERROR: Tool "${name}" is broken: ${tool.error}` };
+    if (!tool) {
+        const output = `ERROR: Unknown tool ${name}`;
+        return { output, summary: summarizeToolError(output) };
+    }
+    if (tool.error) {
+        const output = `ERROR: Tool "${name}" is broken: ${tool.error}`;
+        return { output, summary: summarizeToolError(output) };
+    }
 
     // Defense in depth: such tools aren't offered to text-only models, but a model can still
     // hallucinate a call (or the model may have been switched while a call was in flight).
     if (!isToolAvailableForVision(tool)) {
-        return { output: `ERROR: Tool "${name}" requires a vision-capable model, but the selected model does not support vision.` };
+        const output = `ERROR: Tool "${name}" requires a vision-capable model, but the selected model does not support vision.`;
+        return { output, summary: summarizeToolError(output) };
     }
 
     const perm = await checkPermission(name, describeToolAction(name, args), sessionId);
-    if (!perm.allowed) return { output: `ERROR: ${perm.error}` };
+    if (!perm.allowed) {
+        const output = `ERROR: ${perm.error}`;
+        return { output, summary: summarizeToolError(output) };
+    }
 
     if (name === 'preview_image') {
         return await executePreviewImage(args);
     }
 
     try {
-        const result = await runToolInWorker(name, tool, args, sessionId);
+        const result = await runToolInWorker(name, tool, args, sessionId, runningBox);
         const output = result.output === undefined ? '(no output)' : String(result.output);
-        return result.displayHtml ? { output, displayHtml: result.displayHtml } : { output };
+        const out = { output };
+        if (result.displayHtml) out.displayHtml = result.displayHtml;
+        if (result.summary) out.summary = result.summary;
+        else if (output.startsWith('ERROR:')) out.summary = summarizeToolError(output);
+        return out;
     } catch(e) {
-        return { output: `ERROR: Tool "${name}" failed: ${e.message}` };
+        const output = `ERROR: Tool "${name}" failed: ${e.message}`;
+        return { output, summary: summarizeToolError(output) };
     }
 }
 
@@ -15251,7 +15328,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                     const validation = validateToolArgs(call.function.name, args, call.function.arguments, parseError);
                     if (!validation.valid) {
                         const errMsg = `ERROR: Invalid arguments for tool "${call.function.name}":\n- ${validation.errors.join('\n- ')}`;
-                        safeRenderToolCallBox(call.function.name, args, errMsg, false, true, toolGroupContainer, null, runSessionId);
+                        safeRenderToolCallBox(call.function.name, args, errMsg, false, true, toolGroupContainer, null, runSessionId, null, summarizeToolError(errMsg));
                         markToolGroupFailed(toolGroupContainer, call.function.name, errMsg);
                         runCtx.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: errMsg });
                         runGen.hasNewContent = true;
@@ -15265,7 +15342,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                         ? renderRunningToolBox(call.function.name, args, toolGroupContainer, runSessionId)
                         : null;
 
-                    const resObj = await executeTool(call.function.name, args, runSessionId);
+                    const resObj = await executeTool(call.function.name, args, runSessionId, runningBox);
 
                     if (!runGen.activeController) {
                         stopRunningToolBox(runningBox);
@@ -15293,16 +15370,17 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                             }
                         }
                     } else {
-                        // Check if tool should be auto-expanded (setting override or TOOL_META.expanded)
+                        // Check if tool should be auto-expanded (setting override or TOOL_META.expanded);
+                        // never auto-expand a tool that failed.
                         const autoExpandSetting = getToolSettingValue(call.function.name, 'autoExpand');
-                        const shouldExpand = autoExpandSetting !== undefined ? !!autoExpandSetting : !!(matchingTool && matchingTool.expanded);
+                        const shouldExpand = resIsError ? false : (autoExpandSetting !== undefined ? !!autoExpandSetting : !!(matchingTool && matchingTool.expanded));
 
                         if (shouldExpand && toolGroupContainer) {
                             toolGroupContainer.classList.remove('collapsed');
                         }
 
                         // displayHtml is opt-in, UI-only markup kept separate from resStr so it never reaches the model's context.
-                        safeRenderToolCallBox(call.function.name, args, resStr, shouldExpand, resIsError, toolGroupContainer, runningBox, runSessionId, resObj.displayHtml || null);
+                        safeRenderToolCallBox(call.function.name, args, resStr, shouldExpand, resIsError, toolGroupContainer, runningBox, runSessionId, resObj.displayHtml || null, resObj.summary || null);
                     }
 
                     if (resObj.__imageDataUrl && isRunLive()) {
@@ -15517,6 +15595,15 @@ const newToolDefaultSource = `const TOOL_META = {
     ]
 };
 
+// The handler's return value can be either a plain string, or an object with:
+//   - output:      string sent back to the model as the tool result.
+//   - displayHtml: optional HTML rendered inside the tool box (UI only).
+//   - summary:     optional final header label for the tool box. If omitted,
+//                  the last value passed to api.setHeaderMsg is used, falling
+//                  back to the host's arg-based default.
+//
+// While running, the header can be updated at any time with:
+//   await api.setHeaderMsg("Fetching from proxy 2/5…");
 async function handler(args, api) {
     const { message } = args;
     const color = await api.getSetting?.("accentColor") || "#4f8cff";
