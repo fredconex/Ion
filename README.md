@@ -1,6 +1,7 @@
 # Ion
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/fredconex/ion?filter=*&color=brightgreen)](https://github.com/fredconex/ion/releases)
 [![Browser: Chromium](https://img.shields.io/badge/browser-Chromium%20Required-brightgreen.svg)](#requirements)
 [![Architecture: Pure Client--Side](https://img.shields.io/badge/architecture-Client--Side%20Web-orange.svg)](#security-and-isolation)
 
