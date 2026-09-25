@@ -9823,6 +9823,10 @@ function wireModelsDetailEvents() {
             const row = inp.closest('.mm-model-row');
             const mi = Number(row.getAttribute('data-mi'));
             const field = inp.getAttribute('data-field');
+
+            // Capture the old value BEFORE mutating, so we can re-key localStorage on rename.
+            const oldValue = field === 'name' ? (MODEL_PROVIDERS[pi].models[mi].name || '') : null;
+
             if (field === 'context_window') {
                 const n = parseInt(inp.value, 10);
                 if (inp.value.trim() === '') delete MODEL_PROVIDERS[pi].models[mi].context_window;
@@ -9830,6 +9834,16 @@ function wireModelsDetailEvents() {
             } else {
                 MODEL_PROVIDERS[pi].models[mi][field] = inp.value;
             }
+
+            // Re-key localStorage when a model name changes and the selected model was that model.
+            if (field === 'name' && oldValue && oldValue !== inp.value) {
+                const stored = localStorage.getItem('selected_model');
+                const oldKey = `${MODEL_PROVIDERS[pi].provider}::${oldValue}`;
+                if (stored === oldKey) {
+                    localStorage.setItem('selected_model', `${MODEL_PROVIDERS[pi].provider}::${inp.value}`);
+                }
+            }
+
             commitModelsChange();
             if (field === 'name') renderModelsModal(); // refresh model count badge on the left
         });
@@ -9850,7 +9864,14 @@ function wireModelsDetailEvents() {
     mmDetailEl.querySelectorAll('.mm-model-remove-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const mi = Number(btn.closest('.mm-model-row').getAttribute('data-mi'));
+            const removedName = (MODEL_PROVIDERS[pi].models[mi] && MODEL_PROVIDERS[pi].models[mi].name) || '';
             MODEL_PROVIDERS[pi].models.splice(mi, 1);
+            if (removedName) {
+                const stored = localStorage.getItem('selected_model');
+                if (stored === `${MODEL_PROVIDERS[pi].provider}::${removedName}`) {
+                    localStorage.removeItem('selected_model');
+                }
+            }
             commitModelsChange();
             renderModelsModal();
         });
@@ -9868,6 +9889,13 @@ function wireModelsDetailEvents() {
 
             const btnRect = btn.getBoundingClientRect();
             showModelPicker(null, null, { top: btnRect.bottom, left: btnRect.left }, currentName, modelInfo, (modelId) => {
+                if (modelId !== currentName) {
+                    const oldKey = `${provider.provider}::${currentName}`;
+                    const stored = localStorage.getItem('selected_model');
+                    if (stored === oldKey) {
+                        localStorage.setItem('selected_model', `${provider.provider}::${modelId}`);
+                    }
+                }
                 MODEL_PROVIDERS[pi].models[mi].name = modelId;
                 commitModelsChange();
                 renderModelsModal();
@@ -13339,13 +13367,13 @@ function updateTokenStatus(usage) {
     modelEl.innerText = shortenModelName(model) || '?';
     modelEl.title = model || '';
 
-    fetchActiveModelName(apiUrl, apiKey, model).then(resolvedName => {
-        if (!resolvedName || resolvedName === model) return;
-        if (el.style.display !== 'inline-flex') return;
-        el.title = `Model: ${resolvedName} | Prompt: ${prompt.toLocaleString()} | Gen: ${gen.toLocaleString()} | Total: ${total.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (${Math.round(pct * 100)}% of context)`;
-        modelEl.innerText = shortenModelName(resolvedName);
-        modelEl.title = resolvedName;
-    });
+        fetchActiveModelName(apiUrl, apiKey, model).then(resolvedName => {
+            if (!resolvedName || resolvedName === model) return;
+            if (el.style.display !== 'inline-flex') return;
+            el.title = `Model: ${resolvedName} | Prompt: ${prompt.toLocaleString()} | Gen: ${gen.toLocaleString()} | Total: ${total.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (${Math.round(pct * 100)}% of context)`;
+            modelEl.innerText = shortenModelName(resolvedName);
+            modelEl.title = resolvedName;
+        });
 }
 
 async function writeDisk(filePath, content, opts) {
