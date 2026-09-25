@@ -15316,8 +15316,12 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                         term.appendChild(toolGroupContainer);
                     }
                 }
-                for (const call of toolCalls) {
-                    if (!runGen.activeController) break;
+                // Runs one tool call end-to-end: validate args, render its box, execute, render the
+                // result. Safe to run concurrently with sibling calls since it touches no shared
+                // mutable state besides DOM append (each call gets its own runningBox/args).
+                // Result-message pushes are done separately (commitCallResult) so transcript order
+                // always matches the model's original call order regardless of completion order.
+                const processSingleCall = async (call) => {
                     let args = {};
                     let parseError = null;
                     try {
@@ -15330,10 +15334,8 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                         const errMsg = `ERROR: Invalid arguments for tool "${call.function.name}":\n- ${validation.errors.join('\n- ')}`;
                         safeRenderToolCallBox(call.function.name, args, errMsg, false, true, toolGroupContainer, null, runSessionId, null, summarizeToolError(errMsg));
                         markToolGroupFailed(toolGroupContainer, call.function.name, errMsg);
-                        runCtx.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: errMsg });
                         runGen.hasNewContent = true;
-                        saveSession(runSessionId);
-                        continue;
+                        return { call, args, resStr: errMsg, aborted: false };
                     }
 
                     const matchingTool = toolRegistry[call.function.name];
@@ -15347,8 +15349,7 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                     if (!runGen.activeController) {
                         stopRunningToolBox(runningBox);
                         if (runningBox) runningBox.remove();
-                        isDone = true;
-                        break;
+                        return { call, args, resObj, resStr: String(resObj.output), aborted: true };
                     }
 
                     const resStr = String(resObj.output);
@@ -15396,9 +15397,14 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                         smartScroll();
                     }
 
-                    runCtx.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: resStr });
+                    runGen.hasNewContent = true;
+                    return { call, args, resObj, resStr, aborted: false };
+                };
 
-                    if (resObj.__imageDataUrl && runModelVision) {
+                // Pushes the "tool" result message(s) for one processSingleCall() outcome.
+                const commitCallResult = async ({ call, args, resObj, resStr }) => {
+                    runCtx.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: resStr });
+                    if (resObj && resObj.__imageDataUrl && runModelVision) {
                         runCtx.messages.push({
                             role: "user",
                             content: [
@@ -15407,8 +15413,43 @@ async function runTask(task, blameId, imageUrls, sessionId) {
                             ]
                         });
                     }
-                    runGen.hasNewContent = true;
                     await saveSession(runSessionId);
+                };
+
+                // Group consecutive read-only calls (per getToolIOKind) so they execute in parallel;
+                // a write/mixed call always runs alone, never overlapping a neighbor. Batches run in
+                // sequence, and results are committed in original call order within/after each batch,
+                // so e.g. a write depending on an earlier read never starts before that read finishes,
+                // and the transcript sent back to the model always lists results in call order.
+                let ci = 0;
+                while (ci < toolCalls.length) {
+                    if (!runGen.activeController) break;
+
+                    let batch;
+                    if (getToolIOKind(toolCalls[ci].function.name) === 'read') {
+                        batch = [toolCalls[ci]];
+                        ci++;
+                        while (ci < toolCalls.length && getToolIOKind(toolCalls[ci].function.name) === 'read') {
+                            batch.push(toolCalls[ci]);
+                            ci++;
+                        }
+                    } else {
+                        batch = [toolCalls[ci]];
+                        ci++;
+                    }
+
+                    const outcomes = batch.length > 1
+                        ? await Promise.all(batch.map(processSingleCall))
+                        : [await processSingleCall(batch[0])];
+
+                    for (const outcome of outcomes) {
+                        await commitCallResult(outcome);
+                    }
+
+                    if (outcomes.some(o => o.aborted) || !runGen.activeController) {
+                        isDone = true;
+                        break;
+                    }
                 }
             } else {
                 if (runGen.genFinishReason === 'length') {
