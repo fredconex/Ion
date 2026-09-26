@@ -1212,13 +1212,22 @@
             flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;
         }
         #search-panel-input-wrap { padding: 8px; }
+        .search-panel-label { font-size: 11px; color: var(--dim); margin-bottom: 6px; }
+        .search-field-wrap { position: relative; }
         #search-input {
             width: 100%; box-sizing: border-box; background: var(--bg-input);
             border: 1px solid var(--border); border-radius: 6px;
             color: var(--fg); font-family: inherit; font-size: 12px;
-            padding: 5px 8px; outline: none; transition: border-color 0.15s ease;
+            padding: 5px 24px 5px 8px; outline: none; transition: border-color 0.15s ease;
         }
         #search-input:focus { border-color: var(--cyan); }
+        .search-clear-btn {
+            position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+            width: 18px; height: 18px; border: none; background: transparent;
+            color: var(--dim); font-size: 14px; line-height: 18px; cursor: pointer;
+            border-radius: 4px; display: none; padding: 0;
+        }
+        .search-clear-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--fg); }
         #search-results, #settings-content {
             flex-grow: 1; overflow-y: auto; padding: 2px 0 4px 0; font-size: 11.5px;
         }
@@ -3067,7 +3076,11 @@
 
             <div id="sidebar-view-search" style="display:none;">
                 <div id="search-panel-input-wrap">
-                    <input type="text" id="search-input" placeholder="Search (Enter to search)" autocomplete="off" spellcheck="false">
+                    <div class="search-panel-label">Type to search across workspace files.</div>
+                    <div class="search-field-wrap">
+                        <input type="text" id="search-input" placeholder="Search (Enter to search)" autocomplete="off" spellcheck="false">
+                        <button type="button" id="search-clear" class="search-clear-btn" title="Clear search">&times;</button>
+                    </div>
                 </div>
                 <div id="search-results"></div>
             </div>
@@ -6668,6 +6681,23 @@ tabNavSettings.addEventListener('click', () => {
 const searchInput = document.getElementById('search-input');
 const searchResultsEl = document.getElementById('search-results');
 const searchCountEl = document.getElementById('search-count');
+const searchClearBtn = document.getElementById('search-clear');
+
+function updateSearchClearButton() {
+    searchClearBtn.style.display = searchInput.value ? 'block' : 'none';
+}
+searchInput.addEventListener('input', () => {
+    updateSearchClearButton();
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(runWorkspaceSearch, 250);
+});
+searchClearBtn.addEventListener('click', () => {
+    searchInput.value = '';
+    updateSearchClearButton();
+    clearTimeout(searchDebounceTimer);
+    runWorkspaceSearch();
+    searchInput.focus();
+});
 const SEARCH_MAX_FILE_RESULTS = 20;
 const SEARCH_MAX_TOTAL_RESULTS = 300;
 const SEARCH_MAX_FILE_SIZE = 1024 * 1024;
@@ -6685,7 +6715,7 @@ async function runWorkspaceSearch() {
     searchResultsEl.innerHTML = '';
     if (!query) {
         searchCountEl.innerText = '';
-        searchResultsEl.innerHTML = `<div class="search-status">Type to search across workspace files.</div>`;
+        searchResultsEl.innerHTML = '';
         return;
     }
 
@@ -6793,10 +6823,6 @@ function highlightSearchMatch(lineText, lowerQuery) {
 }
 
 let searchDebounceTimer = null;
-searchInput.addEventListener('input', () => {
-    clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = setTimeout(runWorkspaceSearch, 250);
-});
 searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
         e.preventDefault();
@@ -6804,7 +6830,6 @@ searchInput.addEventListener('keydown', (e) => {
         runWorkspaceSearch();
     }
 });
-searchResultsEl.innerHTML = `<div class="search-status">Type to search across workspace files.</div>`;
 
 const changesCountEl = document.getElementById('changes-count');
 const changesList = document.getElementById('changes-list');
