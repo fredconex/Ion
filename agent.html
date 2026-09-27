@@ -1107,7 +1107,7 @@
         }
         #window-body {
             flex-grow: 1; display: flex; overflow: hidden;
-            position: relative; gap: 6px; padding: 6px; background: #101010;
+            position: relative; padding: 6px; background: #101010;
         }
         #sidebar {
             width: 314px; min-width: 264px; background: var(--bg-sidebar);
@@ -1116,11 +1116,26 @@
             user-select: none; flex-shrink: 0;
             position: relative; overflow: hidden;
         }        
-        #sidebar.collapsed { width: 44px; min-width: 44px; }
+        #sidebar.collapsed { width: 44px; min-width: 44px; margin-right: 6px; }
         #sidebar.collapsed #sidebar-content { opacity: 0; }
+        #sidebar.collapsed + #sidebar-resizer { display: none; }
         #btn-sidebar-collapse { margin-bottom: 4px; }
         #btn-sidebar-collapse:hover { color: var(--cyan); }
         #sidebar-body { flex: 1; display: flex; flex-direction: row; min-height: 0; }
+        #sidebar-resizer {
+            flex: 0 0 6px; align-self: stretch; position: relative;
+            cursor: col-resize; z-index: 50; touch-action: none;
+        }
+        #sidebar-resizer::before {
+            content: ''; position: absolute; left: 2px; right: 2px; top: 12%; bottom: 12%;
+            border-left: 1px solid transparent;
+            transition: border-color 0.15s ease;
+        }
+        #sidebar-resizer:hover::before, #sidebar-resizer.dragging::before {
+            border-left: 1px solid var(--cyan);
+        }
+        #sidebar-resizer.hidden { display: none; }
+        body.resizing { cursor: col-resize !important; user-select: none; }
         #sidebar-content {
             flex: 1; display: flex; flex-direction: column;
             overflow: hidden; min-width: 0;
@@ -2410,6 +2425,7 @@
                 background: rgba(0, 0, 0, 0.5); z-index: 140;
             }
             #sidebar-overlay.visible { display: block; }
+            #sidebar-resizer { display: none; }
             #btn-sidebar-toggle-mobile { display: flex !important; }
             #btn-sidebar-close-mobile { display: flex !important; }
             #btn-sidebar-collapse { display: none; }
@@ -3093,6 +3109,8 @@
             </div>
         </div>
 
+        <div id="sidebar-resizer" class="hidden" title="Drag to resize sidebar"></div>
+
         <div id="main-pane">
             <div id="tabs-bar">
                 <div id="tabs-list-container">
@@ -3328,7 +3346,8 @@ const CONFIG_DEFAULTS = {
     'compress-threshold': '75',
     'compress-preserve': '6',
     'window-mode': 'floating',
-    'hide-agent-files': 'true'
+    'hide-agent-files': 'true',
+    'sidebar-width': '314'
 };
 
 const GLOW_STATUS_COLORS = {
@@ -6546,6 +6565,9 @@ function setSidebarCollapsed(collapsed) {
     const isMobile = window.innerWidth <= 600;
     if (isMobile) { toggleMobileSidebar(!collapsed); return; }
     sidebarEl.classList.toggle('collapsed', collapsed);
+    resizerEl.classList.toggle('hidden', collapsed);
+    if (collapsed) { sidebarEl.style.width = ''; }
+    else { applySidebarWidth(Number(AppConfig.get('sidebar-width', 314)) || 314); }
     btnSidebarCollapse.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
     btnSidebarCollapse.querySelector('.icon').innerText = collapsed ? 'chevron_right' : 'chevron_left';
 }
@@ -6559,6 +6581,61 @@ sidebarEl.addEventListener('click', (e) => {
     const actionable = target.closest('button, input, [id="file-tree"], .sidebar-nav-tab, .sidebar-header-actions, .tree-node');
     if (actionable) setSidebarCollapsed(false);
 }, true);
+
+const resizerEl = document.getElementById('sidebar-resizer');
+const SIDEBAR_MIN_W = 264;
+const SIDEBAR_BASE_W = 314; // original default width
+const SIDEBAR_MAX_W = SIDEBAR_BASE_W * 1.5; // cap at ~1.5x the original size
+const SIDEBAR_MAX_EXTRA = 420; // main pane minimum width in px
+
+function clampSidebarWidth(w) {
+    let maxW = Math.min(SIDEBAR_MAX_W, window.innerWidth - SIDEBAR_MAX_EXTRA);
+    maxW = Math.max(maxW, SIDEBAR_MIN_W + 40);
+    return Math.round(Math.min(Math.max(w, SIDEBAR_MIN_W), maxW));
+}
+
+function applySidebarWidth(w) {
+    w = clampSidebarWidth(w);
+    sidebarEl.style.width = w + 'px';
+    resizerEl.classList.remove('hidden');
+    return w;
+}
+
+let resizing = false;
+resizerEl.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (sidebarEl.classList.contains('collapsed')) setSidebarCollapsed(false);
+    resizing = true;
+    resizerEl.setPointerCapture(e.pointerId);
+    resizerEl.classList.add('dragging');
+    document.body.classList.add('resizing');
+    const startX = e.clientX;
+    const startW = sidebarEl.getBoundingClientRect().width;
+    const onMove = (ev) => {
+        if (!resizing) return;
+        applySidebarWidth(startW + (ev.clientX - startX));
+    };
+    const onUp = () => {
+        resizing = false;
+        resizerEl.classList.remove('dragging');
+        document.body.classList.remove('resizing');
+        resizerEl.releasePointerCapture(e.pointerId);
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onUp);
+        AppConfig.set('sidebar-width', String(clampSidebarWidth(parseInt(sidebarEl.style.width, 10) || 314)));
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+});
+
+// Re-clamp if the window shrinks below the current sidebar width.
+window.addEventListener('resize', () => {
+    if (sidebarEl.classList.contains('collapsed') || window.innerWidth <= 600) return;
+    const w = clampSidebarWidth(parseInt(sidebarEl.style.width, 10) || 314);
+    if (w !== parseInt(sidebarEl.style.width, 10)) applySidebarWidth(w);
+});
 
 function activateSidebarView(navTab, viewEl) {
     [tabNavExplorer, tabNavChanges, tabNavSearch, tabNavSettings].forEach(t => t.classList.remove('active'));
@@ -11279,6 +11356,11 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     AppConfig.load();
     applyConfigToUI();
+
+    // Restore persisted sidebar width (only when not collapsed and not mobile).
+    if (!sidebarEl.classList.contains('collapsed') && window.innerWidth > 600) {
+        applySidebarWidth(Number(AppConfig.get('sidebar-width', 314)) || 314);
+    }
 
     registerToolsVirtualFiles();
     registerConfigVirtualFile();
