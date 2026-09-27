@@ -1030,7 +1030,7 @@
             text-overflow: ellipsis; white-space: nowrap;
             flex: 1; min-width: 0;
         }
-.ct-item-name.faint { color: var(--dim); opacity: 0.55; font-weight: 400; }
+        .ct-item-name.faint { color: var(--dim); opacity: 0.55; font-weight: 400; }
         .ct-item-name.faint:hover { opacity: 0.85; }
         .ct-item-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
         .ct-item-badge {
@@ -2338,6 +2338,33 @@
             border-radius: 6px; padding: 8px 14px; font-size: 12px; cursor: pointer;
         }
         #msg-delete-cancel-btn:hover { background: var(--bg-hover); }
+        #msg-edit-modal-overlay {
+            position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
+            z-index: 2000; display: none;
+            align-items: center; justify-content: center;
+        }
+        #msg-edit-modal-overlay.visible { display: flex; }
+        #msg-edit-modal {
+            width: 440px; max-width: calc(100vw - 40px);
+            background: var(--bg-panel); border: 1px solid var(--border);
+            border-radius: 10px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+        }
+        #msg-edit-modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 16px; border-bottom: 1px solid var(--border);
+        }
+        #msg-edit-modal-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+        #msg-edit-modal-body { padding: 16px; }
+        #msg-edit-modal-footer {
+            padding: 12px 16px; border-top: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+        }
+        #msg-edit-cancel-btn {
+            background: transparent; border: 1px solid var(--border); color: var(--fg);
+            border-radius: 6px; padding: 8px 14px; font-size: 12px; cursor: pointer;
+        }
+        #msg-edit-cancel-btn:hover { background: var(--bg-hover); }
         .chat-prompt-wrap.editing .chat-bubble {
             display: inline-grid; grid-template-columns: minmax(0, auto);
             background: transparent !important;
@@ -2851,6 +2878,39 @@
             </div>
             <div id="msg-delete-modal-footer">
                 <button id="msg-delete-cancel-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="msg-edit-modal-overlay">
+        <div id="msg-edit-modal">
+            <div id="msg-edit-modal-header">
+                <div id="msg-edit-modal-title">
+                    <span class="icon" style="font-size:15px;">edit</span>
+                    <span>Confirm edit</span>
+                </div>
+                <button id="msg-edit-modal-close" class="icon-btn" title="Close">
+                    <span class="icon" style="font-size:16px;">close</span>
+                </button>
+            </div>
+            <div id="msg-edit-modal-body">
+                <button type="button" class="msg-del-option" id="msg-edit-only">
+                    <div class="opt-title">
+                        <span class="icon" style="font-size:15px;">edit</span>
+                        <span>Edit message only</span>
+                    </div>
+                    <div class="opt-desc">Saves your edit. All file changes made by this message remain in the workspace.</div>
+                </button>
+                <button type="button" class="msg-del-option" id="msg-edit-and-revert">
+                    <div class="opt-title">
+                        <span class="icon" style="font-size:15px;">history</span>
+                        <span>Edit message and revert file changes</span>
+                    </div>
+                    <div class="opt-desc danger">Saves your edit and restores files to the state they were in before this message. Files created after this message will be deleted.</div>
+                </button>
+            </div>
+            <div id="msg-edit-modal-footer">
+                <button id="msg-edit-cancel-btn">Cancel</button>
             </div>
         </div>
     </div>
@@ -3500,7 +3560,6 @@ const state = {
     userScrolledUp: false,
     checkpointModalFile: null,
     checkpointModalMode: 'file',
-    promptIdToMsgIdx: {},
     sessionIds: null,
     sessionMeta: null,
     _lastSavedIndex: null,
@@ -4608,6 +4667,83 @@ function sessionCtx(sessionId) {
         modifiedFiles: s._modifiedFiles,
         baseline: s._baseline,
     };
+}
+
+// ---- Unified message identity ----------------------------------------
+// Every entry in a session's `messages` array carries a stable, unique `id`
+// (assigned once, at creation, and persisted as part of the message object
+// itself). All lookup / edit / delete / revert code should go through the
+// helpers below instead of matching on prompt text or array position.
+function genMessageId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    // Fallback UUIDv4 for environments without crypto.randomUUID.
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+    });
+}
+
+// Finds a message by id within a session (defaults to the active session).
+// Returns { index, message, list } or null if not found.
+function findMessageById(sessionId, id) {
+    if (!id) return null;
+    const ctx = sessionCtx(sessionId || state.activeSessionId);
+    const list = ctx.messages || [];
+    const index = list.findIndex(m => m && m.id === id);
+    if (index === -1) return null;
+    return { index, message: list[index], list };
+}
+
+// Single shared entry point for "cut the conversation at message `id`":
+// used by both edit and delete. Collects the ids of the target message and
+// everything after it (for file-change blame/revert), trims the session's
+// message list to just before the target, and cleans up the DOM/state that
+// mirrors it. Returns { removedIds, cutIndex } or null if the id wasn't found.
+//
+// opts:
+//   - removeDom (default true): remove the target's .log-entry and every
+//     sibling after it from the terminal output.
+//   - revert (default false): after trimming, call window.revertToBeforePrompt
+//     for the collected ids so file changes made by those turns are undone.
+//   - revertLabel: label passed through to the revert confirmation/toast.
+function truncateFromMessage(sessionId, id, opts = {}) {
+    const sid = sessionId || state.activeSessionId;
+    const found = findMessageById(sid, id);
+    if (!found) return null;
+    const { index, list } = found;
+
+    // Every message from this one onward is being dropped; collect their ids
+    // so file-timeline blame entries (which are stamped with the same id,
+    // see runTask/currentPromptContext below) can be reverted together.
+    const removedIds = list.slice(index).map(m => m && m.id).filter(Boolean);
+
+    list.length = index; // trim in place so any other refs to this array see the cut
+    const s = state.sessions[sid];
+    if (s) s.messages = list;
+    if (sid === state.activeSessionId) state.messages = list;
+
+    const gen = getGenState(sid);
+    gen.hasNewContent = true;
+    gen.postCompressTokenOverride = null;
+
+    if (opts.removeDom !== false && sid === state.activeSessionId) {
+        const wrap = document.querySelector(`[data-msg-id="${id}"]`);
+        if (wrap) {
+            let node = wrap.closest('.log-entry') || wrap;
+            while (node) {
+                const toRemove = node;
+                node = node.nextElementSibling;
+                toRemove.remove();
+            }
+        }
+    }
+
+    saveSession(sid);
+
+    return { removedIds, cutIndex: index };
 }
 
 function makeGenState() {
@@ -11503,12 +11639,27 @@ window.addEventListener('DOMContentLoaded', async () => {
     forceScrollToBottomOnLoad();
 });
 
-window.editPrompt = function(promptId) {
-    const wrap = document.querySelector(`[data-prompt-id="${promptId}"]`);
+window.editPrompt = function(msgId) {
+    const wrap = document.querySelector(`[data-msg-id="${msgId}"]`);
     if (!wrap || wrap.classList.contains('editing')) return;
-    const msgIdx = parseInt(wrap.getAttribute('data-msg-idx'), 10);
     const rawPrompt = wrap.getAttribute('data-raw');
-    if (isNaN(msgIdx) || rawPrompt === null) return;
+    if (rawPrompt === null) return;
+    beginInlineEdit(msgId);
+};
+
+function hideMsgEditModal() {
+    msgEditModalOverlay.classList.remove('visible');
+    _pendingEditMsgId = null;
+    _pendingEditText = null;
+    _pendingEditRevert = false;
+    _pendingEditRevertIds = [];
+}
+
+function beginInlineEdit(msgId) {
+    const wrap = document.querySelector(`[data-msg-id="${msgId}"]`);
+    if (!wrap || wrap.classList.contains('editing')) return;
+    const rawPrompt = wrap.getAttribute('data-raw');
+    if (rawPrompt === null) return;
 
     const decodedPrompt = rawPrompt;
     const promptRow = wrap.querySelector('.chat-prompt-row');
@@ -11563,16 +11714,16 @@ window.editPrompt = function(promptId) {
     `;
     actionsRow.style.opacity = '1';
 
-    actionsRow.querySelector('.save').addEventListener('click', () => commitInlineEdit(promptId));
-    actionsRow.querySelector('.cancel').addEventListener('click', () => cancelInlineEdit(promptId));
+    actionsRow.querySelector('.save').addEventListener('click', () => showEditConfirmModal(msgId));
+    actionsRow.querySelector('.cancel').addEventListener('click', () => cancelInlineEdit(msgId));
     textarea.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            commitInlineEdit(promptId);
+            showEditConfirmModal(msgId);
         } else if (e.key === 'Escape') {
             e.preventDefault();
             e.stopPropagation();
-            cancelInlineEdit(promptId);
+            cancelInlineEdit(msgId);
         }
     });
 
@@ -11580,8 +11731,8 @@ window.editPrompt = function(promptId) {
     textarea.setSelectionRange(textarea.value.length, textarea.value.length);
 };
 
-function cancelInlineEdit(promptId) {
-    const wrap = document.querySelector(`[data-prompt-id="${promptId}"]`);
+function cancelInlineEdit(msgId) {
+    const wrap = document.querySelector(`[data-msg-id="${msgId}"]`);
     if (!wrap || !wrap.classList.contains('editing')) return;
     const promptRow = wrap.querySelector('.chat-prompt-row');
     const actionsRow = wrap.querySelector('.prompt-actions');
@@ -11597,45 +11748,88 @@ function cancelInlineEdit(promptId) {
     renderAttachmentChips();
 }
 
-function commitInlineEdit(promptId) {
-    const wrap = document.querySelector(`[data-prompt-id="${promptId}"]`);
+function showEditConfirmModal(msgId) {
+    const wrap = document.querySelector(`[data-msg-id="${msgId}"]`);
     if (!wrap || !wrap.classList.contains('editing')) return;
     const textarea = wrap.querySelector('.inline-edit-textarea');
     if (!textarea) return;
     const newText = textarea.value.trim();
     if (!newText) return;
 
-    const msgIdx = parseInt(wrap.getAttribute('data-msg-idx'), 10);
-    if (isNaN(msgIdx)) return;
+    const found = findMessageById(state.activeSessionId, msgId);
+    if (!found) return;
+
+    // Every message from this one onward will be trimmed; check whether any
+    // of them left file changes behind, so we know whether to offer "revert".
+    const candidateIds = found.list.slice(found.index).map(m => m && m.id).filter(Boolean);
+    let hasEdits = false;
+    for (const rid of candidateIds) {
+        for (const fp of getAllTrackedFiles()) {
+            const tl = getFileTimeline(fp);
+            if (tl.some((e) => e && e.prompt && e.prompt.id === rid)) { hasEdits = true; break; }
+        }
+        if (hasEdits) break;
+    }
+    _pendingEditMsgId = msgId;
+    _pendingEditRevert = false;
+    _pendingEditRevertIds = hasEdits ? candidateIds : [];
+    _pendingEditText = newText;
+
+    if (hasEdits) {
+        msgEditModalOverlay.classList.add('visible');
+    } else {
+        // No file changes to revert — commit the edit directly.
+        commitEditFromModal(false);
+    }
+}
+
+function commitEditFromModal(revert) {
+    const msgId = _pendingEditMsgId;
+    if (!msgId) return;
+
+    const wrap = document.querySelector(`[data-msg-id="${msgId}"]`);
+    if (!wrap || !wrap.classList.contains('editing')) {
+        _pendingEditMsgId = null;
+        _pendingEditText = null;
+        return;
+    }
+
+    const newText = _pendingEditText;
+    const doRevert = revert;
+
+    // Clear pending state
+    _pendingEditMsgId = null;
+    _pendingEditText = null;
+    _pendingEditRevert = false;
+    _pendingEditRevertIds = [];
+    msgEditModalOverlay.classList.remove('visible');
 
     if (isSessionRunning(state.activeSessionId)) {
         abortGeneration({ showResumeUI: false });
     }
 
-    state.messages = state.messages.slice(0, msgIdx);
-
     const editSid = state.activeSessionId;
-    if (state.sessions[editSid]) {
-        state.sessions[editSid].messages = state.messages;
-        if (msgIdx === 0) {
-            state.sessions[editSid]._titleGenerated = false;
-            state.sessions[editSid].title = 'Untitled Session';
-            updateSessionPillLabel();
-        }
-    }
-    const editGen = getGenState(editSid);
-    editGen.hasNewContent = true;
-    editGen.postCompressTokenOverride = null;
-    saveSession(editSid);
+    const rawForRevert = wrap.getAttribute('data-raw') || '';
 
-    let node = wrap.closest('.log-entry');
-    while (node) {
-        const toRemove = node;
-        node = node.nextElementSibling;
-        toRemove.remove();
+    // Single shared entry point: trims this message + everything after it
+    // from state/session/DOM, and (if requested) reverts the file changes
+    // those messages made.
+    const result = truncateFromMessage(editSid, msgId, {
+        revert: doRevert,
+        revertLabel: rawForRevert
+    });
+
+    if (result && result.cutIndex === 0) {
+        state.sessions[editSid]._titleGenerated = false;
+        state.sessions[editSid].title = 'Untitled Session';
+        updateSessionPillLabel();
     }
 
     state.preEditAttachedReferences = null;
+
+    if (doRevert && result && result.removedIds.length) {
+        window.revertToBeforePrompt(result.removedIds, rawForRevert, { skipConfirm: true });
+    }
 
     input.value = newText;
     resizePrompt();
@@ -11675,8 +11869,8 @@ function attachAssistantCopyAction(div, rawText) {
     div.appendChild(actions);
 }
 
-window.copyPrompt = function(promptId) {
-    const el = document.querySelector(`[data-prompt-id="${promptId}"]`);
+window.copyPrompt = function(msgId) {
+    const el = document.querySelector(`[data-msg-id="${msgId}"]`);
     if (!el) return;
     const rawPrompt = el.getAttribute('data-raw');
     if (rawPrompt === null) return;
@@ -11699,68 +11893,39 @@ const msgDeleteOnlyBtn = document.getElementById('msg-del-only');
 const msgDeleteRevertBtn = document.getElementById('msg-del-and-revert');
 const msgDeleteCancelBtn = document.getElementById('msg-delete-cancel-btn');
 
-let _pendingDeletePromptId = null;
+const msgEditModalOverlay = document.getElementById('msg-edit-modal-overlay');
+const msgEditModalCloseBtn = document.getElementById('msg-edit-modal-close');
+const msgEditOnlyBtn = document.getElementById('msg-edit-only');
+const msgEditRevertBtn = document.getElementById('msg-edit-and-revert');
+const msgEditCancelBtn = document.getElementById('msg-edit-cancel-btn');
+
+let _pendingDeleteMsgId = null;
+let _pendingEditMsgId = null;
+let _pendingEditText = null;
+let _pendingEditRevert = false;
+let _pendingEditRevertIds = [];
 
 function hideMsgDeleteModal() {
     msgDeleteModalOverlay.classList.remove('visible');
-    _pendingDeletePromptId = null;
+    _pendingDeleteMsgId = null;
 }
 
-async function commitMsgDelete(promptId, revert) {
+async function commitMsgDelete(msgId, revert) {
     hideMsgDeleteModal();
 
-    const wrap = document.querySelector(`[data-prompt-id="${promptId}"]`);
+    const wrap = document.querySelector(`[data-msg-id="${msgId}"]`);
     const raw = wrap ? wrap.getAttribute('data-raw') : '';
-    const msgIdx = wrap ? parseInt(wrap.getAttribute('data-msg-idx'), 10) : NaN;
-    const blameId = wrap ? wrap.getAttribute('data-blame-id') : null;
 
-    // Trim all messages below the deleted prompt (like inline edit).
-    let delIdx = state.promptIdToMsgIdx[promptId];
-    if (typeof delIdx !== 'number') {
-        delIdx = isNaN(msgIdx) ? -1 : msgIdx;
-    }
+    // Single shared entry point: trims this message + everything after it
+    // from state/session/DOM, and (if requested) reverts the file changes
+    // those messages made.
+    const result = truncateFromMessage(state.activeSessionId, msgId, {
+        revert,
+        revertLabel: raw
+    });
 
-    // Collect the blame ids of every prompt that will be removed (this prompt
-    // plus all later ones), so their file changes can be reverted too.
-    const revertIds = [];
-    if (typeof delIdx === 'number' && delIdx >= 0) {
-        for (const el of document.querySelectorAll('.chat-prompt-wrap[data-blame-id]')) {
-            const i = parseInt(el.getAttribute('data-msg-idx'), 10);
-            if (i >= delIdx) {
-                const bid = el.getAttribute('data-blame-id');
-                if (bid && !revertIds.includes(bid)) revertIds.push(bid);
-            }
-        }
-        state.messages = state.messages.slice(0, delIdx);
-        const s = state.sessions[state.activeSessionId];
-        if (s) s.messages = state.messages;
-        const gen = getGenState(state.activeSessionId);
-        gen.hasNewContent = true;
-        gen.postCompressTokenOverride = null;
-        saveSession(state.activeSessionId);
-    }
-
-    // Remove the prompt's DOM node and every sibling log entry after it.
-    if (wrap) {
-        let node = wrap.closest('.log-entry') || wrap;
-        while (node) {
-            const toRemove = node;
-            node = node.nextElementSibling;
-            toRemove.remove();
-        }
-    }
-
-    // Drop any message-index maps for trimmed prompts.
-    delete state.promptIdToMsgIdx[promptId];
-    if (typeof delIdx === 'number' && delIdx >= 0) {
-        for (const key of Object.keys(state.promptIdToMsgIdx)) {
-            if (state.promptIdToMsgIdx[key] >= delIdx) delete state.promptIdToMsgIdx[key];
-        }
-    }
-
-    if (revert) {
-        const ids = revertIds.length ? revertIds : (blameId ? [blameId] : []);
-        if (ids.length) await window.revertToBeforePrompt(ids, raw, { skipConfirm: true });
+    if (revert && result && result.removedIds.length) {
+        await window.revertToBeforePrompt(result.removedIds, raw, { skipConfirm: true });
     }
 
     updateTokenStatus(state.lastTokenUsage);
@@ -11769,27 +11934,11 @@ async function commitMsgDelete(promptId, revert) {
     showToast(`Message deleted${revert ? ' and file changes reverted' : ''}`, 'success');
 }
 
-window.deletePrompt = function(promptId) {
-    // Only offer "revert file changes" if ANY prompt that will be trimmed has
-    // file edits/checkpoints. Deleting a prompt trims it plus everything below,
-    // so every prompt whose data-msg-idx is >= delIdx is eligible. File timelines
-    // record blame under blameId (prompt_...), not promptId (p_...), so we match
-    // on the blame id carried by each message's data-blame-id attribute.
-    const wrap = document.querySelector(`[data-prompt-id="${promptId}"]`);
-    let delIdx = state.promptIdToMsgIdx[promptId];
-    if (typeof delIdx !== 'number' && wrap) delIdx = parseInt(wrap.getAttribute('data-msg-idx'), 10);
-    const targetIds = new Set();
-    for (const el of document.querySelectorAll('.chat-prompt-wrap[data-blame-id]')) {
-        const i = parseInt(el.getAttribute('data-msg-idx'), 10);
-        if (typeof delIdx === 'number' && i >= delIdx) {
-            const bid = el.getAttribute('data-blame-id');
-            if (bid) targetIds.add(bid);
-        }
-    }
-    if (wrap) {
-        const bid = wrap.getAttribute('data-blame-id');
-        if (bid) targetIds.add(bid);
-    }
+window.deletePrompt = function(msgId) {
+    // Only offer "revert file changes" if any message that will be trimmed
+    // (this one plus everything after it) actually left file changes behind.
+    const found = findMessageById(state.activeSessionId, msgId);
+    const targetIds = found ? found.list.slice(found.index).map(m => m && m.id).filter(Boolean) : [];
     let hasEdits = false;
     for (const bid of targetIds) {
         for (const fp of getAllTrackedFiles()) {
@@ -11799,18 +11948,18 @@ window.deletePrompt = function(promptId) {
         if (hasEdits) break;
     }
     if (msgDeleteRevertBtn) msgDeleteRevertBtn.style.display = hasEdits ? '' : 'none';
-    _pendingDeletePromptId = promptId;
+    _pendingDeleteMsgId = msgId;
     msgDeleteModalOverlay.classList.add('visible');
 };
 
 msgDeleteOnlyBtn.addEventListener('click', () => {
-    if (_pendingDeletePromptId) commitMsgDelete(_pendingDeletePromptId, false);
+    if (_pendingDeleteMsgId) commitMsgDelete(_pendingDeleteMsgId, false);
 });
 msgDeleteRevertBtn.addEventListener('click', async () => {
-    if (_pendingDeletePromptId) {
+    if (_pendingDeleteMsgId) {
         msgDeleteRevertBtn.disabled = true;
         try {
-            await commitMsgDelete(_pendingDeletePromptId, true);
+            await commitMsgDelete(_pendingDeleteMsgId, true);
         } finally {
             msgDeleteRevertBtn.disabled = false;
         }
@@ -11820,6 +11969,14 @@ msgDeleteCancelBtn.addEventListener('click', hideMsgDeleteModal);
 msgDeleteModalCloseBtn.addEventListener('click', hideMsgDeleteModal);
 msgDeleteModalOverlay.addEventListener('click', (e) => {
     if (e.target === msgDeleteModalOverlay) hideMsgDeleteModal();
+});
+
+msgEditOnlyBtn.addEventListener('click', () => commitEditFromModal(false));
+msgEditRevertBtn.addEventListener('click', () => commitEditFromModal(true));
+msgEditCancelBtn.addEventListener('click', hideMsgEditModal);
+msgEditModalCloseBtn.addEventListener('click', hideMsgEditModal);
+msgEditModalOverlay.addEventListener('click', (e) => {
+    if (e.target === msgEditModalOverlay) hideMsgEditModal();
 });
 
 function print(html, cls = "", sessionId) {
@@ -12759,6 +12916,12 @@ function abortGeneration({ toast = null, showResumeUI = true, sessionId } = {}) 
         gen.genFinishReason = 'abort';
         if (!gen.genEndTime) gen.genEndTime = performance.now();
         renderGenStats(sid);
+        // Persist the stats row (stop reason, token speed, Continue button) into
+        // the session's chatHTML so it survives a page reload.
+        if (sid === state.activeSessionId) {
+            gen.hasNewContent = true;
+            saveSession(sid);
+        }
     }
 
     if (toast) showToast(toast, 'info');
@@ -12889,7 +13052,7 @@ document.addEventListener('keydown', (e) => {
 
         const editingWrap = document.querySelector('.chat-prompt-wrap.editing');
         if (editingWrap) {
-            cancelInlineEdit(editingWrap.getAttribute('data-prompt-id'));
+            cancelInlineEdit(editingWrap.getAttribute('data-msg-id'));
             focusPrompt();
             return;
         }
@@ -14795,13 +14958,12 @@ async function submitPrompt() {
             </span>
         `;
 
-        const promptId = 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-        const nextMsgIdx = state.messages.length;
-        state.promptIdToMsgIdx[promptId] = nextMsgIdx;
-        const blameId = 'prompt_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
+        // One id identifies this user turn everywhere: the DOM node, the
+        // `messages` array entry, and any file-change blame it produces.
+        const msgId = genMessageId();
         const rawPrompt = escapeHTML(val || "(Referenced items)");
         const attachmentsSnapshot = escapeHTML(JSON.stringify(state.attachedReferences));
-        print(`<div class="chat-attachments">${chatAttachmentsHTML}</div><div class="chat-prompt-wrap" data-prompt-id="${promptId}" data-msg-idx="${nextMsgIdx}" data-raw="${rawPrompt}" data-attachments="${attachmentsSnapshot}" data-blame-id="${blameId}"><div class="mode-divider">${modeBadgeHTML}</div><div class="chat-prompt-row"><div class="chat-bubble"><div class="md-content" style="display:inline-block; vertical-align:top;">${normalizeBlockHTML(formatMarkdownSnippet(val || "(Referenced items)"))}</div></div></div><div class="prompt-actions"><button class="btn-prompt-action edit" title="Edit and regenerate" onclick="window.editPrompt('${promptId}')"><span class="icon" style="font-size:13px;">edit</span></button><button class="btn-prompt-action copy" title="Copy prompt" onclick="window.copyPrompt('${promptId}')"><span class="icon" style="font-size:13px;">content_copy</span></button><button class="btn-prompt-action del" title="Delete message" onclick="window.deletePrompt('${promptId}')"><span class="icon" style="font-size:13px;">delete</span></button></div></div>`);
+        print(`<div class="chat-attachments">${chatAttachmentsHTML}</div><div class="chat-prompt-wrap" data-msg-id="${msgId}" data-raw="${rawPrompt}" data-attachments="${attachmentsSnapshot}"><div class="mode-divider">${modeBadgeHTML}</div><div class="chat-prompt-row"><div class="chat-bubble"><div class="md-content" style="display:inline-block; vertical-align:top;">${normalizeBlockHTML(formatMarkdownSnippet(val || "(Referenced items)"))}</div></div></div><div class="prompt-actions"><button class="btn-prompt-action edit" title="Edit and regenerate" onclick="window.editPrompt('${msgId}')"><span class="icon" style="font-size:13px;">edit</span></button><button class="btn-prompt-action copy" title="Copy prompt" onclick="window.copyPrompt('${msgId}')"><span class="icon" style="font-size:13px;">content_copy</span></button><button class="btn-prompt-action del" title="Delete message" onclick="window.deletePrompt('${msgId}')"><span class="icon" style="font-size:13px;">delete</span></button></div></div>`);
 
         state.attachedReferences = [];
         renderAttachmentChips();
@@ -14813,11 +14975,11 @@ async function submitPrompt() {
         removeContinueButtons();
 
         const runSessionId = state.activeSessionId;
-        await runTask(fullPromptForLLM, blameId, attachedImageUrls, runSessionId);
+        await runTask(fullPromptForLLM, msgId, attachedImageUrls, runSessionId);
         if (runSessionId === state.activeSessionId) focusPrompt();
 }
 
-async function runTask(task, blameId, imageUrls, sessionId) {
+async function runTask(task, msgId, imageUrls, sessionId) {
     const runSessionId = sessionId || state.activeSessionId;
     const { url: apiUrl, model, key: apiKey, vision: runModelVision } = getCurrentModelInfo();
     const runCtx = sessionCtx(runSessionId);
@@ -14828,7 +14990,8 @@ async function runTask(task, blameId, imageUrls, sessionId) {
         ? [{ type: "text", text: task }, ...imageUrls.map(url => ({ type: "image_url", image_url: { url } }))]
         : task;
 
-    runCtx.messages.push({ role: "user", content: userContent });
+    const resolvedMsgId = msgId || genMessageId();
+    runCtx.messages.push({ id: resolvedMsgId, role: "user", content: userContent });
     if (isRunLive()) updateWelcomeVisibility();
     maybeUpdateSessionTitleFromPrompt(task, runSessionId).catch(() => {});
 
@@ -14848,8 +15011,10 @@ async function runTask(task, blameId, imageUrls, sessionId) {
         return;
     }
 
+    // File-change blame (see fs.record/currentPromptCtx) is stamped with this
+    // same id, so a revert can be targeted by the unified message id.
     runGen.currentPromptContext = {
-        id: blameId || ('prompt_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6)),
+        id: resolvedMsgId,
         text: task,
         ts: Date.now()
     };
