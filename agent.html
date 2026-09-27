@@ -1030,6 +1030,8 @@
             text-overflow: ellipsis; white-space: nowrap;
             flex: 1; min-width: 0;
         }
+.ct-item-name.faint { color: var(--dim); opacity: 0.55; font-weight: 400; }
+        .ct-item-name.faint:hover { opacity: 0.85; }
         .ct-item-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
         .ct-item-badge {
             display: inline-block; margin-left: 6px; padding: 1px 5px;
@@ -10578,12 +10580,14 @@ function buildToolRow(tool) {
     const modesLabel = (tool.modes || []).map(m => MODE_LABELS[m] || m).join(', ') || 'no modes';
     const titleAttr = tool.error ? tool.error : `${tool.description || ''}\nModes: ${modesLabel}`;
     const hasSettings = Array.isArray(tool.settings) && tool.settings.length > 0;
+    const nameFaint = !tool.error && tool.require_vision && !currentModelHasVision();
+    const nameClass = `ct-item-name${nameFaint ? ' faint' : ''}`;
 
     row.innerHTML = `
         <button class="ct-icon-btn lock-btn ${tool.locked ? 'locked' : ''}" data-lock-tool="${escapeHTML(tool.name)}" title="${tool.locked ? 'Locked - the model cannot modify this tool file. Click to unlock.' : 'Unlocked - the model can modify this tool file. Click to lock.'}">
             <span class="icon" style="font-size:15px;">${tool.locked ? 'lock' : 'lock_open'}</span>
         </button>
-        <span class="ct-item-name" title="${escapeHTML(titleAttr)}" data-open-tool="${escapeHTML(tool.name)}"${hasSettings ? ' style="cursor:pointer;"' : ''}>${escapeHTML(tool.name)}${badge}</span>
+        <span class="${nameClass}" title="${escapeHTML(titleAttr)}" data-open-tool="${escapeHTML(tool.name)}"${hasSettings ? ' style="cursor:pointer;"' : ''}>${escapeHTML(tool.name)}${badge}</span>
         <div class="ct-item-actions">
             ${hasSettings
                 ? `<button class="ct-icon-btn settings-toggle" data-toggle-tool-settings="${escapeHTML(tool.name)}" title="Tool settings"><span class="icon" style="font-size:15px;">build</span></button>`
