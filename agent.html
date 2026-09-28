@@ -3805,7 +3805,7 @@ function seedBuiltinToolSources() {
 
         write: buildToolFileSource({
             name: 'write',
-            description: 'Create or fully overwrite a file.',
+            description: 'Create a new file, or fully overwrite an existing one. Use this for creating new files. For changes to an existing file, prefer the "edit" tool instead.',
             parameters: { type: "object", properties: { filepath: { type: "string" }, content: { type: "string" } }, required: ["filepath", "content"] },
             modes: ['plan', 'code'],
             permission: 'ask'
