@@ -14996,6 +14996,10 @@ async function submitPrompt() {
 
         input.value = "";
         resizePrompt();
+
+        // Ensure the terminal view is scrolled to the bottom before any action
+        state.userScrolledUp = false;
+        term.scrollTop = term.scrollHeight;
         
         if (val) {
             state.promptHistory.unshift(val);
