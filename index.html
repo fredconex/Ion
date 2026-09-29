@@ -1462,26 +1462,28 @@
             animation: promptGlowPulse 1.1s ease-in-out 1;
         }
         #chat {
-            flex-grow: 1; padding: 14px 20px; overflow-y: auto;
+            flex-grow: 1; padding: 14px 20px; overflow-y: auto; overflow-x: hidden;
             white-space: pre-wrap; line-height: 1.55;
             background: var(--bg-main); word-break: break-word; overflow-wrap: anywhere;
+            min-width: 0;
         }
         #chat > * + * { margin-top: 2px; }
         #welcome-msg { text-align: left; padding: 0; }
         .chat-prompt-row {
             display: flex; align-items: baseline; justify-content: flex-end;
             gap: 8px; line-height: 1.55; white-space: pre-wrap;
-            word-break: break-word; overflow-wrap: anywhere;
+            word-break: break-word; overflow-wrap: anywhere; min-width: 0;
         }
-        .chat-prompt-wrap { margin-top: 4px; margin-bottom: 4px; text-align: right; }
+        .chat-prompt-wrap { margin-top: 4px; margin-bottom: 4px; text-align: right; min-width: 0; }
         .chat-bubble {
-            display: inline-block; max-width: 75%;
+            display: inline-block; max-width: 75%; min-width: 0; width: 100%;
             background: rgba(255, 255, 255, 0.06);
             border: 1px solid var(--border); border-radius: 10px;
             padding: 6px 12px; text-align: left;
             white-space: pre-wrap; word-break: break-word;
-            overflow-wrap: anywhere; overflow-y: hidden; min-height: 1.55em;
+            overflow-wrap: anywhere; overflow: hidden; min-height: 1.55em; box-sizing: border-box;
         }
+        .chat-bubble > .md-content { display: block; min-width: 0; max-width: 100%; }
         #chat > .log-entry.md-content {
             display: inline-block; max-width: 85%;
             background: rgba(255, 255, 255, 0.028);
@@ -1550,7 +1552,7 @@
             word-break: break-word; overflow-wrap: anywhere; line-height: 1.55;
         }
         .retry-status { font-size: 12px; font-style: italic; }
-        .md-content { white-space: normal; }
+        .md-content { white-space: normal; min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
         .md-content p { margin: 0 0 8px 0; }
         .md-content p:last-child { margin-bottom: 0; }
         .md-content .md-heading { margin: 14px 0 6px 0; font-weight: 700; line-height: 1.3; color: var(--fg); }
