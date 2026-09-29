@@ -2207,6 +2207,21 @@
         }
         #queued-prompt-banner .queued-prompt-cancel:hover { color: var(--red); background: rgba(224, 108, 117, 0.15); }
         #prompt-input-row.has-queued-prompt { opacity: 0.6; }
+        #bottom-dock-area.dropzone-active {
+            position: relative;
+            border-color: var(--cyan);
+            box-shadow: 0 0 0 2px rgba(var(--cyan-rgb), 0.45) inset;
+        }
+        #bottom-dock-area.dropzone-active::after {
+            content: "Drop file(s) to attach";
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(var(--cyan-rgb), 0.08);
+            border-radius: inherit;
+            pointer-events: none;
+            font-size: 13px; color: var(--cyan); letter-spacing: 0.3px;
+            z-index: 30;
+        }
         #prompt-attach {
             font-weight: bold; user-select: none;
             background: transparent; border: none; padding: 0;
@@ -8876,6 +8891,39 @@ async function handleAttachFile(file) {
             }
             closeMenu();
         });
+    });
+})();
+
+// Drag-and-drop files directly onto the bottom dock (status bar + prompt bar).
+// Visually marks the dock as a drop target while a file is hovered, and
+// attaches the dropped file(s) the same way as the attach menu / paste paths.
+(function () {
+    const dropTarget = document.getElementById('bottom-dock-area');
+    if (!dropTarget) return;
+
+    ['dragenter', 'dragover'].forEach(evt => {
+        dropTarget.addEventListener(evt, (e) => {
+            if (!e.dataTransfer) return;
+            if (e.dataTransfer.items && Array.from(e.dataTransfer.items).some(it => it.kind === 'file')) {
+                e.preventDefault(); e.stopPropagation();
+                dropTarget.classList.add('dropzone-active');
+            }
+        });
+    });
+    ['dragleave', 'dragend'].forEach(evt => {
+        dropTarget.addEventListener(evt, (e) => {
+            e.preventDefault(); e.stopPropagation();
+            dropTarget.classList.remove('dropzone-active');
+        });
+    });
+    dropTarget.addEventListener('drop', async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        dropTarget.classList.remove('dropzone-active');
+        const files = e.dataTransfer ? Array.from(e.dataTransfer.files) : [];
+        if (!files.length) return;
+        for (const f of files) {
+            await handleAttachFile(f);
+        }
     });
 })();
 
