@@ -295,7 +295,7 @@
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
         }
         #yesno-modal-overlay {
-            display: none; position: fixed; inset: 0;
+            display: none; position: absolute; inset: 0;
             background: rgba(0,0,0,0.55); z-index: 400;
             align-items: center; justify-content: center;
         }
@@ -319,7 +319,7 @@
         .btn-confirm.primary { background: var(--pink); border-color: var(--pink); color: #fff; }
         .btn-confirm.primary:hover { background: #d05b64; }
         #cleardata-modal-overlay {
-            display: none; position: fixed; inset: 0;
+            display: none; position: absolute; inset: 0;
             background: rgba(0,0,0,0.55); z-index: 400;
             align-items: center; justify-content: center;
         }
@@ -377,7 +377,7 @@
         #cleardata-select-links button:hover { text-decoration: underline; }
         #cleardata-modal-btns { display: flex; gap: 8px; }
         #about-modal-overlay {
-            display: none; position: fixed; inset: 0;
+            display: none; position: absolute; inset: 0;
             background: rgba(0,0,0,0.55); z-index: 400;
             align-items: center; justify-content: center;
         }
@@ -394,7 +394,7 @@
         }
         #about-modal-close:hover { color: var(--fg); background: rgba(255,255,255,0.06); }
         #newtool-modal-overlay {
-            display: none; position: fixed; inset: 0;
+            display: none; position: absolute; inset: 0;
             background: rgba(0,0,0,0.55); z-index: 400;
             align-items: center; justify-content: center;
         }
@@ -578,7 +578,7 @@
             padding: 12px 14px; border-top: 1px solid var(--border); flex-shrink: 0;
         }
         #models-modal-overlay {
-            display: none; position: fixed; inset: 0;
+            display: none; position: absolute; inset: 0;
             background: rgba(0,0,0,0.55); z-index: 400;
             align-items: center; justify-content: center;
         }
@@ -2305,7 +2305,7 @@
         .btn-prompt-action.cancel:hover { color: var(--red); }
         .btn-prompt-action.del:hover { color: var(--red); }
         #msg-delete-modal-overlay {
-            position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
+            position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6);
             z-index: 2000; display: none;
             align-items: center; justify-content: center;
         }
@@ -2342,7 +2342,7 @@
         }
         #msg-delete-cancel-btn:hover { background: var(--bg-hover); }
         #msg-edit-modal-overlay {
-            position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
+            position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6);
             z-index: 2000; display: none;
             align-items: center; justify-content: center;
         }
@@ -2717,12 +2717,12 @@
 
  /* Popovers, menus, modals */
  #sessions-popover,#settings-popover .settings-panel,#yesno-modal,#cleardata-modal,#about-modal,#newtool-modal,
- #models-modal,#msg-delete-modal,#msg-edit-modal{border-radius:22px;background:rgba(21,21,23,.96);
-  border:1px solid var(--border-highlight);box-shadow:0 30px 80px rgba(0,0,0,.8);backdrop-filter:blur(20px)}
+ #models-modal,#msg-delete-modal,#msg-edit-modal{border-radius:22px;background:rgba(21,21,23,.98);
+ border:1px solid var(--border-highlight);box-shadow:0 30px 80px rgba(0,0,0,.8)}
  #model-select-dropdown,#model-picker-dropdown,#explorer-context-menu,#autocomplete-popup,.attach-menu{border-radius:16px;
-  background:rgba(21,21,23,.97);border:1px solid var(--border-highlight);box-shadow:0 20px 50px rgba(0,0,0,.7);backdrop-filter:blur(20px)}
+ background:rgba(21,21,23,.98);border:1px solid var(--border-highlight);box-shadow:0 20px 50px rgba(0,0,0,.7)}
  #sessions-popover-overlay,#settings-popover,#yesno-modal-overlay,#cleardata-modal-overlay,#about-modal-overlay,
- #newtool-modal-overlay,#models-modal-overlay,#msg-delete-modal-overlay,#msg-edit-modal-overlay{backdrop-filter:blur(6px);background:rgba(0,0,0,.6)}
+ #newtool-modal-overlay,#models-modal-overlay,#msg-delete-modal-overlay,#msg-edit-modal-overlay{background:rgba(0,0,0,.72);transition:background .15s ease}
  .session-item-row,.recent-folder-item,.cleardata-option,.msg-del-option,.settings-panel-group,.tool-section-panel,
  #newtool-browse-list,#newtool-dropzone{border-radius:14px}
  .session-item-row:hover,.recent-folder-item:hover,.cleardata-option:hover{border-color:rgba(var(--accent-rgb),.55);background:rgba(var(--accent-rgb),.07)}
@@ -2752,8 +2752,8 @@
   border-color:rgba(var(--accent-rgb),.7);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.12)}
 
  /* Toasts */
- .toast{background:rgba(28,28,32,.94);color:var(--fg);border:1px solid var(--border-highlight);border-radius:999px;
-  padding:9px 18px;backdrop-filter:blur(12px);box-shadow:0 10px 30px rgba(0,0,0,.5)}
+ .toast{background:rgba(28,28,32,.98);color:var(--fg);border:1px solid var(--border-highlight);border-radius:999px;
+ padding:9px 18px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
  .toast.toast-success .icon{color:var(--green)}.toast.toast-info .icon{color:var(--accent)}
 
  @media (min-width:601px){#sidebar.collapsed{width:52px;min-width:52px}}
