@@ -1375,14 +1375,14 @@
         }
         .jump-to-bottom-btn {
             position: absolute; bottom: 12px; right: 16px;
-            display: none; align-items: center; gap: 6px;
-            padding: 6px 12px; border-radius: 6px;
-            background: rgba(0, 0, 0, 0.6); color: var(--fg);
-            font-size: 11px; font-weight: 600; cursor: pointer;
+            display: none; align-items: center; justify-content: center;
+            width: 38px; height: 38px; border-radius: 50%;
+            background: var(--bg-panel); color: var(--fg);
+            font-size: 15px; cursor: pointer;
             border: 1px solid var(--border);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); transition: opacity 0.15s ease;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); transition: background 0.15s ease, transform 0.15s ease;
         }
-        .jump-to-bottom-btn:hover { background: rgba(0, 0, 0, 0.8); }
+        .jump-to-bottom-btn:hover { background: var(--bg-hover); transform: translateY(-1px); }
         /* === PROMPT RAIL (scroll gutter) === */
         .prompt-rail {
             position: absolute;
@@ -1447,15 +1447,15 @@
             opacity: 1;
             visibility: visible;
         }
-        /* Cyan glow pulse on the highlighted message */
+        /* Accent glow pulse on the highlighted message */
         @keyframes promptGlowPulse {
             0%, 100% {
-                box-shadow: 0 0 0 0 rgba(86, 182, 194, 0);
+                box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0);
                 background: transparent;
             }
             50% {
-                box-shadow: 0 0 0 2px var(--cyan);
-                background: rgba(86, 182, 194, 0.22);
+                box-shadow: 0 0 0 2px var(--accent);
+                background: rgba(var(--accent-rgb), 0.22);
             }
         }
         .chat-bubble.flash-highlight {
@@ -2388,19 +2388,19 @@
             word-break: break-word; overflow-wrap: anywhere; overflow: hidden;
         }
         .compression-box {
-            border: 1px solid rgba(86, 182, 194, 0.25);
-            border-radius: 6px; background: rgba(86, 182, 194, 0.04); margin: 4px 0;
+            border: 1px solid rgba(85, 152, 231, 0.22);
+            border-radius: 6px; background: rgba(85, 152, 231, 0.03); margin: 4px 0;
         }
-        .compression-box .tool-box-header { background: rgba(86, 182, 194, 0.08); }
-        .compression-box .tool-badge.compress { background: rgba(86, 182, 194, 0.2); color: var(--cyan); }
-        .compression-box.running { border-color: rgba(86, 182, 194, 0.5); background: rgba(86, 182, 194, 0.08); }
+        .compression-box .tool-box-header { background: rgba(85, 152, 231, 0.06); }
+        .compression-box .tool-badge.compress { background: rgba(85, 152, 231, 0.16); color: var(--blue); }
+        .compression-box.running { border-color: rgba(85, 152, 231, 0.45); background: rgba(85, 152, 231, 0.06); }
         .compression-box.running .tool-box-header {
             background: linear-gradient(
                 90deg,
                 transparent 0%,
-                rgba(86, 182, 194, 0.08) 35%,
-                rgba(86, 182, 194, 0.22) 50%,
-                rgba(86, 182, 194, 0.08) 65%,
+                rgba(85, 152, 231, 0.06) 35%,
+                rgba(85, 152, 231, 0.18) 50%,
+                rgba(85, 152, 231, 0.06) 65%,
                 transparent 100%
             );
             background-size: 250% 100%;
@@ -2411,7 +2411,7 @@
             padding: 8px 4px; font-size: 11.5px; color: var(--dim);
         }
         .compression-progress .spinner-icon {
-            font-size: 14px; color: var(--cyan); margin-right: 0;
+            font-size: 14px; color: var(--blue); margin-right: 0;
         }
         .compression-metrics { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px 0; }
         .compression-metric {
@@ -2554,6 +2554,176 @@
             #model-select-btn { max-width: 100px; }
         }
         #btn-sidebar-toggle-mobile { display: none; }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style id="modern-theme">
+ /* ===== Modern theme: dark surfaces, coral accent, soft rounded cards ===== */
+ :root{
+  --bg-canvas:#000;--bg-main:#0e0e10;--bg-win-title:transparent;--bg-panel:#151517;--bg-dock:#0e0e10;
+  --bg-input:#1a1a1d;--bg-sidebar:#0e0e10;--bg-secondary:#0e0e10;--bg-hover:rgba(255,255,255,.055);
+  --border:rgba(255,255,255,.07);--border-highlight:rgba(255,255,255,.14);
+  --fg:#ececf1;--dim:#85858f;
+  --cyan:#ff7a50;--magenta:#a78bfa;--purple:#8b7bff;--green:#3ecf8e;--blue:#7aa8ff;
+  --yellow:#ffc26b;--red:#ff6b7a;--pink:#ff6b7a;--orange:#ff9d6c;
+  --accent:#ff7a50;--accent-2:#ff5a36;--accent-rgb:255,122,80;
+  --font-ui:'Poppins','Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+ }
+ body{font-family:var(--font-ui);
+  background-image:
+  linear-gradient(0deg, rgba(255,255,255,0.015) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px),
+  radial-gradient(ellipse at center, #1a1a1a 0%, #131313 30%, #0c0c0c 60%, #000000 100%);
+  background-size: 24px 24px, 24px 24px, 100% 100%;
+  background-position: 0 0, 0 0, center}
+ *::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:8px}
+ *::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.22)}
+
+ /* Window + layout */
+ #window{border-radius:28px;background:#0a0a0b;border:1px solid var(--border);
+ box-shadow:0 30px 90px rgba(0,0,0,.9)}
+ #window.window-maximized{border-radius:0;border:none}
+ #titlebar{height:50px;background:transparent;border-bottom:none;padding:0 20px}
+ .win-title{color:var(--fg);font-weight:600;font-size:13px;letter-spacing:.3px}
+ #window-body{padding:0 10px 10px;background:transparent}
+ #sidebar,#main-pane{border-radius:22px;border:1px solid var(--border);
+  background:linear-gradient(180deg,#131315,#0e0e10);
+  box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 12px 32px rgba(0,0,0,.4)}
+ #sidebar{margin-right:4px}
+ #chat-view,#chat-container,#chat,#tabs-bar{background:transparent}
+ .icon-btn{width:30px;height:30px;border-radius:10px}
+ .icon-btn:hover{background:var(--bg-hover);border-color:transparent}
+
+ /* Sidebar */
+ #sidebar-tabs{background:rgba(0,0,0,.3);width:52px;padding:10px 0;gap:6px}
+ .sidebar-nav-tab{width:38px;height:38px;border-radius:13px;border-left:none}
+ .sidebar-nav-tab:hover{background:var(--bg-hover)}
+ .sidebar-nav-tab.active{background:rgba(var(--accent-rgb),.12);color:#fff;
+  border-left:3px solid var(--accent);box-shadow:0 0 12px rgba(var(--accent-rgb),.2)}
+ .sidebar-panel-header{background:transparent;padding:10px 12px;min-height:50px;box-sizing:border-box}
+ .tree-node{border-radius:10px;padding:5px 8px}
+ .tree-node.selected{background:rgba(var(--accent-rgb),.14);box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),.35)}
+ .change-item{border-radius:10px}
+
+ /* Tabs */
+ #tabs-bar{height:52px;padding:0 14px}
+ .editor-tab{height:32px;border-radius:999px;padding:0 10px 0 14px;background:rgba(255,255,255,.035)}
+ .editor-tab.active,.editor-tab.diff-tab.active,.editor-tab.plan-tab.active{background:rgba(var(--accent-rgb),.12);
+  border-color:rgba(var(--accent-rgb),.5);color:#fff;box-shadow:0 0 20px rgba(var(--accent-rgb),.12)}
+ .btn-tab-action{width:30px;height:30px;border-radius:10px}
+ .editor-view-segmented{border-radius:999px}.editor-view-segmented .seg-btn{border-radius:999px}
+ .pill-btn{border-radius:999px;padding:5px 12px}
+ .pill-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(var(--accent-rgb),.08)}
+ #diff-toolbar{background:transparent;height:46px}
+
+ /* Chat */
+ #chat{padding:22px 28px;font-size:13.5px;line-height:1.65}
+ #chat>*{animation:rise .3s ease both}
+ @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+ .chat-bubble{max-width:72%;padding:10px 16px;border-radius:20px 20px 6px 20px;
+  background:rgba(var(--accent-rgb),.09);border:1px solid rgba(var(--accent-rgb),.38);
+  box-shadow:0 0 28px rgba(var(--accent-rgb),.07)}
+ #chat>.log-entry.md-content{background:#151517;border:1px solid var(--border);
+  border-radius:20px 20px 20px 6px;padding:12px 18px;margin:6px 0}
+ .md-content .md-inline-code{background:rgba(var(--accent-rgb),.1);border-color:rgba(var(--accent-rgb),.25);
+  color:#ffb497;border-radius:6px}
+ .md-content .md-link{color:var(--accent)}
+ .md-content .md-table{border-radius:12px}
+ .code-box{border-radius:14px;background:#111113}
+ .code-header{background:rgba(255,255,255,.03)}
+ .thought-body,.tool-output-text,.compression-summary,.diff-hunk-box{background:#101012;border:1px solid var(--border);border-radius:12px}
+ .thought-header,.tool-box-header,.tool-group-header{border-radius:10px}
+ .running-tool-box .tool-box-header{background:linear-gradient(90deg,transparent 0%,rgba(var(--accent-rgb),.05) 35%,
+  rgba(var(--accent-rgb),.16) 50%,rgba(var(--accent-rgb),.05) 65%,transparent 100%);background-size:250% 100%}
+ .mode-chat-chip{border-radius:999px}
+ .mode-chat-chip.ask{background:rgba(var(--accent-rgb),.12);border-color:rgba(var(--accent-rgb),.35)}
+ .mode-chat-chip.code{background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.35)}
+ .welcome-models-card,.plan-action-card{border-radius:18px}
+ .welcome-models-card{background:rgba(var(--accent-rgb),.07);border-color:rgba(var(--accent-rgb),.3)}
+ .prompt-chip{border-radius:999px;background:rgba(167,139,250,.1);border-color:rgba(167,139,250,.3)}
+ .jump-to-bottom-btn{width:40px;height:40px;border-radius:50%;
+ background:var(--bg-panel);border:1px solid var(--border-highlight);
+ box-shadow:0 6px 20px rgba(0,0,0,.55);transition:transform .15s,background .15s}
+ .jump-to-bottom-btn:hover{background:rgba(var(--accent-rgb),.14);transform:translateY(-1px)}
+
+ /* Bottom dock / prompt */
+ #bottom-dock-area{background:#121214;border:1px solid var(--border);border-radius:24px;
+  margin:0 16px 16px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+ #statusbar{height:30px;padding:4px 18px 0}
+ .status-badge{border-radius:999px;padding:2px 10px}
+ .status-token-metric{border-radius:999px}
+ #prompt-bar{background:transparent;border-top:none;padding:6px 14px 14px}
+ #prompt-input-row{background:#1a1a1d;border-radius:20px;padding:6px;transition:border-color .2s,box-shadow .2s}
+ #prompt-input-row:focus-within{border-color:rgba(var(--accent-rgb),.7);
+  box-shadow:0 0 0 4px rgba(var(--accent-rgb),.1),0 8px 30px rgba(var(--accent-rgb),.12)}
+ #cmd{font-size:14px;padding:8px 10px}
+ #prompt-attach{width:38px;min-height:38px;border-radius:14px}
+ #prompt-attach:hover{background:rgba(var(--accent-rgb),.14)}
+ #prompt-symbol,#prompt-symbol.magenta,#prompt-symbol.cyan,#prompt-symbol.yellow{width:42px;min-height:42px;border-radius:15px;
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;box-shadow:0 6px 20px rgba(var(--accent-rgb),.45);
+  transition:transform .15s,filter .15s}
+ #prompt-symbol:not(.running):hover{transform:translateY(-1px);filter:brightness(1.1);
+  background:linear-gradient(135deg,var(--accent),var(--accent-2))}
+ #prompt-symbol.running,#prompt-symbol.running:hover{background:rgba(255,107,122,.18);color:var(--red);box-shadow:none;transform:none}
+ .mode-segmented-group{border-radius:999px;padding:3px}
+ .mode-tab-btn{border-radius:999px;padding:5px 14px}
+ .mode-tab-btn.active[data-mode="ask"]{background:rgba(var(--accent-rgb),.16);color:var(--accent)}
+ .mode-tab-btn.active[data-mode="code"]{background:rgba(167,139,250,.18);color:var(--magenta)}
+ #model-select-btn{border-radius:999px;padding:5px 12px}
+ #model-select-btn:hover,#model-select-btn.open{border-color:rgba(var(--accent-rgb),.6)}
+ #perm-banner{background:rgba(255,107,122,.08);border:1px solid rgba(255,107,122,.4);border-radius:16px;margin:0 14px 8px}
+ .btn-perm{border-radius:999px;padding:5px 14px}
+ #queued-prompt-banner{border-radius:14px}
+
+ /* Popovers, menus, modals */
+ #sessions-popover,#settings-popover .settings-panel,#yesno-modal,#cleardata-modal,#about-modal,#newtool-modal,
+ #models-modal,#msg-delete-modal,#msg-edit-modal{border-radius:22px;background:rgba(21,21,23,.96);
+  border:1px solid var(--border-highlight);box-shadow:0 30px 80px rgba(0,0,0,.8);backdrop-filter:blur(20px)}
+ #model-select-dropdown,#model-picker-dropdown,#explorer-context-menu,#autocomplete-popup,.attach-menu{border-radius:16px;
+  background:rgba(21,21,23,.97);border:1px solid var(--border-highlight);box-shadow:0 20px 50px rgba(0,0,0,.7);backdrop-filter:blur(20px)}
+ #sessions-popover-overlay,#settings-popover,#yesno-modal-overlay,#cleardata-modal-overlay,#about-modal-overlay,
+ #newtool-modal-overlay,#models-modal-overlay,#msg-delete-modal-overlay,#msg-edit-modal-overlay{backdrop-filter:blur(6px);background:rgba(0,0,0,.6)}
+ .session-item-row,.recent-folder-item,.cleardata-option,.msg-del-option,.settings-panel-group,.tool-section-panel,
+ #newtool-browse-list,#newtool-dropzone{border-radius:14px}
+ .session-item-row:hover,.recent-folder-item:hover,.cleardata-option:hover{border-color:rgba(var(--accent-rgb),.55);background:rgba(var(--accent-rgb),.07)}
+ .session-item-row.active{border-color:var(--accent);background:rgba(var(--accent-rgb),.13);box-shadow:0 0 20px rgba(var(--accent-rgb),.12)}
+ .session-pill-btn{border-radius:999px;padding:5px 14px;background:rgba(var(--accent-rgb),.1);border-color:rgba(var(--accent-rgb),.4);color:var(--accent)}
+ .session-pill-btn:hover,.session-pill-btn.active{background:rgba(var(--accent-rgb),.2);border-color:var(--accent);color:#fff}
+ .mm-provider-item.active,.newtool-source-tab.active,.editor-view-segmented .seg-btn.active,.btn-tab-action.active,
+ .icon-btn.active,.pill-btn.active{background:rgba(var(--accent-rgb),.14);border-color:rgba(var(--accent-rgb),.45);color:var(--accent)}
+ .mm-provider-item,.newtool-source-tab,#newtool-source-tabs{border-radius:12px}
+ .ac-item,.msd-item,.model-picker-item,.attach-menu-item,.context-menu-item{border-radius:10px}
+ .ac-item:hover,.ac-item.selected,.msd-item:hover,.msd-item.highlighted,.model-picker-item:hover,.model-picker-item.selected,
+ .attach-menu-item:hover,.context-menu-item:hover{background:rgba(var(--accent-rgb),.14)}
+ .ac-item-title,.context-menu-item:hover{color:var(--accent)}
+ .ac-item.selected .ac-item-title{color:#fff}
+ .btn-confirm,.btn-new-session,.danger-btn,.msg-del-option{border-radius:999px}
+ .msg-del-option{border-radius:16px}
+ .btn-confirm{padding:7px 18px}
+ .btn-confirm.primary{background:linear-gradient(135deg,var(--accent),var(--accent-2));border-color:transparent;color:#fff;
+  box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)}
+ .btn-confirm.primary:hover{filter:brightness(1.1);background:linear-gradient(135deg,var(--accent),var(--accent-2))}
+ .tri-switch,.tri-btn{border-radius:999px}.tri-btn{padding:3px 12px}
+ .settings-field-row input[type="text"],.settings-field-row input[type="number"],.settings-field-row input[type="password"],
+ .settings-field-row select,.mm-row input,#search-input,#newtool-browse-search,#model-select-search,#model-picker-filter input{
+  border-radius:12px;background:#0e0e10;transition:border-color .15s,box-shadow .15s}
+ .settings-field-row input:focus,.settings-field-row select:focus,.mm-row input:focus,#search-input:focus,
+ #newtool-browse-search:focus,#model-select-search:focus,#model-picker-filter input:focus{
+  border-color:rgba(var(--accent-rgb),.7);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.12)}
+
+ /* Toasts */
+ .toast{background:rgba(28,28,32,.94);color:var(--fg);border:1px solid var(--border-highlight);border-radius:999px;
+  padding:9px 18px;backdrop-filter:blur(12px);box-shadow:0 10px 30px rgba(0,0,0,.5)}
+ .toast.toast-success .icon{color:var(--green)}.toast.toast-info .icon{color:var(--accent)}
+
+ @media (min-width:601px){#sidebar.collapsed{width:52px;min-width:52px}}
+ @media (max-width:600px){
+  #window{border-radius:0;border:none}
+  #titlebar{height:46px}
+  #sidebar{border-radius:0 22px 22px 0;background:#0e0e10;margin-right:0}
+  #bottom-dock-area{margin:0 8px 8px;border-radius:20px}
+  #chat{padding:14px}
+  .chat-bubble{max-width:90%}
+ }
     </style>
 </head>
 <body>
@@ -3090,10 +3260,12 @@
             </div>
 
             <div id="sidebar-view-search" style="display:none;">
+                <div class="sidebar-panel-header">
+                    <span style="font-size:10px; color:var(--dim); font-weight:700; text-transform:uppercase;">Search</span>
+                </div>
                 <div id="search-panel-input-wrap">
-                    <div class="search-panel-label">Type to search across workspace files.</div>
                     <div class="search-field-wrap">
-                        <input type="text" id="search-input" placeholder="Search (Enter to search)" autocomplete="off" spellcheck="false">
+                        <input type="text" id="search-input" placeholder="Search across workspace files… (Enter)" autocomplete="off" spellcheck="false">
                         <button type="button" id="search-clear" class="search-clear-btn" title="Clear search">&times;</button>
                     </div>
                 </div>
@@ -5410,7 +5582,7 @@ function initMonaco() {
                 base: 'vs-dark',
                 inherit: true,
                 rules: [
-                    { token: '', background: '161616', foreground: 'dcdfe7' },
+                    { token: '', background: '0e0e10', foreground: 'dcdfe7' },
                     { token: 'keyword', foreground: 'c678dd', fontStyle: 'bold' },
                     { token: 'string', foreground: '98c379' },
                     { token: 'number', foreground: 'd19a66' },
@@ -5420,16 +5592,16 @@ function initMonaco() {
                     { token: 'identifier', foreground: 'dcdfe7' }
                 ],
                 colors: {
-                    'editor.background': '#161616',
+                    'editor.background': '#0e0e10',
                     'editor.foreground': '#dcdfe7',
-                    'editor.lineHighlightBackground': '#242424',
+                    'editor.lineHighlightBackground': '#17171a',
                     'editor.selectionBackground': '#2e2e2e',
-                    'editorCursor.foreground': '#c678dd',
+                    'editorCursor.foreground': '#ff7a50',
                     'editorWhitespace.foreground': '#2e2e2e',
                     'editorLineNumber.foreground': '#5a5a5a',
-                    'editorLineNumber.activeForeground': '#c678dd',
-                    'editorGutter.background': '#161616',
-                    'minimap.background': '#161616',
+                    'editorLineNumber.activeForeground': '#ff7a50',
+                    'editorGutter.background': '#0e0e10',
+                    'minimap.background': '#0e0e10',
                     'diffEditor.insertedTextBackground': '#98c37922',
                     'diffEditor.removedTextBackground': '#e06c7522'
                 }
@@ -6849,9 +7021,10 @@ async function runWorkspaceSearch() {
             const size = registry.meta[p]?.size || 0;
             return size === 0 || size <= SEARCH_MAX_FILE_SIZE;
         });
-    const paths = rootHandle
+    const paths = (rootHandle
         ? allPaths.sort()
-        : allPaths.filter(p => registry.meta[p]?.virtual).sort();
+        : allPaths.filter(p => registry.meta[p]?.virtual).sort()
+    ).filter(p => !shouldHideFromTools(p));
 
     let totalMatches = 0;
     let fileCount = 0;
@@ -9361,7 +9534,7 @@ function checkAutocomplete() {
     const atMatch = textBefore.match(/@([^\s]*)$/);
     if (atMatch && Object.keys(registry.meta).length > 0) {
         const query = atMatch[1].toLowerCase();
-        const matchedFiles = Object.keys(registry.meta).filter(f => registry.meta[f]?.kind === 'file' && f.toLowerCase().includes(query)).slice(0, 8);
+        const matchedFiles = Object.keys(registry.meta).filter(f => registry.meta[f]?.kind === 'file' && f.toLowerCase().includes(query) && !shouldHideFromTools(f)).slice(0, 8);
         if (matchedFiles.length > 0) {
             acMatches = matchedFiles.map(f => ({
                 type: 'file',
@@ -9589,7 +9762,9 @@ function rebuildPromptRailTicks() {
         dot.className = 'tick-dot';
         tick.appendChild(dot);
         tick.addEventListener('click', () => {
-            term.scrollTop = wrap.offsetTop - 8;
+            const wrapRect = wrap.getBoundingClientRect();
+            const termRect = term.getBoundingClientRect();
+            term.scrollTop = term.scrollTop + (wrapRect.top - termRect.top) - 8;
             const bubble = wrap.querySelector('.chat-bubble');
             if (!bubble) return;
             bubble.classList.remove('flash-highlight');
@@ -9606,13 +9781,33 @@ function rebuildPromptRailTicks() {
 function updatePromptRail() {
     const wraps = term.querySelectorAll('.chat-prompt-wrap');
     if (!wraps.length) return;
-    const viewportCenter = term.clientHeight / 2;
+    const termRect = term.getBoundingClientRect();
+    const viewTop = termRect.top;
+    const viewBottom = termRect.bottom;
+    // Reference line sweeps from the top edge (scrolled to top) to the bottom
+    // edge (scrolled to bottom), so the first/last tick win at the extremes
+    // and the center tick wins in between.
+    const maxScroll = Math.max(term.scrollHeight - term.clientHeight, 1);
+    const progress = Math.min(Math.max(term.scrollTop / maxScroll, 0), 1);
+    const refY = viewTop + (viewBottom - viewTop) * progress;
+    // Only consider ticks actually visible in the viewport, then highlight
+    // the one whose center is closest to the reference line.
     let best = -1, bestDist = Infinity;
     wraps.forEach((wrap, i) => {
-        const wrapCenter = wrap.offsetTop + wrap.offsetHeight / 2 - term.scrollTop;
-        const d = Math.abs(wrapCenter - viewportCenter);
+        const r = wrap.getBoundingClientRect();
+        if (r.bottom <= viewTop || r.top >= viewBottom) return; // not visible
+        const wrapCenter = r.top + r.height / 2;
+        const d = Math.abs(wrapCenter - refY);
         if (d < bestDist) { bestDist = d; best = i; }
     });
+    // Fallback if no tick is fully visible (very tall turn): pick the nearest.
+    if (best === -1) {
+        wraps.forEach((wrap, i) => {
+            const r = wrap.getBoundingClientRect();
+            const d = Math.abs(r.top + r.height / 2 - refY);
+            if (d < bestDist) { bestDist = d; best = i; }
+        });
+    }
     promptRailTicks.forEach((tick, i) => {
         tick.classList.toggle('near', i === best);
     });
