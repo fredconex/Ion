@@ -7522,7 +7522,7 @@ async function loadAllSessions() {
     renderSessionPopoverList();
 }
 
-async function saveSession(sessionId) {
+async function saveSession(sessionId, force) {
     const id = sessionId || state.activeSessionId;
     const wsKey = getWorkspaceSessionKey();
     const ctx = sessionCtx(id);
@@ -7530,7 +7530,7 @@ async function saveSession(sessionId) {
 
     const gen = getGenState(id);
 
-    if (!gen.hasNewContent) return;
+    if (!gen.hasNewContent && !force) return;
     gen.hasNewContent = false;
 
     const isLive = id === state.activeSessionId;
@@ -7620,8 +7620,8 @@ async function saveSession(sessionId) {
     if (isLive) updateSessionPillLabel();
 }
 
-async function saveActiveSession() {
-    return saveSession(state.activeSessionId);
+async function saveActiveSession(force) {
+    return saveSession(state.activeSessionId, force);
 }
 
 async function loadCheckpointForSession(sessionId) {
@@ -7766,11 +7766,12 @@ async function createNewSession(title) {
     clearSessionAttachments();
     const id = 'sess_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
 
+    const now = Date.now();
     state.sessions[id] = {
         id,
         title: title || 'Untitled Session',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        createdAt: now,
+        updatedAt: now,
         runningTimeMs: 0,
         messages: [],
         chatHTML: '',
@@ -7783,7 +7784,7 @@ async function createNewSession(title) {
     state.sessionIds.push(id);
     state.activeSessionId = id;
     await restoreActiveSessionContent();
-    await saveActiveSession();
+    await saveActiveSession(true);
     renderSessionPopoverList();
     hideSessionPopover();
     showToast(`Created session ${id}`, 'success');
