@@ -2391,11 +2391,13 @@
             word-break: break-word; overflow-wrap: anywhere; overflow: hidden;
         }
         .compression-box {
-            border: 1px solid rgba(85, 152, 231, 0.22);
-            border-radius: 6px; background: rgba(85, 152, 231, 0.03); margin: 4px 0;
+            border: 1px solid rgba(120, 120, 120, 0.18);
+            border-radius: 6px; background: rgba(120, 120, 120, 0.03); margin: 4px 0;
         }
-        .compression-box .tool-box-header { background: rgba(85, 152, 231, 0.06); }
-        .compression-box .tool-badge.compress { background: rgba(85, 152, 231, 0.16); color: var(--blue); }
+        .compression-box .tool-box-header { background: rgba(120, 120, 120, 0.06); }
+        .compression-box .tool-badge.compress { background: rgba(120, 120, 120, 0.14); color: var(--dim); }
+        .compression-box:not(.running) .tool-summary { color: var(--dim); }
+        .compression-box:not(.running) .compression-metric { color: var(--dim); background: rgba(120,120,120,0.06); border-color: rgba(120,120,120,0.12); }
         .compression-box.running { border-color: rgba(85, 152, 231, 0.45); background: rgba(85, 152, 231, 0.06); }
         .compression-box.running .tool-box-header {
             background: linear-gradient(
@@ -2693,14 +2695,13 @@
  .status-token-metric{border-radius:999px}
  #prompt-bar{background:transparent;border-top:none;padding:6px 14px 14px}
  #prompt-input-row{background:#1a1a1d;border-radius:20px;padding:6px;transition:border-color .2s,box-shadow .2s}
- #prompt-input-row:focus-within{border-color:rgba(var(--accent-rgb),.7);
-  box-shadow:0 0 0 4px rgba(var(--accent-rgb),.1),0 8px 30px rgba(var(--accent-rgb),.12)}
+ #prompt-input-row:focus-within{border-color:rgba(var(--accent-rgb),.7)}
  #cmd{font-size:14px;padding:8px 10px}
  #prompt-attach{width:38px;min-height:38px;border-radius:14px}
  #prompt-attach:hover{background:rgba(var(--accent-rgb),.14)}
  #prompt-symbol,#prompt-symbol.magenta,#prompt-symbol.cyan,#prompt-symbol.yellow{width:42px;min-height:42px;border-radius:15px;
-  background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;box-shadow:0 6px 20px rgba(var(--accent-rgb),.45);
-  transition:transform .15s,filter .15s}
+ background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;
+ transition:transform .15s,filter .15s}
  #prompt-symbol:not(.running):hover{transform:translateY(-1px);filter:brightness(1.1);
   background:linear-gradient(135deg,var(--accent),var(--accent-2))}
  #prompt-symbol.running,#prompt-symbol.running:hover{background:rgba(255,107,122,.18);color:var(--red);box-shadow:none;transform:none}
@@ -5001,7 +5002,8 @@ function isAnySessionRunning() {
 
 function isSessionRunning(sessionId) {
     const s = state.sessions[sessionId];
-    return !!(s && s._gen && s._gen.isRunning);
+    if (!s || !s._gen) return false;
+    return !!(s._gen.isRunning || s._gen.compressionInFlight);
 }
 
 let rootHandle = null;
@@ -6058,7 +6060,8 @@ function updatePromptSendButton() {
     if (isSessionRunning(state.activeSessionId)) {
         promptSymbol.className = 'running';
         promptSymbol.innerHTML = '<span class="stop-rect"></span>';
-        promptSymbol.title = 'Stop generation (Esc)';
+        const g = state.sessions[state.activeSessionId]?._gen;
+        promptSymbol.title = g && g.compressionInFlight ? 'Stop compression (Esc)' : 'Stop generation (Esc)';
     } else {
         promptSymbol.className = cfg.symbolClass;
         promptSymbol.innerText = '>';
@@ -6069,7 +6072,8 @@ function updatePromptSendButton() {
 promptSymbol.addEventListener('click', (e) => {
     e.preventDefault();
     if (isSessionRunning(state.activeSessionId)) {
-        abortGeneration({ toast: 'Generation stopped' });
+        const g = state.sessions[state.activeSessionId]?._gen;
+        abortGeneration({ toast: g && g.compressionInFlight ? 'Compression cancelled' : 'Generation stopped' });
     } else {
         submitPrompt();
     }
@@ -11475,6 +11479,7 @@ async function compressContext(sessionId, { silent = false, manual = false } = {
     const compressController = new AbortController();
     gen.activeController = compressController;
     gen.compressionInFlight = true;
+    if (sid === state.activeSessionId) updatePromptSendButton();
 
     let summaryText = '';
     try {
@@ -11511,6 +11516,7 @@ async function compressContext(sessionId, { silent = false, manual = false } = {
     } finally {
         gen.compressionInFlight = false;
         if (gen.activeController === compressController) gen.activeController = null;
+        if (sid === state.activeSessionId) updatePromptSendButton();
     }
 
     const summaryMsg = {
@@ -11600,7 +11606,7 @@ function buildCompressionBoxHTML(entry) {
             <span class="tool-io-indicator io-mixed"><span class="icon">compress</span></span>
             <span class="tool-badge compress">compact</span>
             <span class="tool-summary">${entry.messagesCompressed} msgs → ~${remainingPct}% of original size</span>
-            <span class="icon" style="font-size:14px; color:var(--cyan); margin-left:auto;">${triggerIcon}</span>
+            <span class="icon" style="font-size:14px; color:var(--dim); margin-left:auto;">check</span>
         </div>
         <div class="tool-box-body">
             <div class="compression-metrics">
@@ -13109,6 +13115,7 @@ function abortGeneration({ toast = null, showResumeUI = true, sessionId } = {}) 
     const sid = sessionId || state.activeSessionId;
     const gen = getGenState(sid);
     const wasRunning = !!(gen.activeController || gen.isRunning);
+    const wasCompressing = !!gen.compressionInFlight;
 
     cancelPendingUIForSession(sid);
 
@@ -13134,6 +13141,7 @@ function abortGeneration({ toast = null, showResumeUI = true, sessionId } = {}) 
 
     stopSpinner(sid);
     gen.isRunning = false;
+    gen.compressionInFlight = false;
     if (sid === state.activeSessionId) updatePromptSendButton();
 
     if (gen.thinkingTimerInterval) {
@@ -13147,7 +13155,7 @@ function abortGeneration({ toast = null, showResumeUI = true, sessionId } = {}) 
         gen.pendingToolDiv = null;
     }
 
-    if (showResumeUI && wasRunning) {
+    if (showResumeUI && wasRunning && !wasCompressing) {
         gen.genFinishReason = 'abort';
         if (!gen.genEndTime) gen.genEndTime = performance.now();
         renderGenStats(sid);
@@ -13281,7 +13289,8 @@ document.addEventListener('keydown', (e) => {
             return;
         }
         if (isSessionRunning(state.activeSessionId)) {
-            abortGeneration({ toast: 'Generation stopped (Esc)' });
+            const gen = getGenState(state.activeSessionId);
+            abortGeneration({ toast: gen.compressionInFlight ? 'Compression cancelled (Esc)' : 'Generation stopped (Esc)' });
             return;
         }
 
