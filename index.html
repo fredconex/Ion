@@ -6921,9 +6921,17 @@ const viewSettings = document.getElementById('sidebar-view-settings');
 
 const sidebarEl = document.getElementById('sidebar');
 const btnSidebarCollapse = document.getElementById('btn-sidebar-collapse');
+let isSidebarCollapsed = false;
+let savedSidebarWidth = null;
 function setSidebarCollapsed(collapsed) {
     const isMobile = window.innerWidth <= 600;
     if (isMobile) { toggleMobileSidebar(!collapsed); return; }
+    if (collapsed) {
+        savedSidebarWidth = parseInt(sidebarEl.style.width, 10) || Number(AppConfig.get('sidebar-width', 314)) || 314;
+        isSidebarCollapsed = true;
+    } else {
+        isSidebarCollapsed = false;
+    }
     sidebarEl.classList.toggle('collapsed', collapsed);
     resizerEl.classList.toggle('hidden', collapsed);
     if (collapsed) { sidebarEl.style.width = ''; }
@@ -6938,7 +6946,8 @@ sidebarEl.addEventListener('click', (e) => {
     const target = e.target;
     if (!(target instanceof Element)) return;
     if (target === btnSidebarCollapse || btnSidebarCollapse.contains(target)) return;
-    const actionable = target.closest('button, input, [id="file-tree"], .sidebar-nav-tab, .sidebar-header-actions, .tree-node');
+    if (target.closest('.sidebar-nav-tab')) return; // handled by its own toggle handler
+    const actionable = target.closest('button, input, [id="file-tree"], .sidebar-header-actions, .tree-node');
     if (actionable) setSidebarCollapsed(false);
 }, true);
 
@@ -7004,21 +7013,22 @@ function activateSidebarView(navTab, viewEl) {
     viewEl.style.display = 'flex';
 }
 
-tabNavExplorer.addEventListener('click', () => {
-    activateSidebarView(tabNavExplorer, viewExplorer);
+function toggleNavTab(navTab, viewEl) {
     settingsPopover.style.display = 'none';
     btnSettingsToggle.classList.remove('active');
-});
-tabNavChanges.addEventListener('click', () => {
-    activateSidebarView(tabNavChanges, viewChanges);
-    settingsPopover.style.display = 'none';
-    btnSettingsToggle.classList.remove('active');
-});
-tabNavSettings.addEventListener('click', () => {
-    activateSidebarView(tabNavSettings, viewSettings);
-    settingsPopover.style.display = 'none';
-    btnSettingsToggle.classList.remove('active');
-});
+    const isCollapsed = sidebarEl.classList.contains('collapsed');
+    const isActive = navTab.classList.contains('active');
+    if (isCollapsed || !isActive) {
+        setSidebarCollapsed(false);
+        activateSidebarView(navTab, viewEl);
+    } else {
+        setSidebarCollapsed(true);
+    }
+}
+
+tabNavExplorer.addEventListener('click', () => toggleNavTab(tabNavExplorer, viewExplorer));
+tabNavChanges.addEventListener('click', () => toggleNavTab(tabNavChanges, viewChanges));
+tabNavSettings.addEventListener('click', () => toggleNavTab(tabNavSettings, viewSettings));
 
 const searchInput = document.getElementById('search-input');
 const searchResultsEl = document.getElementById('search-results');
@@ -7045,11 +7055,11 @@ const SEARCH_MAX_TOTAL_RESULTS = 300;
 const SEARCH_MAX_FILE_SIZE = 1024 * 1024;
 
 tabNavSearch.addEventListener('click', () => {
-    activateSidebarView(tabNavSearch, viewSearch);
-    settingsPopover.style.display = 'none';
-    btnSettingsToggle.classList.remove('active');
-    searchInput.focus();
-    searchInput.select();
+    toggleNavTab(tabNavSearch, viewSearch);
+    if (!sidebarEl.classList.contains('collapsed')) {
+        searchInput.focus();
+        searchInput.select();
+    }
 });
 
 async function runWorkspaceSearch() {
@@ -13477,6 +13487,12 @@ async function setWorkspace(handle) {
     const noFolderOverlay = document.getElementById('no-folder-overlay');
     if (noFolderOverlay) noFolderOverlay.classList.add('hidden');
 
+    // Restore the sidebar collapsed state we saved when leaving the previous workspace.
+    if (isSidebarCollapsed && window.innerWidth > 600) {
+        setSidebarCollapsed(false);
+        if (savedSidebarWidth) applySidebarWidth(savedSidebarWidth);
+    }
+
     updateStatusInfo();
     renderExplorerTree();
     renderChangesPanel();
@@ -13495,6 +13511,9 @@ function closeWorkspace() {
     }
 
     rootHandle = null;
+
+    // Auto-collapse the sidebar when leaving a workspace; restore it on the next open.
+    if (!window.innerWidth <= 600) setSidebarCollapsed(true);
 
     registry.files = {};
     registry.originalFiles = {};
