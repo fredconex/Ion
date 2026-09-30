@@ -8,6 +8,29 @@
     <title>Ion - Untitled Session</title>
     <link id="ion-favicon" rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 6L3 12L7 18' stroke='%2356b6c2' stroke-width='2'/%3E%3Cpath d='M13 4L8 12H16L11 20' stroke='%23a855f7' stroke-width='2'/%3E%3Cpath d='M17 6L21 12L17 18' stroke='%2356b6c2' stroke-width='2'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <script>
+    /* Accent color — applied before first paint so the UI never flashes with a
+       stale accent. Reads the persisted AppConfig, and the full applyTheme()
+       below re-runs this whenever the accent changes. */
+    (function () {
+        var saved = localStorage.getItem('app_config_json');
+        var c = {};
+        try { c = saved ? JSON.parse(saved) : {}; } catch (e) { c = {}; }
+        var hex = c['accent-color'] || '#ff7a50';
+        var m = hex.match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i);
+        if (!m) hex = '#ff7a50';
+        var h = m[1].toUpperCase();
+        if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+        var r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+        var root = document.documentElement;
+        root.style.colorScheme = 'dark';
+        root.style.setProperty('--primary', '#'+h);
+        root.style.setProperty('--primary-rgb', r+', '+g+', '+b);
+        var dr = Math.round(r*0.82), dg = Math.round(g*0.82), db = Math.round(b*0.82);
+        var pad = function (n) { return Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0'); };
+        root.style.setProperty('--primary-2', '#'+pad(dr)+pad(dg)+pad(db));
+    })();
+    </script>
     <style>
         :root {
             --bg-canvas: #050505;
@@ -28,8 +51,10 @@
             --green: #98c379;
             --blue: #61afef;
             --yellow: #e5c07b;
-            --cyan: #56b6c2;
-            --cyan-rgb: 86,182,194;
+            --primary: #56b6c2;
+            --primary-rgb: 86,182,194;
+            --cyan: var(--primary);
+            --cyan-rgb: var(--primary-rgb);
             --purple: #a855f7;
             --red: #e06c75;
             --orange: #d19a66;
@@ -165,6 +190,28 @@
             transition: background 1.2s ease;
         }
         @keyframes genGlowBreathe { 0%, 100% { opacity: 0.75; } 50% { opacity: 1; } }
+
+        /* Accent color swatches in the settings panel */
+        #settings-accent-swatches {
+            display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+        }
+        .accent-swatch {
+            width: 26px; height: 26px; border-radius: 50%;
+            background: var(--sw); border: 2px solid rgba(255,255,255,0.15);
+            cursor: pointer; padding: 0; position: relative;
+            transition: transform 0.12s ease, border-color 0.15s ease;
+        }
+        .accent-swatch:hover { transform: scale(1.12); border-color: rgba(255,255,255,0.5); }
+        .accent-swatch.active { border-color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,0.25); }
+        .accent-custom {
+            width: 26px; height: 26px; border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.15);
+            background: none; cursor: pointer; padding: 0;
+            overflow: hidden; transition: transform 0.12s ease;
+        }
+        .accent-custom:hover { transform: scale(1.12); border-color: rgba(255,255,255,0.5); }
+        .accent-custom.active { border-color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,0.25); }
+
         #titlebar {
             height: 38px; background: var(--bg-win-title);
             border-bottom: 1px solid var(--border);
@@ -3396,6 +3443,24 @@
 
                         <div class="settings-section-label">Appearance</div>
 
+                                                <!-- Accent Color Panel -->
+                        <div class="settings-panel-group">
+                            <div class="settings-panel-header">
+                                <span class="icon">palette</span>
+                                <span>Accent Color</span>
+                            </div>
+                            <div class="settings-panel-body">
+                                <div class="settings-field-row">
+                                    <span class="duo-switch-label">Choose accent</span>
+                                </div>
+                                <div class="settings-field-row">
+                                    <div id="settings-accent-swatches" role="group" aria-label="Accent color"></div>
+                                </div>
+                            </div>
+                        </div>
+
+
+
                         <!-- Background Glow Panel -->
                         <div class="settings-panel-group">
                             <div class="settings-panel-header">
@@ -5092,6 +5157,7 @@ const CONFIG_DEFAULTS = {
     'thinking-timeout': '-1',
     'keep-skipped-thinking': 'false',
     'glow-enabled': 'true',
+    'accent-color': '#ff7a50',
     'compress-enabled': 'true',
     'compress-threshold': '75',
     'compress-preserve': '6',
@@ -6858,6 +6924,146 @@ function getFileVisualInfo(filepath) {
     return { icon: 'draft', color: 'var(--dim)' };
 }
 
+/* ---- Accent color ---- */
+const ACCENT_PRESETS = [
+    { name: 'Coral',  hex: '#ff7a50' },
+    { name: 'Rose',   hex: '#f43f5e' },
+    { name: 'Violet', hex: '#8b5cf6' },
+    { name: 'Blue',   hex: '#3b82f6' },
+    { name: 'Teal',   hex: '#14b8a6' },
+    { name: 'Green',  hex: '#22c55e' },
+    { name: 'Amber',  hex: '#f59e0b' },
+];
+const DEFAULT_ACCENT = '#ff7a50';
+
+function normalizeHex(v) {
+    if (typeof v !== 'string') return null;
+    let s = v.trim();
+    if (s[0] === '#') s = s.slice(1);
+    if (/^[0-9a-f]{3}$/i.test(s)) {
+        s = s[0]+s[0]+s[1]+s[1]+s[2]+s[2];
+    }
+    if (/^[0-9a-f]{6}$/i.test(s)) return '#' + s.toLowerCase();
+    return null;
+}
+
+function hexToRgbTriplet(hex) {
+    const h = (hex || '').replace('#', '');
+    if (h.length !== 6) return '255, 122, 80';
+    return parseInt(h.slice(0,2),16) + ', ' + parseInt(h.slice(2,4),16) + ', ' + parseInt(h.slice(4,6),16);
+}
+
+function currentAccent() {
+    const hex = normalizeHex(AppConfig.get('accent-color', DEFAULT_ACCENT));
+    return hex || DEFAULT_ACCENT;
+}
+
+function shadeHex(hex, factor) {
+    const h = (hex || '').replace('#', '');
+    if (h.length !== 6) return '#e0653f';
+    const clamp = (n) => Math.max(0, Math.min(255, Math.round(n)));
+    const pad = (n) => clamp(n).toString(16).padStart(2, '0');
+    return '#' + pad(parseInt(h.slice(0,2),16)*factor) + pad(parseInt(h.slice(2,4),16)*factor) + pad(parseInt(h.slice(4,6),16)*factor);
+}
+
+function applyTheme() {
+    const hex = currentAccent();
+    const root = document.documentElement;
+    root.style.colorScheme = 'dark';
+    root.style.setProperty('--primary', hex);
+    root.style.setProperty('--primary-rgb', hexToRgbTriplet(hex));
+    root.style.setProperty('--primary-2', shadeHex(hex, 0.82));
+    defineMonacoThemes();
+}
+
+let accentSwatchesBuilt = false;
+
+function updateAccentActiveState() {
+    const wrap = document.getElementById('settings-accent-swatches');
+    if (!wrap) return;
+    const cur = currentAccent().toLowerCase();
+    const customIsDefault = ACCENT_PRESETS.every(p => p.hex.toLowerCase() !== cur);
+    wrap.querySelectorAll('.accent-swatch').forEach(btn => {
+        btn.classList.toggle('active', (btn.getAttribute('data-hex') || '').toLowerCase() === cur);
+    });
+    const custom = wrap.querySelector('.accent-custom');
+    if (custom) {
+        if (custom.value !== cur) custom.value = cur;
+        custom.classList.toggle('active', customIsDefault);
+    }
+}
+
+function renderAccentSwatches() {
+    const wrap = document.getElementById('settings-accent-swatches');
+    if (!wrap) return;
+    if (accentSwatchesBuilt) {
+        // Never rebuild the DOM while the native color picker may be open —
+        // rebuilding destroys/recreates the input mid-interaction and closes it.
+        updateAccentActiveState();
+        return;
+    }
+    const cur = currentAccent().toLowerCase();
+    ACCENT_PRESETS.forEach(p => {
+        const btn = document.createElement('button');
+        btn.className = 'accent-swatch' + (p.hex.toLowerCase() === cur ? ' active' : '');
+        btn.style.setProperty('--sw', p.hex);
+        btn.title = p.name;
+        btn.setAttribute('data-hex', p.hex);
+        btn.addEventListener('click', () => setAccent(p.hex));
+        wrap.appendChild(btn);
+    });
+    const custom = document.createElement('input');
+    custom.type = 'color';
+    custom.className = 'accent-custom' + (ACCENT_PRESETS.every(p => p.hex.toLowerCase() !== cur) ? ' active' : '');
+    custom.value = currentAccent();
+    custom.title = 'Custom color';
+    custom.addEventListener('input', () => setAccent(custom.value));
+    wrap.appendChild(custom);
+    accentSwatchesBuilt = true;
+}
+
+function setAccent(hex) {
+    const norm = normalizeHex(hex);
+    if (!norm) return;
+    AppConfig.set('accent-color', norm);
+    updateAccentActiveState();
+    applyTheme();
+}
+
+/* ---- Monaco theme (re-applied when the accent changes) ---- */
+function defineMonacoThemes() {
+    if (!MONACO || !MONACO.editor || !MONACO.editor.defineTheme) return;
+    const accent = currentAccent();
+    MONACO.editor.defineTheme('agent2-dark', {
+        base: 'vs-dark',
+        inherit: true,
+        rules: [
+            { token: '', background: '0e0e10', foreground: 'dcdfe7' },
+            { token: 'keyword', foreground: 'c678dd', fontStyle: 'bold' },
+            { token: 'string', foreground: '98c379' },
+            { token: 'number', foreground: 'd19a66' },
+            { token: 'comment', foreground: '737791', fontStyle: 'italic' },
+            { token: 'type', foreground: 'e5c07b' },
+            { token: 'function', foreground: '61afef' },
+            { token: 'identifier', foreground: 'dcdfe7' }
+        ],
+        colors: {
+            'editor.background': '#0e0e10',
+            'editor.foreground': '#dcdfe7',
+            'editor.lineHighlightBackground': '#17171a',
+            'editor.selectionBackground': '#2e2e2e',
+            'editorCursor.foreground': accent,
+            'editorWhitespace.foreground': '#2e2e2e',
+            'editorLineNumber.foreground': '#5a5a5a',
+            'editorLineNumber.activeForeground': accent,
+            'editorGutter.background': '#0e0e10',
+            'minimap.background': '#0e0e10',
+            'diffEditor.insertedTextBackground': '#98c37922',
+            'diffEditor.removedTextBackground': '#e06c7522'
+        }
+    });
+}
+
 let MONACO = null;
 let monacoEditor = null;
 let monacoDiffEditor = null;
@@ -6890,34 +7096,7 @@ function initMonaco() {
             try {
                 MONACO = window.monaco;
 
-            MONACO.editor.defineTheme('agent2-dark', {
-                base: 'vs-dark',
-                inherit: true,
-                rules: [
-                    { token: '', background: '0e0e10', foreground: 'dcdfe7' },
-                    { token: 'keyword', foreground: 'c678dd', fontStyle: 'bold' },
-                    { token: 'string', foreground: '98c379' },
-                    { token: 'number', foreground: 'd19a66' },
-                    { token: 'comment', foreground: '737791', fontStyle: 'italic' },
-                    { token: 'type', foreground: 'e5c07b' },
-                    { token: 'function', foreground: '61afef' },
-                    { token: 'identifier', foreground: 'dcdfe7' }
-                ],
-                colors: {
-                    'editor.background': '#0e0e10',
-                    'editor.foreground': '#dcdfe7',
-                    'editor.lineHighlightBackground': '#17171a',
-                    'editor.selectionBackground': '#2e2e2e',
-                    'editorCursor.foreground': '#ff7a50',
-                    'editorWhitespace.foreground': '#2e2e2e',
-                    'editorLineNumber.foreground': '#5a5a5a',
-                    'editorLineNumber.activeForeground': '#ff7a50',
-                    'editorGutter.background': '#0e0e10',
-                    'minimap.background': '#0e0e10',
-                    'diffEditor.insertedTextBackground': '#98c37922',
-                    'diffEditor.removedTextBackground': '#e06c7522'
-                }
-            });
+            defineMonacoThemes();
 
             const editorHost = document.getElementById('monaco-editor-container');
             monacoEditor = MONACO.editor.create(editorHost, {
@@ -12646,6 +12825,8 @@ function applyConfigToUI() {
     if (ct) ct.value = AppConfig.get('compress-threshold', '75');
     if (cp) cp.value = AppConfig.get('compress-preserve', '6');
     updateAgentFilesSwitch();
+    renderAccentSwatches();
+    applyTheme();
 }
 
 const COMPRESS_PROMPT = `You are a context compression assistant for a coding agent.
