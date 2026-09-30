@@ -17779,7 +17779,11 @@ function setNewToolPane(pane) {
     newToolShowError('');
     newToolUpdateCreateLabel();
     if (pane === 'blank') {
-        setTimeout(() => newToolSourceEditor.focus(), 0);
+        setTimeout(() => {
+            newToolSourceEditor.focus();
+            newToolSourceEditor.setSelectionRange(0, 0);
+            newToolSourceEditor.scrollTop = 0;
+        }, 0);
     }
 }
 
