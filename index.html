@@ -173,23 +173,68 @@
             width: 100vw; max-width: none; height: 100dvh;
             border-radius: 0; border: none; box-shadow: none;
         }
-        #gen-glow {
-            position: absolute; inset: 0; z-index: 0; pointer-events: none;
-            opacity: 0; --glow-rgb: 229, 192, 123;
-            transition: opacity 2.4s cubic-bezier(0.4, 0.0, 0.2, 1), background 1.2s ease;
+        /* Status glow: a gradient that orbits the border of the whole bottom dock
+           (status bar + prompt bar). Sharp ring in ::before, soft bloom in ::after. */
+        @property --glow-angle { syntax: '<angle>'; inherits: true; initial-value: 0deg; }
+        #dock-glow {
+            --glow-rgb: var(--cyan-rgb); /* theme accent */
+            position: absolute; inset: -1px; z-index: 5; pointer-events: none;
+            border-radius: inherit; opacity: 0; visibility: hidden;
+            transition: opacity 1.2s ease, visibility 0s linear 1.2s;
+            animation: dockGlowSpin 9s linear infinite; animation-play-state: paused;
         }
-        #gen-glow.on {
-            opacity: 1;
-            transition: opacity 1.4s cubic-bezier(0.0, 0.0, 0.2, 1) 0.35s, background 1.2s ease;
+        #dock-glow.on {
+            opacity: 1; visibility: visible; animation-play-state: running;
+            transition: opacity 0.5s ease, visibility 0s;
         }
-        #gen-glow::before {
-            content: ""; position: absolute; left: 50%; top: 50%;
-            width: 106%; height: 104%; transform: translate(-50%, -50%);
-            background: radial-gradient(ellipse at center, rgba(var(--glow-rgb), 0.30) 0%, rgba(var(--glow-rgb), 0.14) 55%, transparent 78%);
-            filter: blur(60px); animation: genGlowBreathe 4.5s ease-in-out infinite;
-            transition: background 1.2s ease;
+        #dock-glow::before, #dock-glow::after {
+            content: ""; position: absolute; inset: 0; border-radius: inherit;
+            padding: 0.75px;
+            background: conic-gradient(from var(--glow-angle),
+                rgba(var(--glow-rgb), 1.000) 0deg,
+                rgba(var(--glow-rgb), 0.932) 10deg,
+                rgba(var(--glow-rgb), 0.754) 20deg,
+                rgba(var(--glow-rgb), 0.528) 30deg,
+                rgba(var(--glow-rgb), 0.323) 40deg,
+                rgba(var(--glow-rgb), 0.181) 50deg,
+                rgba(var(--glow-rgb), 0.109) 60deg,
+                rgba(var(--glow-rgb), 0.084) 70deg,
+                rgba(var(--glow-rgb), 0.080) 80deg,
+                rgba(var(--glow-rgb), 0.080) 90deg,
+                rgba(var(--glow-rgb), 0.080) 100deg,
+                rgba(var(--glow-rgb), 0.084) 110deg,
+                rgba(var(--glow-rgb), 0.109) 120deg,
+                rgba(var(--glow-rgb), 0.181) 130deg,
+                rgba(var(--glow-rgb), 0.323) 140deg,
+                rgba(var(--glow-rgb), 0.528) 150deg,
+                rgba(var(--glow-rgb), 0.754) 160deg,
+                rgba(var(--glow-rgb), 0.932) 170deg,
+                rgba(var(--glow-rgb), 1.000) 180deg,
+                rgba(var(--glow-rgb), 0.932) 190deg,
+                rgba(var(--glow-rgb), 0.754) 200deg,
+                rgba(var(--glow-rgb), 0.528) 210deg,
+                rgba(var(--glow-rgb), 0.323) 220deg,
+                rgba(var(--glow-rgb), 0.181) 230deg,
+                rgba(var(--glow-rgb), 0.109) 240deg,
+                rgba(var(--glow-rgb), 0.084) 250deg,
+                rgba(var(--glow-rgb), 0.080) 260deg,
+                rgba(var(--glow-rgb), 0.080) 270deg,
+                rgba(var(--glow-rgb), 0.080) 280deg,
+                rgba(var(--glow-rgb), 0.084) 290deg,
+                rgba(var(--glow-rgb), 0.109) 300deg,
+                rgba(var(--glow-rgb), 0.181) 310deg,
+                rgba(var(--glow-rgb), 0.323) 320deg,
+                rgba(var(--glow-rgb), 0.528) 330deg,
+                rgba(var(--glow-rgb), 0.754) 340deg,
+                rgba(var(--glow-rgb), 0.932) 350deg,
+                rgba(var(--glow-rgb), 1.000) 360deg);
+            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite: xor;
+            mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
         }
-        @keyframes genGlowBreathe { 0%, 100% { opacity: 0.75; } 50% { opacity: 1; } }
+        #dock-glow::after { padding: 1px; filter: blur(2.5px); opacity: 0.7; }
+        @keyframes dockGlowSpin { to { --glow-angle: 360deg; } }
+        @media (prefers-reduced-motion: reduce) { #dock-glow { animation-duration: 28s; } }
 
         /* Accent color swatches in the settings panel */
         #settings-accent-swatches {
@@ -2065,6 +2110,7 @@
         .btn-perm.always { border-color: var(--yellow); color: var(--yellow); }
         .btn-perm.always:hover { background: rgba(229, 192, 123, 0.15); }
         #bottom-dock-area {
+            position: relative;
             background: var(--bg-dock); border: 1px solid var(--border);
             border-radius: 8px; margin: 0 12px 10px 12px;
             display: flex; flex-direction: column;
@@ -2561,9 +2607,6 @@
             .prompt-chip { min-height: 26px; }
         }
         @media (max-width: 600px) {
-            #gen-glow::before { display: none; }
-        }
-        @media (max-width: 600px) {
             #statusbar { flex-wrap: wrap; gap: 4px; padding: 4px 8px; min-height: 28px; }
             #perm-banner { flex-direction: column; align-items: stretch; padding: 10px 12px; gap: 8px; }
             #perm-message { font-size: 11px; text-align: center; }
@@ -2967,8 +3010,6 @@
     </style>
 </head>
 <body>
-
-<div id="gen-glow"></div>
 
 <div id="sidebar-overlay"></div>
 
@@ -3465,7 +3506,7 @@
                         <div class="settings-panel-group">
                             <div class="settings-panel-header">
                                 <span class="icon">tonality</span>
-                                <span>Background Glow</span>
+                                <span>Status Glow</span>
                             </div>
                             <div class="settings-panel-body">
                                 <div class="settings-field-row">
@@ -3694,7 +3735,6 @@
                 <iframe id="html-preview-frame" sandbox="allow-scripts allow-modals"></iframe>
             </div>
 
-            <div id="bottom-dock-area">
             <div id="no-folder-overlay" class="no-folder-overlay">
                 <div id="recent-folders-container">
                     <span class="icon" style="font-size: 48px; color: var(--dim); margin-bottom: 12px;">folder</span>
@@ -3714,6 +3754,9 @@
                     </div>
                 </div>
             </div>
+
+            <div id="bottom-dock-area">
+            <div id="dock-glow" aria-hidden="true"></div>
                 <div id="statusbar">
                     <div style="display:flex; align-items:center;">
                         <span class="status-badge mode-code" id="status-mode">CODE</span>
@@ -7475,11 +7518,11 @@ function setFaviconBoltColor(rgbTriple) {
 }
 
 function updateGenGlow() {
-    const glowEl = document.getElementById('gen-glow');
+    const glowEl = document.getElementById('dock-glow');
     if (!glowEl) return;
 
     const activeGen = getGenState(state.activeSessionId);
-    const enabled = AppConfig.get('glow-enabled', 'true') !== 'false';
+    const enabled = AppConfig.get('glow-enabled', 'false') !== 'true';
     let status = null;
     if (activeGen.retryStatusActive) status = 'retrying';
     else if (permQueue.some(r => r.sessionId === state.activeSessionId)
@@ -7487,9 +7530,6 @@ function updateGenGlow() {
     else if (activeGen.isRunning) status = 'generating';
 
     glowEl.classList.toggle('on', enabled && !!status);
-    if (status) {
-        glowEl.style.setProperty('--glow-rgb', GLOW_STATUS_COLORS[status]);
-    }
 
     const logoEl = document.getElementById('ion-logo');
     const logoActive = !!status && (status === 'generating' || status === 'asking');
