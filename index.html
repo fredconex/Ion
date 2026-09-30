@@ -11430,6 +11430,13 @@ function focusPrompt() {
     }
 }
 
+document.getElementById('prompt-bar').addEventListener('click', (e) => {
+    if (e.target === input) return;
+    if (e.target.closest('button, input, textarea, select, a, .attach-menu, .mode-tab-btn, #model-select-btn')) return;
+    input.focus();
+});
+document.getElementById('statusbar').addEventListener('click', () => { input.focus(); });
+
 term.addEventListener('click', (e) => {
     const attachedImg = e.target.closest('.chat-attachment-image[data-attachment-id], .tool-preview-image-thumb[data-attachment-id]');
     if (attachedImg) {
