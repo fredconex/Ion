@@ -9020,7 +9020,8 @@ async function saveSession(sessionId, force) {
             runningTimeMs: state.sessions[id].runningTimeMs || 0
         };
         if (isLive) {
-            patch.attachments = serializeLiveAttachments();
+            const att = serializeLiveAttachments();
+            if (att) patch.attachments = att;   // never clobber a persisted snapshot with null; explicit deletion is handled by clearSessionAttachments
         }
         if (gen.postCompressTokenOverride != null) {
             patch.postCompressTokenOverride = gen.postCompressTokenOverride;
@@ -9185,7 +9186,7 @@ async function switchSession(sessionId) {
         return;
     }
     const outgoingId = state.activeSessionId;
-    await saveActiveSession();
+    await saveActiveSession(true);
     snapshotSessionAttachments(outgoingId);
 
     state.activeSessionId = sessionId;
@@ -9221,8 +9222,8 @@ function reconcileLiveGenUI(outgoingId, incomingId) {
 }
 
 async function createNewSession(title) {
-    await saveActiveSession();
-    clearSessionAttachments();
+    await saveActiveSession(true);
+    snapshotSessionAttachments(state.activeSessionId);
     const id = 'sess_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
 
     const now = Date.now();
@@ -14926,7 +14927,7 @@ async function setWorkspace(handle) {
     applyConfigToUI();
     registerConfigVirtualFile();
 
-    selectInitialSession();
+    await selectInitialSession();
     await syncWorkspace(true);
     await restoreActiveSessionContent();
     renderSessionPopoverList();
