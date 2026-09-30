@@ -3614,6 +3614,1323 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.55.1/min/vs/loader.js" integrity="sha384-jwxunh5pHKFzi60XobDcwOM7qnk4lSGpdBU/hNn9pUGp+ZUpaHJqadNLRF2k+jPu" crossorigin="anonymous"></script>
+<script type="text/plain" id="builtin-tool-src-read">
+// read - tool definition.
+const TOOL_META = {
+    "name": "read",
+    "description": "Read lines or full contents of a file. If the requested range is larger than the configured line limit, the content is evenly sampled across the range instead of truncated.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "filepath": {
+                "type": "string"
+            },
+            "start_line": {
+                "type": "integer"
+            },
+            "end_line": {
+                "type": "integer"
+            }
+        },
+        "required": [
+            "filepath"
+        ]
+    },
+    "modes": [
+        "plan",
+        "ask",
+        "code"
+    ],
+    "permission": "always",
+    "toolBox": 1,
+    "settings": [
+        {
+            "key": "maxLines",
+            "label": "Max Read Lines",
+            "type": "number",
+            "default": 500,
+            "min": 1,
+            "max": 100000,
+            "description": "Largest number of lines returned in one read; larger ranges are evenly sampled."
+        },
+        {
+            "key": "previewLines",
+            "label": "Preview Lines",
+            "type": "number",
+            "default": 12,
+            "min": 0,
+            "max": 200,
+            "description": "How many lines of the result are shown in the chat box (the model always receives the full result)."
+        }
+    ]
+};
+
+// --- UI helpers (display only, never sent to the model) ----------------------
+
+const WRAP = 'font-family:var(--font-mono, monospace); display:flex; flex-direction:column; gap:6px; margin:2px 0;';
+const BAR  = 'display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:5px 8px; border-radius:6px; font-size:11px;';
+const BOX  = 'background:#0e1015; border:1px solid rgba(255,255,255,0.08); border-radius:6px; overflow:hidden; font-size:11px; box-shadow:inset 0 1px 3px rgba(0,0,0,0.4);';
+
+function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function pathHtml(fp) {
+    const parts = String(fp || '').split('/');
+    const name = parts.pop() || fp;
+    const dir = parts.length ? parts.join('/') + '/' : '';
+    return `<div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><span style="color:var(--dim,#737791);">${esc(dir)}</span><span style="color:var(--fg,#dcdfe7); font-weight:600;">${esc(name)}</span></div>`;
+}
+
+function badge(text, color, bg) {
+    return `<span style="font-size:10px; background:${bg}; color:${color}; padding:1px 6px; border-radius:3px; flex-shrink:0; font-weight:700;">${esc(text)}</span>`;
+}
+
+function errorHtml(fp, label, msg) {
+    return `
+        <div style="${WRAP}">
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(224,108,117,0.06); border:1px solid rgba(224,108,117,0.25); padding:5px 8px; border-radius:6px; font-size:11px;">
+                <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+                    <span class="icon" style="font-size:13px; color:var(--red,#e06c75); flex-shrink:0;">warning</span>
+                    ${pathHtml(fp)}
+                    ${badge(label, 'var(--red,#e06c75)', 'rgba(224,108,117,0.2)')}
+                </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:4px; font-size:10.5px; color:var(--red,#e06c75); padding:0 2px;">
+                <span class="icon" style="font-size:12px;">error</span>
+                <span>${esc(msg)}</span>
+            </div>
+        </div>`;
+}
+
+function fail(fp, msg) {
+    return { output: `ERROR: ${msg}`, displayHtml: errorHtml(fp, 'Read Failed', msg) };
+}
+
+// --- Handler -----------------------------------------------------------------
+
+async function handler(args, api) {
+    const fp = args.filepath;
+
+    if (await api.isBinary(fp)) return fail(fp, `${fp} is a binary file and cannot be read as text.`);
+
+    const txt = await api.readFile(fp);
+    if (txt === undefined) return fail(fp, `${fp} not found`);
+    // The host reports blocked/protected paths by returning a one-line "ERROR: ..." string instead of content.
+    if (typeof txt === 'string' && txt.length < 500 && /^ERROR: [^\n]*$/.test(txt)) {
+        return fail(fp, txt.replace(/^ERROR:\s*/, ''));
+    }
+
+    const lines = txt.split('\n');
+    const totalLines = lines.length;
+    const s = Math.max(1, args.start_line || 1);
+    const maxLines = await api.getSetting('maxLines');
+    const requestedEnd = Math.min(totalLines, args.end_line || totalLines);
+    const requestedLineCount = Math.max(0, requestedEnd - s + 1);
+
+    const range = `lines ${s}-${requestedEnd}`;
+    const header = `${fp} (${range})`;
+    await api.setHeaderMsg(header);
+
+    // Collect the rows that are returned to the model: [{ n, text }]
+    let rows = [];
+    let sampled = false;
+    if (requestedLineCount <= maxLines) {
+        rows = lines.slice(s - 1, requestedEnd).map((l, i) => ({ n: s + i, text: l }));
+    } else {
+        sampled = true;
+        const rangeLines = lines.slice(s - 1, requestedEnd);
+        if (maxLines <= 1) {
+            rows.push({ n: s, text: rangeLines[0] });
+        } else {
+            const step = (rangeLines.length - 1) / (maxLines - 1);
+            for (let i = 0; i < maxLines; i++) {
+                const index = Math.round(i * step);
+                rows.push({ n: s + index, text: rangeLines[index] });
+            }
+        }
+    }
+
+    let output = rows.map(r => `${r.n} | ${r.text}`).join('\n');
+    if (sampled) {
+        output += `\n\n..\n[WARNING: Compact read used because the requested ${requestedLineCount} lines exceed the Read Lines limit of ${maxLines}. Content above is sampled across the requested range. For non-compact/full content, request a range of ${maxLines} lines or fewer.]`;
+    }
+
+    // --- Display ---------------------------------------------------------------
+
+    let previewLines = Number(await api.getSetting('previewLines'));
+    if (!Number.isFinite(previewLines) || previewLines < 0) previewLines = 12;
+    const shown = rows.slice(0, previewLines);
+    const hidden = rows.length - shown.length;
+
+    const rowsHtml = shown.map(r => {
+        let t = String(r.text).replace(/\r$/, '');
+        if (t.length > 300) t = t.slice(0, 300) + '…';
+        return `
+            <div style="display:flex; min-height:20px; line-height:20px; color:var(--fg,#dcdfe7);">
+                <div style="width:42px; text-align:right; padding-right:8px; color:var(--dim,#737791); opacity:0.7; user-select:none; font-size:10px; border-right:1px solid rgba(255,255,255,0.08); flex-shrink:0;">${r.n}</div>
+                <div style="padding:0 8px; white-space:pre-wrap; word-break:break-all; flex:1;">${esc(t)}</div>
+            </div>`;
+    }).join('');
+
+    const moreHtml = hidden > 0
+        ? `<div style="padding:3px 8px 3px 50px; color:var(--dim,#737791); font-size:10px; border-top:1px solid rgba(255,255,255,0.05);">… ${hidden} more line${hidden === 1 ? '' : 's'} (full result was sent to the model)</div>`
+        : '';
+    const emptyHtml = rows.length === 0
+        ? `<div style="padding:4px 8px; color:var(--dim,#737791);">(no lines in range)</div>`
+        : '';
+    const body = (rowsHtml || emptyHtml)
+        ? `<div style="${BOX}">${rowsHtml}${emptyHtml}${moreHtml}</div>`
+        : '';
+
+    const displayHtml = `
+        <div style="${WRAP}">
+            <div style="${BAR}">
+                <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+                    <span class="icon" style="font-size:13px; color:var(--cyan,#56b6c2); flex-shrink:0;">description</span>
+                    ${pathHtml(fp)}
+                    ${badge(`L${s}–L${requestedEnd}`, 'var(--cyan,#56b6c2)', 'rgba(86,182,194,0.14)')}
+                    ${sampled ? badge('sampled', 'var(--yellow,#e5c07b)', 'rgba(229,192,123,0.16)') : ''}
+                </div>
+                <div style="display:flex; align-items:center; gap:6px; font-size:10px; flex-shrink:0; margin-left:8px; color:var(--dim,#737791);">
+                    <span>${rows.length} line${rows.length === 1 ? '' : 's'}</span>
+                </div>
+            </div>
+            ${body}
+            <div style="display:flex; align-items:center; justify-content:space-between; font-size:10.5px; color:var(--dim,#737791); padding:0 2px;">
+                <div style="display:flex; align-items:center; gap:4px;">
+                    <span class="icon" style="font-size:12px; color:var(--green,#98c379);">check_circle</span>
+                    <span>${sampled ? 'Sampled read' : 'Read'} ${range}</span>
+                </div>
+                <span style="opacity:0.6;">${totalLines} total lines</span>
+            </div>
+        </div>`;
+
+    return { output: api.cleanupText(output), summary: header, displayHtml };
+}
+</script>
+<script type="text/plain" id="builtin-tool-src-edit">
+// edit - tool definition.
+const TOOL_META = {
+    "name": "edit",
+    "description": "Make targeted edits to a file by replacing an exact code block. To delete code, pass an empty string for replace_block.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "filepath": {
+                "type": "string"
+            },
+            "search_block": {
+                "type": "string",
+                "description": "3-10 lines of existing code context to find"
+            },
+            "replace_block": {
+                "type": "string",
+                "description": "Replacement code. Use an empty string to delete search_block entirely.",
+                "allowEmpty": true
+            }
+        },
+        "required": [
+            "filepath",
+            "search_block",
+            "replace_block"
+        ]
+    },
+    "modes": [
+        "code"
+    ],
+    "permission": "ask",
+    "toolBox": 1
+};
+
+async function handler(args, api) {
+
+    // --- Search & Replace Helpers --------------------------------------------
+
+    function detectIndentation(lines) {
+        for (const line of lines) {
+            if (line.startsWith('\t')) return { type: 'tab', char: '\t' };
+            if (line.startsWith('    ')) return { type: 'space4', char: '    ' };
+            if (line.startsWith('  ')) return { type: 'space2', char: '  ' };
+        }
+        return { type: 'space4', char: '    ' };
+    }
+
+    function applySearchReplace(original, searchBlock, replaceBlock) {
+        const usesCRLF = String(original == null ? '' : original).includes('\r\n');
+        const normalize = s => String(s == null ? '' : s).replace(/\r\n/g, '\n');
+        const toFileEol = s => usesCRLF ? s.replace(/\n/g, '\r\n') : s;
+
+        const orig   = normalize(original);
+        const sBlock = normalize(searchBlock);
+        const rBlock = normalize(replaceBlock);
+
+        // Fast path: exact match
+        const directIdx = orig.indexOf(sBlock);
+        if (directIdx !== -1) {
+            const before = orig.slice(0, directIdx);
+            const after  = orig.slice(directIdx + sBlock.length);
+            const res = before + rBlock + after;
+            const startLine = before.split('\n').length;
+            return { content: toFileEol(res), lineNumber: startLine };
+        }
+
+        // Fallback: line-by-line trim-aware match
+        const origLines = orig.split('\n');
+        const sLines    = sBlock.split('\n');
+        const rLines    = rBlock.split('\n');
+        const fileIndent = detectIndentation(origLines);
+
+        let matchIdx = -1;
+        for (let i = 0; i <= origLines.length - sLines.length; i++) {
+            let match = true;
+            for (let j = 0; j < sLines.length; j++) {
+                if (origLines[i + j].trim() !== sLines[j].trim()) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                matchIdx = i;
+                break;
+            }
+        }
+
+        if (matchIdx !== -1) {
+            const origLead = origLines[matchIdx].match(/^\s*/)[0];
+            const sLead    = sLines[0].match(/^\s*/)[0];
+
+            const adjustedRLines = rLines.map((line) => {
+                if (!line.trim()) return '';
+                const curLead = line.match(/^\s*/)[0];
+                const lineContent = line.slice(curLead.length);
+
+                let relativeIndent = curLead.startsWith(sLead) ? curLead.slice(sLead.length) : curLead;
+                if (fileIndent.type === 'tab') {
+                    relativeIndent = relativeIndent.replace(/ {4}/g, '\t').replace(/ {2}/g, '\t');
+                }
+
+                return origLead + relativeIndent + lineContent;
+            });
+
+            const before = origLines.slice(0, matchIdx).join('\n');
+            const after  = origLines.slice(matchIdx + sLines.length).join('\n');
+            const res = (before ? before + '\n' : '') + adjustedRLines.join('\n') + (after ? '\n' + after : '');
+            return { content: toFileEol(res), lineNumber: matchIdx + 1 };
+        }
+
+        throw new Error("Could not find search_block in target file.");
+    }
+
+    function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
+    // Modern Failure View for when search or writes fail
+    function renderErrorHtml(filepath, errorMessage) {
+        const pathParts = (filepath || '').split('/');
+        const fileName  = pathParts.pop() || filepath;
+        const dirPath   = pathParts.length ? pathParts.join('/') + '/' : '';
+
+        const searchRaw  = args.search_block  != null ? String(args.search_block)  : "";
+        const replaceRaw = args.replace_block != null ? String(args.replace_block) : "";
+        const searchLines  = searchRaw  === "" ? [] : searchRaw.split('\n');
+        const replaceLines = replaceRaw === "" ? [] : replaceRaw.split('\n');
+
+        let diffLinesHTML = '';
+        let lineNum = 1;
+        searchLines.forEach(l => {
+            diffLinesHTML += `
+                <div style="display:flex; background:rgba(224,108,117,0.08); color:rgba(255,128,138,0.75); min-height:20px; line-height:20px;">
+                    <div style="width:42px; text-align:right; padding-right:8px; color:rgba(224,108,117,0.4); user-select:none; font-size:10px; border-right:1px solid rgba(224,108,117,0.15); flex-shrink:0;">${lineNum}</div>
+                    <div style="width:20px; text-align:center; user-select:none; font-weight:700; color:rgba(224,108,117,0.6); flex-shrink:0;">-</div>
+                    <div style="padding-right:8px; white-space:pre-wrap; word-break:break-all; flex:1;">${escapeHtml(l)}</div>
+                </div>`;
+            lineNum++;
+        });
+
+        lineNum = 1;
+        replaceLines.forEach(l => {
+            diffLinesHTML += `
+                <div style="display:flex; background:rgba(152,195,121,0.06); color:rgba(152,195,121,0.65); min-height:20px; line-height:20px;">
+                    <div style="width:42px; text-align:right; padding-right:8px; color:rgba(152,195,121,0.3); user-select:none; font-size:10px; border-right:1px solid rgba(152,195,121,0.15); flex-shrink:0;">${lineNum}</div>
+                    <div style="width:20px; text-align:center; user-select:none; font-weight:700; color:rgba(152,195,121,0.5); flex-shrink:0;">+</div>
+                    <div style="padding-right:8px; white-space:pre-wrap; word-break:break-all; flex:1;">${escapeHtml(l)}</div>
+                </div>`;
+            lineNum++;
+        });
+
+        return `
+            <div style="font-family:var(--font-mono, monospace); display:flex; flex-direction:column; gap:6px; margin:2px 0;">
+                <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(224,108,117,0.06); border:1px solid rgba(224,108,117,0.25); padding:5px 8px; border-radius:6px; font-size:11px;">
+                    <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+                        <span class="icon" style="font-size:13px; color:var(--red,#e06c75); flex-shrink:0;">warning</span>
+                        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                            <span style="color:var(--dim,#737791);">${escapeHtml(dirPath)}</span><span style="color:var(--fg,#dcdfe7); font-weight:600;">${escapeHtml(fileName)}</span>
+                        </div>
+                        <span style="font-size:10px; background:rgba(224,108,117,0.2); color:var(--red,#e06c75); padding:1px 6px; border-radius:3px; flex-shrink:0; font-weight:700;">Edit Failed</span>
+                    </div>
+                    <span style="color:var(--dim,#737791); font-size:10px;">no changes applied</span>
+                </div>
+
+                ${diffLinesHTML ? `<div style="background:#0e1015; border:1px solid rgba(224,108,117,0.2); border-radius:6px; overflow:hidden; font-size:11px; opacity:0.85;">${diffLinesHTML}</div>` : ''}
+
+                <div style="display:flex; align-items:center; justify-content:space-between; font-size:10.5px; color:var(--red,#e06c75); padding:0 2px;">
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        <span class="icon" style="font-size:12px;">error</span>
+                        <span>${escapeHtml(errorMessage)}</span>
+                    </div>
+                    <span style="color:var(--dim,#737791); opacity:0.7;">File left untouched</span>
+                </div>
+            </div>
+        `;
+    }
+
+    // --- Mode Guards --------------------------------------------------------
+
+    if (api.mode === 'ask') return { output: "ERROR: Ask mode is strictly read-only. File modification is disabled. Switch to Code mode to apply changes." };
+    if (api.mode === 'plan') return { output: `ERROR: Plan mode is for planning only. Do not edit source code files. Write the complete plan to ${api.planFile}.` };
+
+    if (!(await api.fileExists(args.filepath))) {
+        const msg = `${args.filepath} not found`;
+        return { output: `ERROR: ${msg}`, displayHtml: renderErrorHtml(args.filepath, msg) };
+    }
+    if (await api.isBinary(args.filepath)) {
+        const msg = `${args.filepath} is a binary file.`;
+        return { output: `ERROR: ${msg}`, displayHtml: renderErrorHtml(args.filepath, msg) };
+    }
+
+    const header = `${args.filepath}`;
+    await api.setHeaderMsg(header);
+
+    try {
+        const originalContent = await api.readFile(args.filepath);
+        const result = applySearchReplace(originalContent, args.search_block, args.replace_block || "");
+        const err = await api.writeFile(args.filepath, result.content);
+        if (err) {
+            return { 
+                output: err, 
+                displayHtml: renderErrorHtml(args.filepath, err) 
+            };
+        }
+
+        // --- Metrics & Path Splitting ---------------------------------------
+
+        const searchRaw  = args.search_block  != null ? String(args.search_block)  : "";
+        const replaceRaw = args.replace_block != null ? String(args.replace_block) : "";
+
+        const searchLines  = searchRaw  === "" ? [] : searchRaw.split('\n');
+        const replaceLines = replaceRaw === "" ? [] : replaceRaw.split('\n');
+
+        const linesRemoved = searchLines.length;
+        const linesAdded   = replaceLines.length;
+        const delta        = linesAdded - linesRemoved;
+
+        const startLineNum = result.lineNumber;
+        const endLineNum   = linesRemoved > 0 ? startLineNum + linesRemoved - 1 : startLineNum;
+        const rangeText    = linesRemoved > 1 
+            ? `L${startLineNum}–L${endLineNum}` 
+            : (linesRemoved === 1 ? `L${startLineNum}` : `L${startLineNum} (ins)`);
+
+        const totalFileLines = result.content.split(/\r?\n/).length;
+
+        // Split filename from directory path for clean breadcrumbs
+        const pathParts = args.filepath.split('/');
+        const fileName  = pathParts.pop();
+        const dirPath   = pathParts.length ? pathParts.join('/') + '/' : '';
+
+        // --- Character-Level Diff Highlight (Single-Line Edits) --------------
+
+        let intraLineDel = null;
+        let intraLineAdd = null;
+
+        if (linesRemoved === 1 && linesAdded === 1) {
+            const s1 = searchLines[0];
+            const s2 = replaceLines[0];
+
+            let p = 0;
+            while (p < s1.length && p < s2.length && s1[p] === s2[p]) p++;
+
+            let s1End = s1.length - 1;
+            let s2End = s2.length - 1;
+            while (s1End >= p && s2End >= p && s1[s1End] === s2[s2End]) {
+                s1End--;
+                s2End--;
+            }
+
+            const prefix   = escapeHtml(s1.slice(0, p));
+            const suffix   = escapeHtml(s1.slice(s1End + 1));
+            const delMid   = escapeHtml(s1.slice(p, s1End + 1));
+            const addMid   = escapeHtml(s2.slice(p, s2End + 1));
+
+            intraLineDel = `${prefix}<span style="background:rgba(224,108,117,0.35); border-radius:2px; font-weight:600;">${delMid}</span>${suffix}`;
+            intraLineAdd = `${prefix}<span style="background:rgba(152,195,121,0.35); border-radius:2px; font-weight:600;">${addMid}</span>${suffix}`;
+        }
+
+        // --- Render Diff Lines ----------------------------------------------
+
+        let diffLinesHTML = '';
+        let lineNum = startLineNum;
+
+        searchLines.forEach((l) => {
+            const lineContent = (linesRemoved === 1 && linesAdded === 1 && intraLineDel) ? intraLineDel : escapeHtml(l);
+            diffLinesHTML += `
+                <div style="display:flex; background:rgba(224,108,117,0.12); color:#ff808a; min-height:20px; line-height:20px;">
+                    <div style="width:42px; text-align:right; padding-right:8px; color:rgba(224,108,117,0.6); user-select:none; font-size:10px; border-right:1px solid rgba(224,108,117,0.2); flex-shrink:0;">${lineNum}</div>
+                    <div style="width:20px; text-align:center; user-select:none; font-weight:700; color:rgba(224,108,117,0.8); flex-shrink:0;">-</div>
+                    <div style="padding-right:8px; white-space:pre-wrap; word-break:break-all; flex:1;">${lineContent}</div>
+                </div>`;
+            lineNum++;
+        });
+
+        lineNum = startLineNum;
+        replaceLines.forEach((l) => {
+            const lineContent = (linesRemoved === 1 && linesAdded === 1 && intraLineAdd) ? intraLineAdd : escapeHtml(l);
+            diffLinesHTML += `
+                <div style="display:flex; background:rgba(152,195,121,0.12); color:#98c379; min-height:20px; line-height:20px;">
+                    <div style="width:42px; text-align:right; padding-right:8px; color:rgba(152,195,121,0.6); user-select:none; font-size:10px; border-right:1px solid rgba(152,195,121,0.2); flex-shrink:0;">${lineNum}</div>
+                    <div style="width:20px; text-align:center; user-select:none; font-weight:700; color:rgba(152,195,121,0.8); flex-shrink:0;">+</div>
+                    <div style="padding-right:8px; white-space:pre-wrap; word-break:break-all; flex:1;">${lineContent}</div>
+                </div>`;
+            lineNum++;
+        });
+
+        // --- Mini Visual Bar (Git 5-block chart) ----------------------------
+
+        const totalChanges = Math.max(1, linesAdded + linesRemoved);
+        const addBlocks = Math.round((linesAdded / totalChanges) * 5);
+        const delBlocks = Math.min(5 - addBlocks, linesRemoved > 0 ? Math.max(1, 5 - addBlocks) : 0);
+        const neutralBlocks = Math.max(0, 5 - addBlocks - delBlocks);
+
+        let miniBar = '';
+        for (let i = 0; i < addBlocks; i++)     miniBar += `<span style="width:4px; height:8px; border-radius:1px; background:#98c379; display:inline-block;"></span>`;
+        for (let i = 0; i < delBlocks; i++)     miniBar += `<span style="width:4px; height:8px; border-radius:1px; background:#e06c75; display:inline-block;"></span>`;
+        for (let i = 0; i < neutralBlocks; i++) miniBar += `<span style="width:4px; height:8px; border-radius:1px; background:rgba(255,255,255,0.15); display:inline-block;"></span>`;
+
+        // --- Delta Pill -----------------------------------------------------
+
+        let deltaPill = '';
+        if (delta > 0) {
+            deltaPill = `<span style="background:rgba(152,195,121,0.18); color:#98c379; padding:1px 6px; border-radius:4px; font-weight:700;">+${delta}</span>`;
+        } else if (delta < 0) {
+            deltaPill = `<span style="background:rgba(224,108,117,0.18); color:#e06c75; padding:1px 6px; border-radius:4px; font-weight:700;">${delta}</span>`;
+        } else {
+            deltaPill = `<span style="background:rgba(255,255,255,0.06); color:var(--dim,#737791); padding:1px 6px; border-radius:4px; font-weight:600;">±0</span>`;
+        }
+
+        // --- Compose Final HTML ---------------------------------------------
+
+        const displayHtml = `
+            <div style="font-family:var(--font-mono, monospace); display:flex; flex-direction:column; gap:6px; margin:2px 0;">
+                
+                <!-- Header Pill Bar -->
+                <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:5px 8px; border-radius:6px; font-size:11px;">
+                    <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+                        <span class="icon" style="font-size:13px; color:var(--cyan,#56b6c2); flex-shrink:0;">code</span>
+                        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                            <span style="color:var(--dim,#737791);">${escapeHtml(dirPath)}</span><span style="color:var(--fg,#dcdfe7); font-weight:600;">${escapeHtml(fileName)}</span>
+                        </div>
+                        <span style="font-size:10px; background:rgba(86,182,194,0.14); color:var(--cyan,#56b6c2); padding:1px 5px; border-radius:3px; flex-shrink:0; font-weight:600;">@@ ${rangeText} @@</span>
+                    </div>
+
+                    <div style="display:flex; align-items:center; gap:6px; font-size:10px; flex-shrink:0; margin-left:8px;">
+                        <span style="color:#98c379; font-weight:600;">+${linesAdded}</span>
+                        <span style="color:#e06c75; font-weight:600;">-${linesRemoved}</span>
+                        <div style="display:inline-flex; gap:1px; align-items:center; margin:0 2px;">${miniBar}</div>
+                        ${deltaPill}
+                    </div>
+                </div>
+
+                <!-- Code Diff Box -->
+                <div style="background:#0e1015; border:1px solid rgba(255,255,255,0.08); border-radius:6px; overflow:hidden; font-size:11px; box-shadow:inset 0 1px 3px rgba(0,0,0,0.4);">
+                    ${diffLinesHTML}
+                </div>
+
+                <!-- Status Bar -->
+                <div style="display:flex; align-items:center; justify-content:space-between; font-size:10.5px; color:var(--dim,#737791); padding:0 2px;">
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        <span class="icon" style="font-size:12px; color:var(--green,#98c379);">check_circle</span>
+                        <span>Applied at line ${startLineNum}</span>
+                    </div>
+                    <span style="opacity:0.6;">${totalFileLines} total lines</span>
+                </div>
+            </div>
+        `;
+
+        const resultText = `Edited ${args.filepath} at ${rangeText}`;
+        const summary = `${args.filepath}:${startLineNum}`;
+
+        return { 
+            output: resultText, 
+            summary, 
+            displayHtml 
+        };
+    } catch(e) { 
+        return { 
+            output: `ERROR: ${e.message}`, 
+            displayHtml: renderErrorHtml(args.filepath, e.message) 
+        }; 
+    }
+}
+</script>
+<script type="text/plain" id="builtin-tool-src-write">
+// write - tool definition.
+const TOOL_META = {
+    "name": "write",
+    "description": "Create a new file, or fully overwrite an existing one. Use this for creating new files. For changes to an existing file, prefer the \"edit\" tool instead.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "filepath": {
+                "type": "string"
+            },
+            "content": {
+                "type": "string",
+                "description": "Full file content. Use an empty string to create an empty file.",
+                "allowEmpty": true
+            }
+        },
+        "required": [
+            "filepath",
+            "content"
+        ]
+    },
+    "modes": [
+        "plan",
+        "code"
+    ],
+    "permission": "ask",
+    "toolBox": 1,
+    "settings": [
+        {
+            "key": "previewLines",
+            "label": "Preview Lines",
+            "type": "number",
+            "default": 12,
+            "min": 0,
+            "max": 200,
+            "description": "How many lines of the written content are shown in the chat box."
+        }
+    ]
+};
+
+// --- UI helpers (display only, never sent to the model) ----------------------
+
+const WRAP = 'font-family:var(--font-mono, monospace); display:flex; flex-direction:column; gap:6px; margin:2px 0;';
+const BAR  = 'display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:5px 8px; border-radius:6px; font-size:11px;';
+const BOX  = 'background:#0e1015; border:1px solid rgba(255,255,255,0.08); border-radius:6px; overflow:hidden; font-size:11px; box-shadow:inset 0 1px 3px rgba(0,0,0,0.4);';
+
+function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function pathHtml(fp) {
+    const parts = String(fp || '').split('/');
+    const name = parts.pop() || fp;
+    const dir = parts.length ? parts.join('/') + '/' : '';
+    return `<div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><span style="color:var(--dim,#737791);">${esc(dir)}</span><span style="color:var(--fg,#dcdfe7); font-weight:600;">${esc(name)}</span></div>`;
+}
+
+function badge(text, color, bg) {
+    return `<span style="font-size:10px; background:${bg}; color:${color}; padding:1px 6px; border-radius:3px; flex-shrink:0; font-weight:700;">${esc(text)}</span>`;
+}
+
+function errorHtml(fp, label, msg) {
+    return `
+        <div style="${WRAP}">
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(224,108,117,0.06); border:1px solid rgba(224,108,117,0.25); padding:5px 8px; border-radius:6px; font-size:11px;">
+                <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+                    <span class="icon" style="font-size:13px; color:var(--red,#e06c75); flex-shrink:0;">warning</span>
+                    ${pathHtml(fp)}
+                    ${badge(label, 'var(--red,#e06c75)', 'rgba(224,108,117,0.2)')}
+                </div>
+                <span style="color:var(--dim,#737791); font-size:10px;">no changes applied</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:4px; font-size:10.5px; color:var(--red,#e06c75); padding:0 2px;">
+                <span class="icon" style="font-size:12px;">error</span>
+                <span>${esc(msg)}</span>
+            </div>
+        </div>`;
+}
+
+function fail(fp, msg) {
+    const clean = String(msg).replace(/^ERROR:\s*/, '');
+    return { output: `ERROR: ${clean}`, displayHtml: errorHtml(fp, 'Write Failed', clean) };
+}
+
+function formatBytes(n) {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
+
+// --- Handler -----------------------------------------------------------------
+
+async function handler(args, api) {
+    const fp = args.filepath;
+
+    if (api.mode === 'ask') return { output: "ERROR: Ask mode is strictly read-only. File modification is disabled. Switch to Code mode to apply changes." };
+    if (api.mode === 'plan' && fp !== api.planFile) {
+        return { output: `ERROR: Plan mode can ONLY write to "${api.planFile}". You cannot create or modify other files until the plan is approved.` };
+    }
+
+    const header = `${fp}`;
+    await api.setHeaderMsg(header);
+
+    try {
+        const content = args.content == null ? '' : String(args.content);
+
+        // Remember what was there so the card can say "created" vs "overwritten".
+        const existed = await api.fileExists(fp);
+        let oldLineCount = null;
+        if (existed) {
+            try {
+                if (!(await api.isBinary(fp))) {
+                    const old = await api.readFile(fp);
+                    if (typeof old === 'string' && !/^ERROR: [^\n]*$/.test(old)) oldLineCount = old.split(/\r?\n/).length;
+                }
+            } catch (e) { /* preview only */ }
+        }
+
+        const err = await api.writeFile(fp, content);
+        if (err) return fail(fp, err);
+
+        // --- Display -----------------------------------------------------------
+
+        const lines = content === '' ? [] : content.split(/\r?\n/);
+        const bytes = new TextEncoder().encode(content).length;
+
+        let previewLines = Number(await api.getSetting('previewLines'));
+        if (!Number.isFinite(previewLines) || previewLines < 0) previewLines = 12;
+        const shown = lines.slice(0, previewLines);
+        const hidden = lines.length - shown.length;
+
+        const rowsHtml = shown.map((l, i) => {
+            const t = l.length > 300 ? l.slice(0, 300) + '…' : l;
+            return `
+                <div style="display:flex; background:rgba(152,195,121,0.08); color:#98c379; min-height:20px; line-height:20px;">
+                    <div style="width:42px; text-align:right; padding-right:8px; color:rgba(152,195,121,0.55); user-select:none; font-size:10px; border-right:1px solid rgba(152,195,121,0.2); flex-shrink:0;">${i + 1}</div>
+                    <div style="width:20px; text-align:center; user-select:none; font-weight:700; color:rgba(152,195,121,0.8); flex-shrink:0;">+</div>
+                    <div style="padding-right:8px; white-space:pre-wrap; word-break:break-all; flex:1;">${esc(t)}</div>
+                </div>`;
+        }).join('');
+
+        const moreHtml = hidden > 0
+            ? `<div style="padding:3px 8px 3px 62px; color:var(--dim,#737791); font-size:10px; border-top:1px solid rgba(255,255,255,0.05);">… ${hidden} more line${hidden === 1 ? '' : 's'}</div>`
+            : '';
+        const emptyHtml = lines.length === 0
+            ? `<div style="padding:4px 8px; color:var(--dim,#737791);">(empty file)</div>`
+            : '';
+        const body = (rowsHtml || emptyHtml)
+            ? `<div style="${BOX}">${rowsHtml}${emptyHtml}${moreHtml}</div>`
+            : '';
+
+        const statusText = existed
+            ? `Overwrote file${oldLineCount !== null ? ` (was ${oldLineCount} line${oldLineCount === 1 ? '' : 's'})` : ''}`
+            : 'Created new file';
+
+        const displayHtml = `
+            <div style="${WRAP}">
+                <div style="${BAR}">
+                    <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+                        <span class="icon" style="font-size:13px; color:var(--cyan,#56b6c2); flex-shrink:0;">${existed ? 'edit_document' : 'note_add'}</span>
+                        ${pathHtml(fp)}
+                        ${existed
+                            ? badge('OVERWRITTEN', 'var(--yellow,#e5c07b)', 'rgba(229,192,123,0.16)')
+                            : badge('NEW', '#98c379', 'rgba(152,195,121,0.18)')}
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px; font-size:10px; flex-shrink:0; margin-left:8px;">
+                        <span style="color:#98c379; font-weight:600;">+${lines.length}</span>
+                        <span style="color:var(--dim,#737791);">${formatBytes(bytes)}</span>
+                    </div>
+                </div>
+                ${body}
+                <div style="display:flex; align-items:center; justify-content:space-between; font-size:10.5px; color:var(--dim,#737791); padding:0 2px;">
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        <span class="icon" style="font-size:12px; color:var(--green,#98c379);">check_circle</span>
+                        <span>${statusText}</span>
+                    </div>
+                    <span style="opacity:0.6;">${lines.length} line${lines.length === 1 ? '' : 's'}</span>
+                </div>
+            </div>`;
+
+        return { output: `Written ${fp}`, summary: header, displayHtml };
+    } catch (e) {
+        return fail(fp, e.message);
+    }
+}
+</script>
+<script type="text/plain" id="builtin-tool-src-grep">
+// grep - tool definition.
+const TOOL_META = {
+    "name": "grep",
+    "description": "Search for regex or text string across files with line numbers.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string"
+            },
+            "path": {
+                "type": "string",
+                "description": "Optional subfolder or filename filter"
+            },
+            "case_sensitive": {
+                "type": "boolean"
+            }
+        },
+        "required": [
+            "pattern"
+        ]
+    },
+    "modes": [
+        "plan",
+        "ask",
+        "code"
+    ],
+    "permission": "always",
+    "toolBox": 1,
+    "settings": [
+        {
+            "key": "maxMatches",
+            "label": "Max Matches",
+            "type": "number",
+            "default": 500,
+            "min": 1,
+            "max": 100000,
+            "description": "Largest number of matching lines returned before results are truncated."
+        },
+        {
+            "key": "previewLines",
+            "label": "Preview Matches",
+            "type": "number",
+            "default": 30,
+            "min": 0,
+            "max": 500,
+            "description": "How many matches are shown in the chat box (the model always receives the full result)."
+        }
+    ]
+};
+
+// --- UI helpers (display only, never sent to the model) ----------------------
+
+const WRAP = 'font-family:var(--font-mono, monospace); display:flex; flex-direction:column; gap:6px; margin:2px 0;';
+const BAR  = 'display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:5px 8px; border-radius:6px; font-size:11px;';
+const BOX  = 'background:#0e1015; border:1px solid rgba(255,255,255,0.08); border-radius:6px; overflow:hidden; font-size:11px; box-shadow:inset 0 1px 3px rgba(0,0,0,0.4);';
+
+function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function pathHtml(fp) {
+    const parts = String(fp || '').split('/');
+    const name = parts.pop() || fp;
+    const dir = parts.length ? parts.join('/') + '/' : '';
+    return `<span style="color:var(--dim,#737791);">${esc(dir)}</span><span style="color:var(--fg,#dcdfe7); font-weight:600;">${esc(name)}</span>`;
+}
+
+function badge(text, color, bg) {
+    return `<span style="font-size:10px; background:${bg}; color:${color}; padding:1px 6px; border-radius:3px; flex-shrink:0; font-weight:700;">${esc(text)}</span>`;
+}
+
+// Escapes text and wraps the first regex hit in a highlight span.
+function highlight(text, re) {
+    const t = text.length > 200 ? text.slice(0, 200) + '…' : text;
+    const m = re.exec(t);
+    if (!m || m[0] === '') return esc(t);
+    const a = m.index, b = m.index + m[0].length;
+    return esc(t.slice(0, a))
+        + `<span style="background:rgba(86,182,194,0.3); border-radius:2px; color:var(--fg,#dcdfe7); font-weight:600;">${esc(t.slice(a, b))}</span>`
+        + esc(t.slice(b));
+}
+
+// --- Handler -----------------------------------------------------------------
+
+async function handler(args, api) {
+    const flags = args.case_sensitive ? '' : 'i';
+    let re;
+    try {
+        re = new RegExp(args.pattern, flags);
+    } catch (e) {
+        re = new RegExp(args.pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+    }
+
+    const maxLines = await api.getSetting('maxMatches');
+    const allFiles = await api.listFiles();
+    const binaryFlags = await Promise.all(allFiles.map(f => api.isBinary(f)));
+    const filesToSearch = allFiles.filter((f, i) => !binaryFlags[i]);
+
+    const scope = args.path || 'all files';
+    const header = `pattern "${args.pattern}" in ${scope}`;
+    await api.setHeaderMsg(header);
+
+    const matches = []; // { fp, n, text }
+    let searched = 0;
+
+    for (const fp of filesToSearch) {
+        if (args.path && !fp.includes(args.path)) continue;
+        searched++;
+        if (searched % 10 === 0) await api.setHeaderMsg(`${header} (${searched} files scanned)`);
+        const txt = await api.readFile(fp);
+        const lines = txt.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+            if (re.test(lines[i])) {
+                if (matches.length >= maxLines) break;
+                matches.push({ fp, n: i + 1, text: lines[i].trim() });
+            }
+        }
+        if (matches.length >= maxLines) break;
+    }
+
+    const truncated = matches.length >= maxLines;
+    const summary = `Grep: ${matches.length} match(es)${truncated ? ` (truncated at ${maxLines})` : ''}`;
+    const output = api.cleanupText(matches.length ? matches.map(m => `${m.fp}:${m.n}: ${m.text}`).join('\n') : "(no matches)")
+        + (truncated ? `\n\n[truncated: showing ${maxLines} of many matches]` : '');
+
+    // --- Display ---------------------------------------------------------------
+
+    const fileCounts = new Map();
+    matches.forEach(m => fileCounts.set(m.fp, (fileCounts.get(m.fp) || 0) + 1));
+
+    let previewLimit = Number(await api.getSetting('previewLines'));
+    if (!Number.isFinite(previewLimit) || previewLimit < 0) previewLimit = 30;
+    const shown = matches.slice(0, previewLimit);
+    const hidden = matches.length - shown.length;
+
+    let rowsHtml = '';
+    let lastFile = null;
+    shown.forEach(m => {
+        if (m.fp !== lastFile) {
+            lastFile = m.fp;
+            rowsHtml += `
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:3px 8px; background:rgba(255,255,255,0.03); border-top:1px solid rgba(255,255,255,0.05);">
+                    <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${pathHtml(m.fp)}</div>
+                    <span style="color:var(--dim,#737791); font-size:10px; flex-shrink:0; margin-left:8px;">${fileCounts.get(m.fp)}</span>
+                </div>`;
+        }
+        rowsHtml += `
+            <div style="display:flex; min-height:20px; line-height:20px; color:var(--dim,#737791);">
+                <div style="width:42px; text-align:right; padding-right:8px; opacity:0.7; user-select:none; font-size:10px; border-right:1px solid rgba(255,255,255,0.08); flex-shrink:0;">${m.n}</div>
+                <div style="padding:0 8px; white-space:pre-wrap; word-break:break-all; flex:1;">${highlight(m.text, re)}</div>
+            </div>`;
+    });
+    if (hidden > 0) {
+        rowsHtml += `<div style="padding:3px 8px; color:var(--dim,#737791); font-size:10px; border-top:1px solid rgba(255,255,255,0.05);">… ${hidden} more match${hidden === 1 ? '' : 'es'} (full result was sent to the model)</div>`;
+    }
+    if (!matches.length) {
+        rowsHtml = `<div style="padding:4px 8px; color:var(--dim,#737791);">(no matches)</div>`;
+    }
+
+    const displayHtml = `
+        <div style="${WRAP}">
+            <div style="${BAR}">
+                <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+                    <span class="icon" style="font-size:13px; color:var(--cyan,#56b6c2); flex-shrink:0;">search</span>
+                    <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--fg,#dcdfe7); font-weight:600;">${esc(args.pattern)}</div>
+                    ${badge(scope, 'var(--cyan,#56b6c2)', 'rgba(86,182,194,0.14)')}
+                    ${args.case_sensitive ? badge('Aa', 'var(--dim,#737791)', 'rgba(255,255,255,0.06)') : ''}
+                    ${truncated ? badge('truncated', 'var(--yellow,#e5c07b)', 'rgba(229,192,123,0.16)') : ''}
+                </div>
+                <div style="display:flex; align-items:center; gap:6px; font-size:10px; flex-shrink:0; margin-left:8px;">
+                    <span style="color:${matches.length ? '#98c379' : 'var(--dim,#737791)'}; font-weight:600;">${matches.length} match${matches.length === 1 ? '' : 'es'}</span>
+                    <span style="color:var(--dim,#737791);">${fileCounts.size} file${fileCounts.size === 1 ? '' : 's'}</span>
+                </div>
+            </div>
+            <div style="${BOX}">${rowsHtml}</div>
+            <div style="display:flex; align-items:center; justify-content:space-between; font-size:10.5px; color:var(--dim,#737791); padding:0 2px;">
+                <div style="display:flex; align-items:center; gap:4px;">
+                    <span class="icon" style="font-size:12px; color:var(--green,#98c379);">check_circle</span>
+                    <span>Searched ${searched} file${searched === 1 ? '' : 's'}</span>
+                </div>
+            </div>
+        </div>`;
+
+    return { output, summary, displayHtml };
+}
+</script>
+<script type="text/plain" id="builtin-tool-src-find">
+// find - tool definition.
+const TOOL_META = {
+    "name": "find",
+    "description": "Find files by filename pattern/extension (e.g. *.html, demo.rs, *.pas).",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string"
+            }
+        },
+        "required": [
+            "pattern"
+        ]
+    },
+    "modes": [
+        "plan",
+        "ask",
+        "code"
+    ],
+    "permission": "always",
+    "toolBox": 1,
+    "settings": [
+        {
+            "key": "previewLines",
+            "label": "Preview Files",
+            "type": "number",
+            "default": 30,
+            "min": 0,
+            "max": 500,
+            "description": "How many file paths are shown in the chat box (the model always receives the full list)."
+        }
+    ]
+};
+
+// --- UI helpers (display only, never sent to the model) ----------------------
+
+const WRAP = 'font-family:var(--font-mono, monospace); display:flex; flex-direction:column; gap:6px; margin:2px 0;';
+const BAR  = 'display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:5px 8px; border-radius:6px; font-size:11px;';
+const BOX  = 'background:#0e1015; border:1px solid rgba(255,255,255,0.08); border-radius:6px; overflow:hidden; font-size:11px; box-shadow:inset 0 1px 3px rgba(0,0,0,0.4);';
+
+function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function pathHtml(fp) {
+    const parts = String(fp || '').split('/');
+    const name = parts.pop() || fp;
+    const dir = parts.length ? parts.join('/') + '/' : '';
+    return `<span style="color:var(--dim,#737791);">${esc(dir)}</span><span style="color:var(--fg,#dcdfe7); font-weight:600;">${esc(name)}</span>`;
+}
+
+// --- Handler -----------------------------------------------------------------
+
+async function handler(args, api) {
+    const pat = args.pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+    const re = new RegExp(pat, 'i');
+    const allFiles = await api.listFiles();
+    const matches = allFiles.filter(f => re.test(f));
+
+    const summary = `"${args.pattern}": ${matches.length} file(s)`;
+    const output = matches.length ? matches.join('\n') : "(no files matched)";
+
+    // --- Display ---------------------------------------------------------------
+
+    let previewLimit = Number(await api.getSetting('previewLines'));
+    if (!Number.isFinite(previewLimit) || previewLimit < 0) previewLimit = 30;
+    const shown = matches.slice(0, previewLimit);
+    const hidden = matches.length - shown.length;
+
+    let rowsHtml = shown.map(fp => `
+        <div style="display:flex; align-items:center; gap:6px; min-height:20px; line-height:20px; padding:0 8px;">
+            <span class="icon" style="font-size:12px; color:var(--dim,#737791); flex-shrink:0;">draft</span>
+            <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${pathHtml(fp)}</div>
+        </div>`).join('');
+    if (hidden > 0) {
+        rowsHtml += `<div style="padding:3px 8px; color:var(--dim,#737791); font-size:10px; border-top:1px solid rgba(255,255,255,0.05);">… ${hidden} more file${hidden === 1 ? '' : 's'} (full list was sent to the model)</div>`;
+    }
+    if (!matches.length) {
+        rowsHtml = `<div style="padding:4px 8px; color:var(--dim,#737791);">(no files matched)</div>`;
+    }
+
+    const displayHtml = `
+        <div style="${WRAP}">
+            <div style="${BAR}">
+                <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+                    <span class="icon" style="font-size:13px; color:var(--cyan,#56b6c2); flex-shrink:0;">find_in_page</span>
+                    <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--fg,#dcdfe7); font-weight:600;">${esc(args.pattern)}</div>
+                </div>
+                <span style="color:${matches.length ? '#98c379' : 'var(--dim,#737791)'}; font-size:10px; font-weight:600; flex-shrink:0; margin-left:8px;">${matches.length} file${matches.length === 1 ? '' : 's'}</span>
+            </div>
+            <div style="${BOX}">${rowsHtml}</div>
+            <div style="display:flex; align-items:center; justify-content:space-between; font-size:10.5px; color:var(--dim,#737791); padding:0 2px;">
+                <div style="display:flex; align-items:center; gap:4px;">
+                    <span class="icon" style="font-size:12px; color:var(--green,#98c379);">check_circle</span>
+                    <span>Matched against ${allFiles.length} file${allFiles.length === 1 ? '' : 's'}</span>
+                </div>
+            </div>
+        </div>`;
+
+    return { output, summary, displayHtml };
+}
+</script>
+<script type="text/plain" id="builtin-tool-src-rename">
+// rename - tool definition.
+const TOOL_META = {
+    "name": "rename",
+    "description": "Rename a file to a new filename.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "filepath": {
+                "type": "string",
+                "description": "The current file path to rename"
+            },
+            "new_name": {
+                "type": "string",
+                "description": "The new filename"
+            }
+        },
+        "required": [
+            "filepath",
+            "new_name"
+        ]
+    },
+    "modes": [
+        "code"
+    ],
+    "permission": "ask",
+    "toolBox": 1
+};
+
+// --- UI helpers (display only, never sent to the model) ----------------------
+
+const WRAP = 'font-family:var(--font-mono, monospace); display:flex; flex-direction:column; gap:6px; margin:2px 0;';
+const BAR  = 'display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:5px 8px; border-radius:6px; font-size:11px;';
+const BOX  = 'background:#0e1015; border:1px solid rgba(255,255,255,0.08); border-radius:6px; overflow:hidden; font-size:11px; box-shadow:inset 0 1px 3px rgba(0,0,0,0.4);';
+
+function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function pathHtml(fp) {
+    const parts = String(fp || '').split('/');
+    const name = parts.pop() || fp;
+    const dir = parts.length ? parts.join('/') + '/' : '';
+    return `<div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><span style="color:var(--dim,#737791);">${esc(dir)}</span><span style="color:var(--fg,#dcdfe7); font-weight:600;">${esc(name)}</span></div>`;
+}
+
+function badge(text, color, bg) {
+    return `<span style="font-size:10px; background:${bg}; color:${color}; padding:1px 6px; border-radius:3px; flex-shrink:0; font-weight:700;">${esc(text)}</span>`;
+}
+
+function errorHtml(fp, newName, msg) {
+    return `
+        <div style="${WRAP}">
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(224,108,117,0.06); border:1px solid rgba(224,108,117,0.25); padding:5px 8px; border-radius:6px; font-size:11px;">
+                <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+                    <span class="icon" style="font-size:13px; color:var(--red,#e06c75); flex-shrink:0;">warning</span>
+                    ${pathHtml(fp)}
+                    <span class="icon" style="font-size:12px; color:var(--dim,#737791); flex-shrink:0;">arrow_forward</span>
+                    <span style="color:var(--dim,#737791); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(newName)}</span>
+                    ${badge('Rename Failed', 'var(--red,#e06c75)', 'rgba(224,108,117,0.2)')}
+                </div>
+                <span style="color:var(--dim,#737791); font-size:10px;">no changes applied</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:4px; font-size:10.5px; color:var(--red,#e06c75); padding:0 2px;">
+                <span class="icon" style="font-size:12px;">error</span>
+                <span>${esc(msg)}</span>
+            </div>
+        </div>`;
+}
+
+// --- Handler -----------------------------------------------------------------
+
+async function handler(args, api) {
+    const fp = args.filepath;
+    const newName = args.new_name;
+
+    const header = `${fp} → ${newName}`;
+    await api.setHeaderMsg(header);
+
+    try {
+        const err = await api.renameFile(fp, newName);
+        if (err) {
+            const msg = String(err).replace(/^ERROR:\s*/, '');
+            return { output: `ERROR: ${msg}`, summary: header, displayHtml: errorHtml(fp, newName, msg) };
+        }
+    } catch (e) {
+        return { output: `ERROR: ${e.message}`, summary: header, displayHtml: errorHtml(fp, newName, e.message) };
+    }
+
+    // The host keeps a renamed file in its original directory, so that is the path shown as the result.
+    const dir = fp.includes('/') ? fp.slice(0, fp.lastIndexOf('/') + 1) : '';
+    const newPath = newName.includes('/') ? newName : dir + newName;
+
+    const row = (sign, color, bg, gutter, path) => `
+        <div style="display:flex; background:${bg}; color:${color}; min-height:20px; line-height:20px;">
+            <div style="width:20px; text-align:center; user-select:none; font-weight:700; opacity:0.8; flex-shrink:0;">${sign}</div>
+            <div style="padding:0 8px; white-space:pre-wrap; word-break:break-all; flex:1;">${esc(path)}</div>
+        </div>`;
+
+    const displayHtml = `
+        <div style="${WRAP}">
+            <div style="${BAR}">
+                <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+                    <span class="icon" style="font-size:13px; color:var(--cyan,#56b6c2); flex-shrink:0;">drive_file_rename_outline</span>
+                    ${pathHtml(fp)}
+                    <span class="icon" style="font-size:12px; color:var(--dim,#737791); flex-shrink:0;">arrow_forward</span>
+                    <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--fg,#dcdfe7); font-weight:600;">${esc(newName)}</div>
+                </div>
+                ${badge('RENAMED', '#98c379', 'rgba(152,195,121,0.18)')}
+            </div>
+            <div style="${BOX}">
+                ${row('-', '#ff808a', 'rgba(224,108,117,0.12)', '', fp)}
+                ${row('+', '#98c379', 'rgba(152,195,121,0.12)', '', newPath)}
+            </div>
+            <div style="display:flex; align-items:center; gap:4px; font-size:10.5px; color:var(--dim,#737791); padding:0 2px;">
+                <span class="icon" style="font-size:12px; color:var(--green,#98c379);">check_circle</span>
+                <span>File renamed</span>
+            </div>
+        </div>`;
+
+    return { output: `Renamed ${fp} to ${newName}`, summary: header, displayHtml };
+}
+</script>
+<script type="text/plain" id="builtin-tool-src-preview_image">
+// preview_image - tool definition.
+const TOOL_META = {
+    "name": "preview_image",
+    "description": "View an image file (or a cropped region of it) as an actual image (png/jpg/jpeg/gif/bmp/webp/svg/ico). Pass filepath alone to see the whole image, or add x/y/width/height to zoom into a specific region — useful for reading small text or inspecting detail in a screenshot. Coordinates are normalized fractions in the range 0.0-1.0 relative to the image dimensions (0.0 is left/top, 1.0 is right/bottom).",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "filepath": {
+                "type": "string",
+                "description": "Path to an image in the open workspace."
+            },
+            "x": {
+                "type": "number",
+                "description": "Left edge of the crop region, normalized fraction 0.0-1.0 (0.0 is left, 1.0 is right). Omit to view the full image."
+            },
+            "y": {
+                "type": "number",
+                "description": "Top edge of the crop region, normalized fraction 0.0-1.0 (0.0 is top, 1.0 is bottom)."
+            },
+            "width": {
+                "type": "number",
+                "description": "Width of the crop region, normalized fraction 0.0-1.0 (1.0 spans the full width)."
+            },
+            "height": {
+                "type": "number",
+                "description": "Height of the crop region, normalized fraction 0.0-1.0 (1.0 spans the full height)."
+            }
+        },
+        "required": [
+            "filepath"
+        ]
+    },
+    "modes": [
+        "plan",
+        "ask",
+        "code"
+    ],
+    "permission": "always",
+    "toolBox": 1,
+    "expanded": true,
+    "require_vision": true
+};
+
+// --- UI helpers (display only, never sent to the model) ----------------------
+
+const WRAP = 'font-family:var(--font-mono, monospace); display:flex; flex-direction:column; gap:6px; margin:2px 0;';
+const BAR  = 'display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:5px 8px; border-radius:6px; font-size:11px;';
+
+function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function pathHtml(fp) {
+    const parts = String(fp || '').split('/');
+    const name = parts.pop() || fp;
+    const dir = parts.length ? parts.join('/') + '/' : '';
+    return `<div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><span style="color:var(--dim,#737791);">${esc(dir)}</span><span style="color:var(--fg,#dcdfe7); font-weight:600;">${esc(name)}</span></div>`;
+}
+
+function badge(text, color, bg) {
+    return `<span style="font-size:10px; background:${bg}; color:${color}; padding:1px 6px; border-radius:3px; flex-shrink:0; font-weight:700;">${esc(text)}</span>`;
+}
+
+function errorHtml(fp, msg) {
+    return `
+        <div style="${WRAP}">
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(224,108,117,0.06); border:1px solid rgba(224,108,117,0.25); padding:5px 8px; border-radius:6px; font-size:11px;">
+                <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+                    <span class="icon" style="font-size:13px; color:var(--red,#e06c75); flex-shrink:0;">warning</span>
+                    ${pathHtml(fp)}
+                    ${badge('Preview Failed', 'var(--red,#e06c75)', 'rgba(224,108,117,0.2)')}
+                </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:4px; font-size:10.5px; color:var(--red,#e06c75); padding:0 2px;">
+                <span class="icon" style="font-size:12px;">error</span>
+                <span>${esc(msg)}</span>
+            </div>
+        </div>`;
+}
+
+function fail(fp, msg) {
+    const clean = String(msg).replace(/^ERROR:\s*/, '');
+    return { output: `ERROR: ${clean}`, displayHtml: errorHtml(fp, clean) };
+}
+
+// --- Handler -----------------------------------------------------------------
+
+async function handler(args, api) {
+    const fp = args.filepath;
+    if (!fp) return { output: 'ERROR: filepath is required.' };
+
+    const header = `${fp}`;
+    await api.setHeaderMsg(header);
+
+    // Only forward the crop fields the model actually provided.
+    const cropArgs = {};
+    ['x', 'y', 'width', 'height'].forEach(k => {
+        if (args[k] !== undefined && args[k] !== null) cropArgs[k] = args[k];
+    });
+
+    // The host reads the file (with the usual path-safety checks) and does the canvas crop/scale,
+    // since decoding and re-encoding images needs the DOM, which a tool worker doesn't have.
+    let img;
+    try {
+        img = await api.readImage(fp, cropArgs);
+    } catch (e) {
+        return fail(fp, `Failed to preview ${fp}: ${e.message}`);
+    }
+    if (!img || img.error) return fail(fp, (img && img.error) || `Failed to preview ${fp}.`);
+
+    const { dataUrl, width, height, sourceWidth, sourceHeight, crop } = img;
+
+    // This text is what the model reads; the image itself is passed separately via `image`.
+    const output = crop
+        ? `Cropped region ${crop.x},${crop.y} ${crop.width}x${crop.height} of ${fp} (full image is ${sourceWidth}x${sourceHeight}), shown below at ${width}x${height}.`
+        : `Full image ${fp} (${sourceWidth}x${sourceHeight}), shown below${(width !== sourceWidth || height !== sourceHeight) ? ` scaled to ${width}x${height}` : ''}.`;
+
+    // --- Display ---------------------------------------------------------------
+
+    const base = String(fp).split('/').pop().split('\\').pop() || 'image';
+    const name = crop ? `${base} (region)` : base;
+    // The chat's click handler opens `.tool-preview-image-thumb[data-attachment-id]` in an editor tab and
+    // rebuilds the image from the <img> below, so the id only has to be unique.
+    const attId = `prev_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+
+    const displayHtml = `
+        <div style="${WRAP}">
+            <div style="${BAR}">
+                <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+                    <span class="icon" style="font-size:13px; color:var(--cyan,#56b6c2); flex-shrink:0;">image</span>
+                    ${pathHtml(fp)}
+                    ${crop
+                        ? badge(`region ${crop.x},${crop.y} ${crop.width}×${crop.height}`, 'var(--yellow,#e5c07b)', 'rgba(229,192,123,0.16)')
+                        : badge('full image', 'var(--cyan,#56b6c2)', 'rgba(86,182,194,0.14)')}
+                </div>
+                <span style="color:var(--dim,#737791); font-size:10px; flex-shrink:0; margin-left:8px;">${width}×${height}</span>
+            </div>
+            <div class="tool-preview-image-thumb" data-attachment-id="${attId}" title="Click to open in a tab: ${esc(name)}">
+                <img src="${dataUrl}" alt="${esc(name)}" style="max-width:280px; max-height:200px; border-radius:6px; border:1px solid var(--border); margin:4px 0; display:block;">
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; font-size:10.5px; color:var(--dim,#737791); padding:0 2px;">
+                <div style="display:flex; align-items:center; gap:4px;">
+                    <span class="icon" style="font-size:12px; color:var(--green,#98c379);">check_circle</span>
+                    <span>${crop ? 'Cropped region sent to the model' : 'Image sent to the model'}</span>
+                </div>
+                <span style="opacity:0.6;">source ${sourceWidth}×${sourceHeight}</span>
+            </div>
+        </div>`;
+
+    return { output, summary: header, displayHtml, image: dataUrl };
+}
+</script>
+
 <script>
 const PLAN_FILE = '.agent_plan.md';
 const CUSTOM_TOOLS_DIR = '.agent';
@@ -3961,201 +5278,18 @@ ${handlerBody.replace(/\n$/, '')}
 `;
 }
 
+// Every built-in tool is a complete, self-contained tool file (logic, result text and the chat display all live
+// inside the tool); they are embedded as text/plain blocks so they stay readable and unescaped.
+function getBuiltinToolSource(name) {
+    const el = document.getElementById('builtin-tool-src-' + name);
+    const text = el ? el.textContent : '';
+    return text.replace(/^\r?\n/, '').replace(/\r?\n/g, '\r\n');
+}
+
 function seedBuiltinToolSources() {
-    return {
-        read: buildToolFileSource({
-            name: 'read',
-            description: 'Read lines or full contents of a file. If the requested range is larger than the configured line limit, the content is evenly sampled across the range instead of truncated.',
-            parameters: { type: "object", properties: { filepath: { type: "string" }, start_line: { type: "integer" }, end_line: { type: "integer" } }, required: ["filepath"] },
-            modes: ['plan', 'ask', 'code'],
-            permission: 'always',
-            settings: [
-                { key: 'maxLines', label: 'Max Read Lines', type: 'number', default: 500, min: 1, max: 100000, description: 'Largest number of lines returned in one read; larger ranges are evenly sampled.' }
-            ]
-        }, `
-    if (await api.isBinary(args.filepath)) {
-        return { output: \`ERROR: \${args.filepath} is a binary file and cannot be read as text.\` };
-    }
-
-    const txt = await api.readFile(args.filepath);
-    if (txt === undefined) return { output: \`ERROR: \${args.filepath} not found\` };
-
-    const lines = txt.split('\\n');
-    const totalLines = lines.length;
-    const s = Math.max(1, args.start_line || 1);
-    const maxLines = await api.getSetting('maxLines');
-    const requestedEnd = Math.min(totalLines, args.end_line || totalLines);
-    const requestedLineCount = Math.max(0, requestedEnd - s + 1);
-
-    const range = \`lines \${s}-\${requestedEnd}\`;
-    const header = \`\${args.filepath} (\${range})\`;
-    await api.setHeaderMsg(header);
-
-    if (requestedLineCount <= maxLines) {
-        const content = lines.slice(s - 1, requestedEnd).map((l, i) => \`\${s + i} | \${l}\`).join('\\n');
-        return { output: api.cleanupText(content), summary: header };
-    }
-
-    const rangeLines = lines.slice(s - 1, requestedEnd);
-    const rangeTotal = rangeLines.length;
-    const sampled = [];
-    if (maxLines <= 1) {
-        sampled.push(\`\${s} | \${rangeLines[0]}\`);
-    } else {
-        const step = (rangeTotal - 1) / (maxLines - 1);
-        for (let i = 0; i < maxLines; i++) {
-            const index = Math.round(i * step);
-            sampled.push(\`\${s + index} | \${rangeLines[index]}\`);
-        }
-    }
-    const warning = \`\\n\\n..\\n[WARNING: Compact read used because the requested \${requestedLineCount} lines exceed the Read Lines limit of \${maxLines}. Content above is sampled across the requested range. For non-compact/full content, request a range of \${maxLines} lines or fewer.]\`;
-    return { output: api.cleanupText(sampled.join('\\n') + warning), summary: header };
-`),
-
-        edit: buildToolFileSource({
-            name: 'edit',
-            description: 'Make surgical targeted edits to a file by replacing an exact code block.',
-            parameters: { type: "object", properties: { filepath: { type: "string" }, search_block: { type: "string", description: "3-10 lines of existing code context to find" }, replace_block: { type: "string", description: "Replacement code" } }, required: ["filepath", "search_block", "replace_block"] },
-            modes: ['code'],
-            permission: 'ask'
-        }, `
-    if (api.mode === 'ask') return { output: "ERROR: Ask mode is strictly read-only. File modification is disabled. Switch to Code mode to apply changes." };
-    if (api.mode === 'plan') return { output: \`ERROR: Plan mode is for planning only. Do not edit source code files. Write the complete plan to \${api.planFile}.\` };
-
-    if (!(await api.fileExists(args.filepath))) return { output: \`ERROR: \${args.filepath} not found\` };
-    if (await api.isBinary(args.filepath)) return { output: \`ERROR: \${args.filepath} is a binary file.\` };
-
-    const header = \`\${args.filepath}\`;
-    await api.setHeaderMsg(header);
-
-    try {
-        const originalContent = await api.readFile(args.filepath);
-        const result = api.applySearchReplace(originalContent, args.search_block, args.replace_block || "");
-        const err = await api.writeFile(args.filepath, result.content);
-        if (err) return { output: err };
-        return { output: \`Edited code block in \${args.filepath} at line \${result.lineNumber}\`, summary: header };
-    } catch(e) { return { output: \`ERROR: \${e.message}\` }; }
-`),
-
-        write: buildToolFileSource({
-            name: 'write',
-            description: 'Create a new file, or fully overwrite an existing one. Use this for creating new files. For changes to an existing file, prefer the "edit" tool instead.',
-            parameters: { type: "object", properties: { filepath: { type: "string" }, content: { type: "string" } }, required: ["filepath", "content"] },
-            modes: ['plan', 'code'],
-            permission: 'ask'
-        }, `
-    if (api.mode === 'ask') return { output: "ERROR: Ask mode is strictly read-only. File modification is disabled. Switch to Code mode to apply changes." };
-    if (api.mode === 'plan' && args.filepath !== api.planFile) {
-        return { output: \`ERROR: Plan mode can ONLY write to "\${api.planFile}". You cannot create or modify other files until the plan is approved.\` };
-    }
-
-    const header = \`\${args.filepath}\`;
-    await api.setHeaderMsg(header);
-
-    try {
-        const err = await api.writeFile(args.filepath, args.content);
-        if (err) return { output: err };
-        return { output: \`Written \${args.filepath}\`, summary: header };
-    } catch(e) { return { output: \`ERROR: \${e.message}\` }; }
-`),
-
-        grep: buildToolFileSource({
-            name: 'grep',
-            description: 'Search for regex or text string across files with line numbers.',
-            parameters: { type: "object", properties: { pattern: { type: "string" }, path: { type: "string", description: "Optional subfolder or filename filter" }, case_sensitive: { type: "boolean" } }, required: ["pattern"] },
-            modes: ['plan', 'ask', 'code'],
-            permission: 'always',
-            settings: [
-                { key: 'maxMatches', label: 'Max Matches', type: 'number', default: 500, min: 1, max: 100000, description: 'Largest number of matching lines returned before results are truncated.' }
-            ]
-        }, `
-    let res = [];
-    let flags = args.case_sensitive ? '' : 'i';
-    let re;
-    try { re = new RegExp(args.pattern, flags); } catch(e) { re = new RegExp(args.pattern.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$&'), flags); }
-
-    const maxLines = await api.getSetting('maxMatches');
-    const allFiles = await api.listFiles();
-    const binaryFlags = await Promise.all(allFiles.map(f => api.isBinary(f)));
-    const filesToSearch = allFiles.filter((f, i) => !binaryFlags[i]);
-
-    const scope = args.path || 'all files';
-    const header = \`pattern "\${args.pattern}" in \${scope}\`;
-    await api.setHeaderMsg(header);
-    let searched = 0;
-
-    for (const fp of filesToSearch) {
-        if (args.path && !fp.includes(args.path)) continue;
-        searched++;
-        if (searched % 10 === 0) await api.setHeaderMsg(\`\${header} (\${searched} files scanned)\`);
-        const txt = await api.readFile(fp);
-        const lines = txt.split('\\n');
-        for (let i = 0; i < lines.length; i++) {
-            if (re.test(lines[i])) {
-                if (res.length >= maxLines) break;
-                res.push(\`\${fp}:\${i+1}: \${lines[i].trim()}\`);
-            }
-        }
-        if (res.length >= maxLines) break;
-    }
-    const truncated = res.length >= maxLines;
-    const summary = \`Grep: \${res.length} match(es)\${truncated ? \` (truncated at \${maxLines})\` : ''}\`;
-    const output = api.cleanupText(res.length ? res.join('\\n') : "(no matches)") + (truncated ? \`\\n\\n[truncated: showing \${maxLines} of many matches]\` : '');
-    return { output, summary };
-`),
-
-        find: buildToolFileSource({
-            name: 'find',
-            description: 'Find files by filename pattern/extension (e.g. *.html, demo.rs, *.pas).',
-            parameters: { type: "object", properties: { pattern: { type: "string" } }, required: ["pattern"] },
-            modes: ['plan', 'ask', 'code'],
-            permission: 'always'
-        }, `
-    const pat = args.pattern.replace(/[.+?^\${}()|[\\]\\\\]/g, '\\\\$&').replace(/\\*/g, '.*');
-    const re = new RegExp(pat, 'i');
-    const allFiles = await api.listFiles();
-    const matches = allFiles.filter(f => re.test(f));
-    const summary = \`"\${args.pattern}": \${matches.length} file(s)\`;
-    return { output: matches.length ? matches.join('\\n') : "(no files matched)", summary };
-`),
-
-        rename: buildToolFileSource({
-            name: 'rename',
-            description: 'Rename a file to a new filename.',
-            parameters: { type: "object", properties: { filepath: { type: "string", description: "The current file path to rename" }, new_name: { type: "string", description: "The new filename" } }, required: ["filepath", "new_name"] },
-            modes: ['code'],
-            permission: 'ask'
-        }, `
-    const header = \`\${args.filepath} → \${args.new_name}\`;
-    await api.setHeaderMsg(header);
-    const err = await api.renameFile(args.filepath, args.new_name);
-    if (err) return { output: err, summary: header };
-    return { output: \`\${args.filepath} to \${args.new_name}\`, summary: header };
-`),
-
-        preview_image: buildToolFileSource({
-            name: 'preview_image',
-            description: 'View an image file (or a cropped region of it) as an actual image (png/jpg/jpeg/gif/bmp/webp/svg/ico). Pass filepath alone to see the whole image, or add x/y/width/height to zoom into a specific region — useful for reading small text or inspecting detail in a screenshot. Coordinates are normalized fractions in the range 0.0-1.0 relative to the image dimensions (0.0 is left/top, 1.0 is right/bottom).',
-            parameters: {
-                type: "object",
-                properties: {
-                    filepath: { type: "string", description: "Path to an image in the open workspace." },
-                    x: { type: "number", description: "Left edge of the crop region, normalized fraction 0.0-1.0 (0.0 is left, 1.0 is right). Omit to view the full image." },
-                    y: { type: "number", description: "Top edge of the crop region, normalized fraction 0.0-1.0 (0.0 is top, 1.0 is bottom)." },
-                    width: { type: "number", description: "Width of the crop region, normalized fraction 0.0-1.0 (1.0 spans the full width)." },
-                    height: { type: "number", description: "Height of the crop region, normalized fraction 0.0-1.0 (1.0 spans the full height)." }
-                },
-                required: ["filepath"]
-            },
-            modes: ['plan', 'ask', 'code'],
-            permission: 'always',
-            require_vision: true
-        }, `
-    const header = \`\${args.filepath}\`;
-    await api.setHeaderMsg(header);
-    return { output: "ERROR: preview_image should be handled natively; this stub should not run.", summary: header };
-`),
-    };
+    const seeded = {};
+    BUILTIN_TOOL_NAMES.forEach(name => { seeded[name] = getBuiltinToolSource(name); });
+    return seeded;
 }
 
 const BUILTIN_TOOL_NAMES = ['read', 'edit', 'write', 'grep', 'find', 'rename', 'preview_image'];
@@ -4283,28 +5417,6 @@ function getAllTools() {
     return Object.values(toolRegistry);
 }
 
-// One-time, non-destructive upgrade for installs that persisted an older built-in tool file.
-// Tool sources live in localStorage and win over the seeded ones, so `preview_image` saved before
-// the vision feature existed has no `require_vision` and would still be offered to text-only
-// models. If (and only if) that key is absent from its TOOL_META, add `require_vision: true`
-// in place, leaving any user edits to the rest of the file untouched. An explicit
-// `require_vision: false` is respected.
-function migrateBuiltinToolVisionFlag(persisted) {
-    const name = 'preview_image';
-    if (wasToolEverDeleted(name)) return;
-    const fp = toolFilePath(name);
-    const src = registry.files[fp];
-    if (typeof src !== 'string') return;
-    const m = src.match(/(?:const|let|var)\s+TOOL_META\s*=\s*\{/);
-    if (!m) return;
-    const meta = parseToolMeta(src);
-    if (!meta || Object.prototype.hasOwnProperty.call(meta, 'require_vision')) return;
-    const insertAt = m.index + m[0].length;
-    const migrated = src.slice(0, insertAt) + '\n    "require_vision": true,' + src.slice(insertAt);
-    registry.files[fp] = migrated;
-    persistToolFile(name, migrated);
-}
-
 function registerToolsVirtualFiles() {
     registry.meta[CUSTOM_TOOLS_DIR] = { kind: 'directory' };
     registry.meta[TOOLS_DIR] = { kind: 'directory' };
@@ -4317,13 +5429,16 @@ function registerToolsVirtualFiles() {
         registry.files[toolFilePath(name)] = persisted[name];
     });
 
+    migrateBuiltinTools();
     migrateBuiltinToolVisionFlag(persisted);
 
     BUILTIN_TOOL_NAMES.forEach(name => {
         const fp = toolFilePath(name);
         if (registry.files[fp] === undefined && persisted[name] === undefined && !wasToolEverDeleted(name)) {
+            // Unmodified builtin tools are kept only in memory (the in-agent source) and
+            // deliberately NOT persisted to localStorage, so we can tell apart a builtin the
+            // user actually modified from one that is still the latest shipped version.
             registry.files[fp] = seeded[name];
-            persistToolFile(name, seeded[name]);
         }
     });
 
@@ -4361,7 +5476,10 @@ function resetToolToDefault(name) {
     const fp = toolFilePath(name);
     registry.files[fp] = seeded[name];
     registry.meta[fp] = { kind: 'file', size: seeded[name].length, isBinary: false, virtual: true };
-    persistToolFile(name, seeded[name]);
+    // Restoring to the built-in default means the tool is now exactly the shipped source.
+    // Drop it from localStorage so it isn't mistaken for a user-modified tool and
+    // falls back to the fresh in-agent source on next load.
+    forgetPersistedToolFile(name);
     unmarkToolDeleted(name);
     rebuildToolRegistryFromFiles();
     return true;
@@ -12911,46 +14029,7 @@ function renderToolCallBox(toolName, args, resultOutput, isDone = false, isError
 
     let innerContentHTML = '';
 
-    if (toolName === 'edit' && (args.search_block || args.replace_block)) {
-        const searchLines = (args.search_block || '').split('\n');
-        const replaceLines = (args.replace_block || '').split('\n');
-        
-        let startLineNum = 1;
-        const lineMatch = resultOutput.match(/at line (\d+)/);
-        if (lineMatch) {
-            startLineNum = parseInt(lineMatch[1], 10);
-        }
-        
-        let diffLinesHTML = '';
-        let lineNum = startLineNum;
-        searchLines.forEach(l => { 
-            diffLinesHTML += `<div class="diff-line del"><div class="diff-line-gutter">${lineNum}</div><div class="diff-line-content">- ${escapeHTML(l)}</div></div>`; 
-            lineNum++;
-        });
-        lineNum = startLineNum;
-        replaceLines.forEach(l => { 
-            diffLinesHTML += `<div class="diff-line add"><div class="diff-line-gutter">${lineNum}</div><div class="diff-line-content">+ ${escapeHTML(l)}</div></div>`; 
-            lineNum++;
-        });
-
-        innerContentHTML = `
-            <div style="font-weight:600; color:var(--dim); font-size:11px;">Target: ${escapeHTML(args.filepath)}</div>
-            <div class="diff-hunk-box">${diffLinesHTML}</div>
-            <div class="tool-output-text"><span class="dim">[result]</span> ${escapeHTML(resultOutput)}</div>
-        `;
-    } else if (toolName === 'write') {
-        const previewTxt = (args.content || '').slice(0, 600);
-        innerContentHTML = `
-            <div style="font-weight:600; color:var(--dim); font-size:11px;">File: ${escapeHTML(args.filepath)}</div>
-            <div class="code-box">
-                <div class="code-header">
-                    <span class="tool-badge">write</span>
-                </div>
-                <div class="code-box-content"><pre><code>${escapeHTML(previewTxt)}${(args.content?.length > 600) ? '\n...' : ''}</code></pre></div>
-            </div>
-            <div class="tool-output-text"><span class="dim">[result]</span> ${escapeHTML(resultOutput)}</div>
-        `;
-    } else if (displayHtml) {
+    if (displayHtml) {
         // Rich UI-only markup (e.g. HTML/image previews). This is never what was sent to
         // the model as the tool result — that's resultOutput, kept separate on purpose so
         // large rendered payloads don't get fed back into context.
@@ -14140,7 +15219,8 @@ function validateToolArgs(name, args, rawArgsStr, parseError) {
 
     for (const key of required) {
         const val = args[key];
-        const missing = val === undefined || val === null || (typeof val === 'string' && val.trim() === '');
+        const allowEmpty = props[key]?.allowEmpty === true;
+        const missing = val === undefined || val === null || (typeof val === 'string' && val.trim() === '' && !allowEmpty);
         if (missing) {
             errors.push(`Missing required parameter "${key}" (${props[key]?.description || props[key]?.type || 'expected'}).`);
         }
@@ -14175,6 +15255,18 @@ function isToolAvailableForVision(tool, hasVision = currentModelHasVision()) {
     return !tool.require_vision || !!hasVision;
 }
 
+// Host-only schema keywords (e.g. `allowEmpty`) are honored by validateToolArgs but never sent to the model API.
+function stripSchemaExtensions(schema) {
+    if (Array.isArray(schema)) return schema.map(stripSchemaExtensions);
+    if (!schema || typeof schema !== 'object') return schema;
+    const out = {};
+    for (const [k, v] of Object.entries(schema)) {
+        if (k === 'allowEmpty' && typeof v === 'boolean') continue;
+        out[k] = stripSchemaExtensions(v);
+    }
+    return out;
+}
+
 function getToolsForMode(mode, hasVision = currentModelHasVision()) {
     return getAllTools()
         .filter(t => !t.error && t.permission !== 'never' && (t.modes || []).includes(mode) && isToolAvailableForVision(t, hasVision))
@@ -14185,7 +15277,7 @@ function getToolsForMode(mode, hasVision = currentModelHasVision()) {
                 description: t.name === 'write' && mode === 'plan'
                     ? `Write the step-by-step implementation plan strictly to ${PLAN_FILE}.`
                     : t.description,
-                parameters: t.parameters
+                parameters: stripSchemaExtensions(t.parameters)
             }
         }));
 }
@@ -14301,9 +15393,6 @@ async function rawRename(oldPath, newPath) {
 const TOOL_WORKER_SOURCE = `
 "use strict";
 
-${detectIndentation.toString()}
-${applySearchReplace.toString()}
-
 let __reqId = 0;
 const __pending = new Map();
 function callApi(runId, method, args) {
@@ -14367,13 +15456,14 @@ async function runTool(runId, toolMeta, args) {
         planFile: toolMeta.planFile,
         readFile: (fp) => callApi(runId, 'readFile', [fp]),
         readFileBytes: (fp) => callApi(runId, 'readFileBytes', [fp]),
+        // Reads an image (path-safety checked) and returns it cropped/scaled: { dataUrl, width, height, sourceWidth, sourceHeight, crop } or { error }.
+        readImage: (fp, crop) => callApi(runId, 'readImage', [fp, crop || {}]),
         writeFile: (fp, content) => callApi(runId, 'writeFile', [fp, content]),
         renameFile: (oldPath, newPath) => callApi(runId, 'renameFile', [oldPath, newPath]),
         listFiles: () => callApi(runId, 'listFiles', []),
         fileExists: (fp) => callApi(runId, 'fileExists', [fp]),
         isBinary: (fp) => callApi(runId, 'isBinary', [fp]),
         isSensitiveFile: (fp) => callApi(runId, 'isSensitiveFile', [fp]),
-        applySearchReplace: (original, searchBlock, replaceBlock) => applySearchReplace(original, searchBlock, replaceBlock),
         cleanupText: (text) => cleanupText(text),
         getSetting: (key) => callApi(runId, 'getSetting', [key]),
         validateDisplayHtml: (html, opts) => callApi(runId, 'validateDisplayHtml', [html, opts || {}]),
@@ -14391,17 +15481,19 @@ async function runTool(runId, toolMeta, args) {
         );
         const raw = await factory(args, api);
 
-        let output, displayHtml = null, summary = null;
+        let output, displayHtml = null, summary = null, image = null;
         if (raw && typeof raw === 'object' && !Array.isArray(raw) && 'output' in raw) {
             output = raw.output === undefined ? '(no output)' : String(raw.output);
             displayHtml = (typeof raw.displayHtml === 'string' && raw.displayHtml) ? raw.displayHtml : __lastDisplayHtml;
             if (typeof raw.summary === 'string' && raw.summary.trim()) summary = raw.summary;
+            // Optional image handed to a vision model alongside the text result (never shown as text).
+            if (typeof raw.image === 'string' && raw.image.startsWith('data:image/')) image = raw.image;
         } else {
             output = raw === undefined ? '(no output)' : String(raw);
             displayHtml = __lastDisplayHtml;
         }
 
-        self.postMessage({ type: 'done', runId, output, displayHtml, summary });
+        self.postMessage({ type: 'done', runId, output, displayHtml, summary, image });
     } catch (e) {
         self.postMessage({ type: 'done', runId, error: e.message || String(e) });
     }
@@ -14430,6 +15522,30 @@ const TOOL_API_METHODS = {
         }
         const res = await writeDisk(fp, content, { fromLLMTool: true, sessionId });
         return (res && res.output) ? res.output : null;
+    },
+    readImage: async (toolName, [fp, crop]) => {
+        if (typeof fp !== 'string' || !fp) return { error: 'ERROR: filepath is required.' };
+        if (isSecurityProtectedPath(fp)) {
+            return { error: `ERROR: ${fp} is a protected path and cannot be read by a tool call.` };
+        }
+        if (isSensitiveUserFile(fp)) {
+            return { error: `ERROR: ${fp} is a private user settings file and cannot be read by a tool call.` };
+        }
+        if (shouldHideFromTools(fp)) {
+            return { error: `ERROR: ${fp} has .agent extension and is hidden from tool access. You can enable access in Settings > Explorer > Show .agent files to tools.` };
+        }
+        if (isAgentPath(fp) && !isVirtualAgentFile(fp)) {
+            return { error: `ERROR: ${fp} is inside .agent and cannot be read by a tool call.` };
+        }
+        const dataUrl = await readImageDataUrl(fp);
+        if (!dataUrl) {
+            return { error: `ERROR: ${fp} is not a readable image. It must be an image file (png/jpg/jpeg/gif/bmp/webp/svg/ico) that exists in the open workspace.` };
+        }
+        try {
+            return await cropAndEncodeImage(dataUrl, crop || {});
+        } catch (e) {
+            return { error: `ERROR: Failed to preview ${fp}: ${e.message}` };
+        }
     },
     readFileBytes: async (toolName, [fp]) => {
         const MAX_BYTES = 64 * 1024 * 1024; // 64 MB
@@ -14687,7 +15803,8 @@ function getToolWorker() {
                 entry.resolve({
                     output: msg.output,
                     displayHtml: msg.displayHtml || entry.displayHtml || null,
-                    summary: msg.summary || (failed ? null : entry.headerMsg) || null
+                    summary: msg.summary || (failed ? null : entry.headerMsg) || null,
+                    image: msg.image || null
                 });
             }
         }
@@ -14752,62 +15869,6 @@ function describeToolAction(name, args) {
     }
 }
 
-let toolPreviewCounter = 0;
-
-// Stores a preview_image result as an attachment; cropped regions are labeled as such.
-function registerToolPreviewImage(dataUrl, args) {
-    toolPreviewCounter++;
-    const base = String((args && args.filepath) || 'image').split('/').pop().split('\\').pop() || 'image';
-    const isCrop = args && ['x', 'y', 'width', 'height'].some(k => args[k] !== undefined && args[k] !== null);
-    const att = {
-        type: 'image',
-        name: isCrop ? `${base} (region)` : base,
-        dataUrl,
-        mimeType: 'image/png',
-        attachmentId: `prev_${Date.now().toString(36)}_${toolPreviewCounter}`,
-        fromTool: 'preview_image'
-    };
-    state.attachmentStore[att.attachmentId] = att;
-    return att;
-}
-
-async function executePreviewImage(args) {
-    const fp = args.filepath;
-    if (!fp) return { output: 'ERROR: filepath is required.' };
-
-    if (isSecurityProtectedPath(fp)) {
-        return { output: `ERROR: ${fp} is a protected path and cannot be read by a tool call.` };
-    }
-    if (isSensitiveUserFile(fp)) {
-        return { output: `ERROR: ${fp} is a private user settings file and cannot be read by a tool call.` };
-    }
-    if (shouldHideFromTools(fp)) {
-        return { output: `ERROR: ${fp} has .agent extension and is hidden from tool access. You can enable access in Settings > Explorer > Show .agent files to tools.` };
-    }
-    if (isAgentPath(fp) && !isVirtualAgentFile(fp)) {
-        return { output: `ERROR: ${fp} is inside .agent and cannot be read by a tool call.` };
-    }
-
-    const dataUrl = await readImageDataUrl(fp);
-    if (!dataUrl) {
-        return { output: `ERROR: ${fp} is not a readable image. It must be an image file (png/jpg/jpeg/gif/bmp/webp/svg/ico) that exists in the open workspace.` };
-    }
-
-    try {
-        const { dataUrl: outUrl, width, height, sourceWidth, sourceHeight, crop } = await cropAndEncodeImage(
-            dataUrl,
-            { x: args.x, y: args.y, width: args.width, height: args.height }
-        );
-        const summary = crop
-            ? `Cropped region ${crop.x},${crop.y} ${crop.width}x${crop.height} of ${fp} (full image is ${sourceWidth}x${sourceHeight}), shown below at ${width}x${height}.`
-            : `Full image ${fp} (${sourceWidth}x${sourceHeight}), shown below${(width !== sourceWidth || height !== sourceHeight) ? ` scaled to ${width}x${height}` : ''}.`;
-        return { output: summary, __imageDataUrl: outUrl };
-    } catch (e) {
-        return { output: `ERROR: Failed to preview ${fp}: ${e.message}` };
-    }
-}
-
-
 // Turns a raw "ERROR: ..." output string into a short, header-friendly summary.
 // Keeps the header from either duplicating the full body text verbatim or falling
 // back to a generic arg dump when a tool actually failed.
@@ -14843,10 +15904,6 @@ async function executeTool(name, args, sessionId, runningBox) {
         return { output, summary: summarizeToolError(output) };
     }
 
-    if (name === 'preview_image') {
-        return await executePreviewImage(args);
-    }
-
     try {
         const result = await runToolInWorker(name, tool, args, sessionId, runningBox);
         const output = result.output === undefined ? '(no output)' : String(result.output);
@@ -14854,6 +15911,7 @@ async function executeTool(name, args, sessionId, runningBox) {
         if (result.displayHtml) out.displayHtml = result.displayHtml;
         if (result.summary) out.summary = result.summary;
         else if (output.startsWith('ERROR:')) out.summary = summarizeToolError(output);
+        if (result.image) out.__imageDataUrl = result.image;
         return out;
     } catch(e) {
         const output = `ERROR: Tool "${name}" failed: ${e.message}`;
@@ -15878,19 +16936,6 @@ async function runTask(task, msgId, imageUrls, sessionId) {
                         safeRenderToolCallBox(call.function.name, args, resStr, shouldExpand, resIsError, toolGroupContainer, runningBox, runSessionId, resObj.displayHtml || null, resObj.summary || null);
                     }
 
-                    if (resObj.__imageDataUrl && isRunLive()) {
-                        const target = toolGroupContainer ? (toolGroupContainer.querySelector('.tool-group-body') || toolGroupContainer) : term;
-                        const thumbEl = document.createElement('div');
-                        thumbEl.className = 'tool-preview-image-thumb';
-                        // Register the exact image the model saw; the id + <img> pair lets the tab rebuild after a reload.
-                        const previewAtt = registerToolPreviewImage(resObj.__imageDataUrl, args);
-                        thumbEl.setAttribute('data-attachment-id', previewAtt.attachmentId);
-                        thumbEl.title = `Click to open in a tab: ${previewAtt.name}`;
-                        thumbEl.innerHTML = `<img src="${resObj.__imageDataUrl}" alt="${escapeHTML(previewAtt.name)}" style="max-width:280px; max-height:200px; border-radius:6px; border:1px solid var(--border); margin:4px 0; display:block;">`;
-                        target.appendChild(thumbEl);
-                        smartScroll();
-                    }
-
                     runGen.hasNewContent = true;
                     return { call, args, resObj, resStr, aborted: false };
                 };
@@ -15902,7 +16947,7 @@ async function runTask(task, msgId, imageUrls, sessionId) {
                         runCtx.messages.push({
                             role: "user",
                             content: [
-                                { type: "text", text: `(Image result from PreviewImage tool call for ${args.filepath || ''})` },
+                                { type: "text", text: `(Image result from preview_image tool call for ${args.filepath || ''})` },
                                 { type: "image_url", image_url: { url: resObj.__imageDataUrl } }
                             ]
                         });
