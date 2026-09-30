@@ -1183,7 +1183,6 @@
             flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;
         }
         #search-panel-input-wrap { padding: 8px; }
-        .search-panel-label { font-size: 11px; color: var(--dim); margin-bottom: 6px; }
         .search-field-wrap { position: relative; }
         #search-input {
             width: 100%; box-sizing: border-box; background: var(--bg-input);
@@ -1730,24 +1729,7 @@
             display: flex; flex-direction: column; gap: 6px;
             white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
         }
-        .diff-hunk-box {
-            background: #111218; border: 1px solid var(--border);
-            border-radius: 5px; overflow-x: auto; font-size: 11.5px;
-            line-height: 1.45; padding: 6px 0; white-space: pre;
-        }
-        .diff-line { display: flex; white-space: pre-wrap; word-break: break-all; }
-        .diff-line-gutter {
-            flex-shrink: 0; width: 48px; padding: 1px 8px 1px 8px;
-            text-align: right; color: var(--dim); opacity: 0.6;
-            user-select: none; border-right: 1px solid var(--border);
-            margin-right: 8px; font-size: 10.5px;
-        }
-        .diff-line-content { flex: 1; padding: 1px 8px 1px 0; min-width: 0; }
-        .diff-line.del { background: rgba(224, 108, 117, 0.15); color: var(--red); }
-        .diff-line.del .diff-line-gutter { background: rgba(224, 108, 117, 0.1); }
-        .diff-line.add { background: rgba(152, 195, 121, 0.15); color: var(--green); }
-        .diff-line.add .diff-line-gutter { background: rgba(152, 195, 121, 0.1); }
-        .diff-line.ctx { color: var(--dim); }
+
         .tool-output-text {
             color: var(--dim); font-size: 11.5px; white-space: pre-wrap;
             word-break: break-word; overflow-wrap: anywhere;
@@ -2687,7 +2669,7 @@
  .md-content .md-table{border-radius:12px}
  .code-box{border-radius:14px;background:#111113}
  .code-header{background:rgba(255,255,255,.03)}
- .thought-body,.tool-output-text,.compression-summary,.diff-hunk-box{background:#101012;border:1px solid var(--border);border-radius:12px}
+ .thought-body,.tool-output-text,.compression-summary{background:#101012;border:1px solid var(--border);border-radius:12px}
  .thought-header,.tool-box-header,.tool-group-header{border-radius:10px}
  .running-tool-box .tool-box-header{background:linear-gradient(90deg,transparent 0%,rgba(var(--accent-rgb),.05) 35%,
   rgba(var(--accent-rgb),.16) 50%,rgba(var(--accent-rgb),.05) 65%,transparent 100%);background-size:250% 100%}
