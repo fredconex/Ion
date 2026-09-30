@@ -2556,6 +2556,107 @@
             #model-select-btn { max-width: 100px; }
         }
         #btn-sidebar-toggle-mobile { display: none; }
+
+        /* ===== Mobile: full-screen Model Providers + New Tool ===== */
+        .mm-back-btn { display: none; }
+        @media (max-width: 600px) {
+            #newtool-modal-overlay, #models-modal-overlay {
+                position: fixed; inset: 0; z-index: 500;
+                background: var(--bg-main);
+                align-items: stretch; justify-content: stretch;
+            }
+            #newtool-modal, #models-modal {
+                width: 100vw; max-width: none; height: 100dvh; max-height: none;
+                border-radius: 0; border: none; box-shadow: none;
+                background: var(--bg-main); animation: none;
+            }
+            #newtool-modal-header, #models-modal-header {
+                min-height: 54px;
+                padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 8px 14px;
+                box-sizing: content-box;
+            }
+            #newtool-modal-title, #models-modal-title { font-size: 14px; gap: 8px; }
+            #newtool-modal-close, #models-modal-close, #models-modal-edit-json {
+                width: 42px; height: 42px; display: flex; align-items: center; justify-content: center;
+            }
+            #newtool-modal-footer, #models-modal-footer {
+                padding: 10px 14px calc(env(safe-area-inset-bottom, 0px) + 10px);
+            }
+            #newtool-modal-footer .btn-confirm { flex: 1; min-height: 44px; font-size: 14px; }
+            #models-modal-footer-hint { font-size: 11px; }
+
+            /* Prevent iOS zoom-on-focus and give bigger tap targets */
+            #newtool-modal input, #newtool-modal textarea,
+            #models-modal input[type="text"], #models-modal input[type="password"], #models-modal input[type="number"] {
+                font-size: 16px;
+            }
+
+            /* ---- New Tool ---- */
+            #newtool-modal-body { padding: 12px; }
+            .newtool-source-tab { padding: 11px 6px; font-size: 12px; flex-direction: column; gap: 3px; text-align: center; }
+            .newtool-source-tab .icon { font-size: 18px; }
+            #newtool-browse-search { min-height: 44px; padding: 8px 12px; }
+            #newtool-browse-refresh { width: 44px; height: 44px; }
+            .newtool-browse-item-row { padding: 12px 10px; font-size: 13px; }
+            .newtool-browse-row-install { width: 80px; padding: 8px 0; font-size: 12px; min-height: 38px; }
+            .newtool-browse-item-desc { font-size: 12px; }
+            .newtool-source-editor { font-size: 14px; min-height: 200px; }
+            #newtool-dropzone { padding: 32px 12px; }
+
+            /* ---- Model Providers: list -> detail ---- */
+            #models-modal-body { flex-direction: column; }
+            #mm-sidebar { width: 100%; border-right: none; flex: 1; }
+            #mm-detail { width: 100%; flex: 1; padding: 14px; padding-bottom: 28px; -webkit-overflow-scrolling: touch; }
+            #models-modal.mm-detail-open #mm-sidebar { display: none; }
+            #models-modal:not(.mm-detail-open) #mm-detail { display: none; }
+            #mm-provider-list { padding: 10px; }
+            .mm-provider-item { padding: 15px 14px; margin-bottom: 6px; border: 1px solid var(--border); }
+            .mm-provider-item::after {
+                content: 'chevron_right'; font-family: 'Material Symbols Outlined'; font-feature-settings: 'liga'; -webkit-font-feature-settings: 'liga'; line-height: 1; font-weight: normal; font-style: normal;
+                font-size: 20px; color: var(--dim); flex-shrink: 0; margin-left: 2px;
+            }
+            .mm-provider-item-name { font-size: 14px; }
+            .mm-provider-item-count { font-size: 11px; padding: 2px 8px; }
+            #mm-add-provider-btn {
+                width: calc(100% - 20px); margin: 0 10px 10px; padding: 14px; font-size: 13px; min-height: 48px;
+            }
+
+            .mm-back-btn {
+                display: flex; align-items: center; justify-content: center;
+                width: 40px; height: 40px; flex-shrink: 0; margin-left: -8px;
+                background: transparent; border: none; color: var(--fg); border-radius: 50%; cursor: pointer;
+            }
+            .mm-back-btn .icon { font-size: 22px; }
+            .mm-detail-head { gap: 6px; margin-bottom: 16px; }
+            .mm-detail-title-input { font-size: 17px; }
+            .mm-remove-provider-btn { padding: 9px 12px; font-size: 12px; min-height: 40px; }
+
+            .mm-row { flex-direction: column; align-items: stretch; gap: 5px; margin-bottom: 14px; }
+            .mm-row label { width: auto; font-size: 11px; }
+            .mm-row input[type="text"], .mm-row input[type="password"], .mm-row input[type="number"] {
+                padding: 11px 12px; min-height: 44px; box-sizing: border-box;
+            }
+            .mm-key-wrap { align-items: center; }
+            .mm-key-toggle { width: 44px; height: 44px; justify-content: center; }
+            .mm-key-toggle .icon { font-size: 20px; }
+
+            /* Each model becomes a card: id on top, context/vision/remove below */
+            .mm-models-cols { display: none; }
+            .mm-model-row {
+                flex-wrap: wrap; gap: 8px; padding: 12px; margin-bottom: 10px;
+                border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,0.02);
+            }
+            .mm-model-row .mm-model-name-wrap { flex: 1 1 100%; }
+            .mm-model-row input[type="text"] { padding: 11px 12px; min-height: 44px; box-sizing: border-box; }
+            .mm-model-row .mm-model-name { padding-right: 44px; }
+            .mm-model-search-btn { right: 4px; padding: 8px; }
+            .mm-model-search-btn .icon { font-size: 18px; }
+            .mm-model-row .mm-model-ctx { flex: 1 1 0; width: auto; }
+            .mm-model-vision-btn { flex: 0 0 auto; width: auto; min-width: 84px; padding: 0 12px; min-height: 44px; font-size: 12px; }
+            .mm-model-remove-btn { flex: 0 0 44px; width: 44px; height: 44px; align-items: center; }
+            .mm-model-remove-btn .icon { font-size: 20px; }
+            .mm-add-model-btn { width: 100%; justify-content: center; padding: 13px; font-size: 13px; min-height: 48px; }
+        }
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style id="modern-theme">
@@ -2762,6 +2863,60 @@
   #chat{padding:14px}
   .chat-bubble{max-width:90%}
  }
+    </style>
+    <style id="mobile-overrides">
+        /* Loaded after #modern-theme so these win on phones */
+        /* ---- Width-safe prompt dock (any viewport, incl. iPad / narrow chat pane next to the explorer) ---- */
+        #main-pane, #chat, #bottom-dock-area, #prompt-bar, #prompt-top-row,
+        #prompt-input-row, #statusbar { min-width: 0; box-sizing: border-box; }
+        #bottom-dock-area { max-width: 100%; }
+        #cmd { min-width: 0; }
+
+        /* Status row: one line; the model name gives way first */
+        #statusbar { height: auto !important; min-height: 30px; flex-wrap: nowrap !important; gap: 8px; }
+        #statusbar > div:first-child { flex: 0 0 auto; }
+        #statusbar > div:last-child { flex: 1 1 auto; min-width: 0; justify-content: flex-end; }
+        #status-model { flex: 0 1 auto; min-width: 0; max-width: 180px; }
+        #status-tokens { flex: 0 0 auto; }
+
+        /* Mode tabs + model picker: wrap to a second row instead of overflowing */
+        #prompt-top-row { flex-wrap: wrap; row-gap: 6px; column-gap: 8px; }
+        #mode-toolbar { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+        .mode-segmented-group { max-width: 100%; }
+        .mode-tab-btn { min-width: 0; }
+        #model-group { flex: 0 1 auto; min-width: 0; max-width: 100%; margin-left: auto; }
+        #model-select-btn { min-width: 0; max-width: 100%; }
+        #model-select-btn .msb-name { min-width: 0; flex: 0 1 auto; }
+        #model-select-btn .msb-provider { flex: 0 1 auto; }
+
+        @media (max-width: 900px) {
+            /* Anchor the dropdown to the prompt bar so it can never poke out of a narrow chat pane */
+            #model-group { position: static; }
+            #model-select-dropdown {
+                left: auto; right: 0; width: min(360px, 100%) !important;
+                max-height: min(360px, 55dvh);
+            }
+            #model-select-btn { max-width: min(100%, 260px); }
+        }
+        @media (max-width: 600px) {
+            /* Full-screen modals: square, edge-to-edge */
+            #newtool-modal, #models-modal {
+                border-radius: 0 !important; border: none !important; box-shadow: none !important;
+                background: var(--bg-main) !important;
+            }
+            #newtool-modal-overlay, #models-modal-overlay { background: var(--bg-main) !important; }
+
+            #statusbar { padding: 6px 12px 4px !important; }
+            #status-model { max-width: none !important; }
+            #prompt-top-row { margin-top: 2px; }
+            /* Phones: tabs take the remaining width next to a compact model button */
+            #mode-toolbar { flex: 1 1 0; }
+            #model-group { flex: 0 1 auto; }
+            #model-select-btn { max-width: 140px; }
+        }
+        @media (max-width: 380px) {
+            #model-select-btn { max-width: 96px; }
+        }
     </style>
 </head>
 <body>
@@ -11213,11 +11368,13 @@ const modelsModalEditJson = document.getElementById('models-modal-edit-json');
 const mmProviderListEl = document.getElementById('mm-provider-list');
 const mmDetailEl = document.getElementById('mm-detail');
 const mmAddProviderBtn = document.getElementById('mm-add-provider-btn');
+const modelsModalEl = document.getElementById('models-modal');
 
 let _mmSelectedIdx = 0;
 
 function openModelsModal() {
     _mmSelectedIdx = 0;
+    modelsModalEl.classList.remove('mm-detail-open'); // mobile: start on the provider list
     renderModelsModal();
     modelsModalOverlay.style.display = 'flex';
 }
@@ -11259,13 +11416,14 @@ function renderModelsModal(focusField) {
     mmProviderListEl.querySelectorAll('.mm-provider-item').forEach(item => {
         item.addEventListener('click', () => {
             _mmSelectedIdx = Number(item.getAttribute('data-pi'));
+            modelsModalEl.classList.add('mm-detail-open'); // mobile: drill into detail
             renderModelsModal();
         });
     });
 
     // Right pane: details for the selected provider only.
     if (!hasProviders) {
-        mmDetailEl.innerHTML = `<div class="mm-empty-detail">No providers configured yet.<br>Use "Add Provider" on the left to create one.</div>`;
+        mmDetailEl.innerHTML = `<div class="mm-empty-detail">No providers configured yet.<br>Use "Add Provider" to create one.</div>`;
         return;
     }
 
@@ -11289,6 +11447,7 @@ function renderModelsModal(focusField) {
 
     mmDetailEl.innerHTML = `
         <div class="mm-detail-head">
+            <button type="button" class="mm-back-btn" title="Back to providers"><span class="icon">arrow_back</span></button>
             <input type="text" class="mm-detail-title-input" data-field="provider" placeholder="Provider name" value="${escapeHTML(p.provider || '')}" />
             <button type="button" class="mm-remove-provider-btn"><span class="icon">delete</span><span>Remove</span></button>
         </div>
@@ -11312,6 +11471,8 @@ function renderModelsModal(focusField) {
     `;
 
     wireModelsDetailEvents();
+    const mmBackBtn = mmDetailEl.querySelector('.mm-back-btn');
+    if (mmBackBtn) mmBackBtn.addEventListener('click', () => modelsModalEl.classList.remove('mm-detail-open'));
 
     if (focusField) {
         const target = mmDetailEl.querySelector(focusField);
@@ -11455,6 +11616,7 @@ function wireModelsDetailEvents() {
         const name = MODEL_PROVIDERS[pi].provider || 'this provider';
         if (!confirm(`Remove "${name}" and all its models?`)) return;
         MODEL_PROVIDERS.splice(pi, 1);
+        modelsModalEl.classList.remove('mm-detail-open');
         if (_mmSelectedIdx >= MODEL_PROVIDERS.length) _mmSelectedIdx = MODEL_PROVIDERS.length - 1;
         commitModelsChange();
         renderModelsModal();
@@ -11464,6 +11626,7 @@ function wireModelsDetailEvents() {
 mmAddProviderBtn.addEventListener('click', () => {
     MODEL_PROVIDERS.push(mmNewProvider());
     _mmSelectedIdx = MODEL_PROVIDERS.length - 1;
+    modelsModalEl.classList.add('mm-detail-open');
     commitModelsChange();
     renderModelsModal('.mm-detail-title-input');
 });
