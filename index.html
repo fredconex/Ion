@@ -5365,9 +5365,6 @@ function rebuildToolRegistryFromFiles() {
         settingsDefs.forEach(def => {
             if (storedValues[def.key] !== undefined) {
                 settingsValues[def.key] = coerceToolSettingValue(def, storedValues[def.key]);
-            } else if (meta.name === 'read' && def.key === 'maxLines' && AppConfig.get('read-lines') !== undefined) {
-                // One-time migration: carry over the old global "Max Read Lines" setting.
-                settingsValues[def.key] = coerceToolSettingValue(def, AppConfig.get('read-lines'));
             } else {
                 settingsValues[def.key] = def.default;
             }
@@ -5428,9 +5425,6 @@ function registerToolsVirtualFiles() {
         if (wasToolEverDeleted(name)) return;
         registry.files[toolFilePath(name)] = persisted[name];
     });
-
-    migrateBuiltinTools();
-    migrateBuiltinToolVisionFlag(persisted);
 
     BUILTIN_TOOL_NAMES.forEach(name => {
         const fp = toolFilePath(name);
