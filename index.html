@@ -6338,10 +6338,51 @@ function findMessageById(sessionId, id) {
 //   - revert (default false): after trimming, call window.revertToBeforePrompt
 //     for the collected ids so file changes made by those turns are undone.
 //   - revertLabel: label passed through to the revert confirmation/toast.
+// Ids of the user turns at/after `id`, read from the DOM. Used as a fallback
+// when the message is no longer in the messages array (e.g. after context
+// compression summarized it away) but is still visible in the chat.
+function getPromptIdsFromDom(id) {
+    const wraps = Array.from(document.querySelectorAll('.chat-prompt-wrap[data-msg-id]'));
+    const start = wraps.findIndex(w => w.getAttribute('data-msg-id') === id);
+    if (start === -1) return [];
+    return wraps.slice(start).map(w => w.getAttribute('data-msg-id')).filter(Boolean);
+}
+
+function collectIdsFromMessage(sessionId, id) {
+    const found = findMessageById(sessionId, id);
+    const ids = new Set(found ? found.list.slice(found.index).map(m => m && m.id).filter(Boolean) : []);
+    if (sessionId === state.activeSessionId) getPromptIdsFromDom(id).forEach(x => ids.add(x));
+    return Array.from(ids);
+}
+
+function messageHasFileEdits(ids) {
+    const files = getAllTrackedFiles();
+    for (const rid of ids) {
+        for (const fp of files) {
+            const tl = getFileTimeline(fp);
+            if (tl.some((e) => e && e.prompt && e.prompt.id === rid)) return true;
+        }
+    }
+    return false;
+}
+
 function truncateFromMessage(sessionId, id, opts = {}) {
     const sid = sessionId || state.activeSessionId;
     const found = findMessageById(sid, id);
-    if (!found) return null;
+    if (!found) {
+        // Message was compressed out of the array: still cut the DOM and report DOM ids so revert works.
+        const domIds = sid === state.activeSessionId ? getPromptIdsFromDom(id) : [];
+        if (!domIds.length) return null;
+        if (opts.removeDom !== false) {
+            const wrap = document.querySelector(`[data-msg-id="${id}"]`);
+            if (wrap) {
+                let node = wrap.closest('.log-entry') || wrap;
+                while (node) { const r = node; node = node.nextElementSibling; r.remove(); }
+            }
+        }
+        saveSession(sid, true);
+        return { removedIds: domIds, cutIndex: -1 };
+    }
     const { index, list } = found;
 
     // Every message from this one onward is being dropped; collect their ids
@@ -13927,31 +13968,19 @@ function showEditConfirmModal(msgId) {
     const newText = textarea.value.trim();
     if (!newText) return;
 
-    const found = findMessageById(state.activeSessionId, msgId);
-    if (!found) return;
-
     // Every message from this one onward will be trimmed; check whether any
     // of them left file changes behind, so we know whether to offer "revert".
-    const candidateIds = found.list.slice(found.index).map(m => m && m.id).filter(Boolean);
-    let hasEdits = false;
-    for (const rid of candidateIds) {
-        for (const fp of getAllTrackedFiles()) {
-            const tl = getFileTimeline(fp);
-            if (tl.some((e) => e && e.prompt && e.prompt.id === rid)) { hasEdits = true; break; }
-        }
-        if (hasEdits) break;
-    }
+    const candidateIds = collectIdsFromMessage(state.activeSessionId, msgId);
+    const hasEdits = messageHasFileEdits(candidateIds);
+
     _pendingEditMsgId = msgId;
     _pendingEditRevert = false;
     _pendingEditRevertIds = hasEdits ? candidateIds : [];
     _pendingEditText = newText;
 
-    if (hasEdits) {
-        msgEditModalOverlay.classList.add('visible');
-    } else {
-        // No file changes to revert — commit the edit directly.
-        commitEditFromModal(false);
-    }
+    // Always show the confirmation modal (same as delete); only offer revert if there is something to revert.
+    if (msgEditRevertBtn) msgEditRevertBtn.style.display = hasEdits ? '' : 'none';
+    msgEditModalOverlay.classList.add('visible');
 }
 
 function commitEditFromModal(revert) {
@@ -14108,16 +14137,7 @@ async function commitMsgDelete(msgId, revert) {
 window.deletePrompt = function(msgId) {
     // Only offer "revert file changes" if any message that will be trimmed
     // (this one plus everything after it) actually left file changes behind.
-    const found = findMessageById(state.activeSessionId, msgId);
-    const targetIds = found ? found.list.slice(found.index).map(m => m && m.id).filter(Boolean) : [];
-    let hasEdits = false;
-    for (const bid of targetIds) {
-        for (const fp of getAllTrackedFiles()) {
-            const tl = getFileTimeline(fp);
-            if (tl.some((e) => e && e.prompt && e.prompt.id === bid)) { hasEdits = true; break; }
-        }
-        if (hasEdits) break;
-    }
+    const hasEdits = messageHasFileEdits(collectIdsFromMessage(state.activeSessionId, msgId));
     if (msgDeleteRevertBtn) msgDeleteRevertBtn.style.display = hasEdits ? '' : 'none';
     _pendingDeleteMsgId = msgId;
     msgDeleteModalOverlay.classList.add('visible');
