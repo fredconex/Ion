@@ -11677,6 +11677,19 @@ function focusPrompt() {
     }
 }
 
+// Persist the live chat HTML so UI-only state (e.g. expanded/collapsed tool
+// boxes, thought boxes, tool groups) survives a reload even when no new
+// message has been added since the toggle.
+async function persistChatHTML(sessionId) {
+    const id = sessionId || state.activeSessionId;
+    const rec = state.sessions[id];
+    if (!rec) return;
+    rec.chatHTML = term.innerHTML;
+    rec.updatedAt = Date.now();
+    const wsKey = getWorkspaceSessionKey();
+    await patchSessionRecordInDB(wsKey, id, { chatHTML: rec.chatHTML, updatedAt: rec.updatedAt });
+}
+
 document.getElementById('prompt-bar').addEventListener('click', (e) => {
     if (e.target === input) return;
     if (e.target.closest('button, input, textarea, select, a, .attach-menu, .mode-tab-btn, #model-select-btn')) return;
@@ -11723,6 +11736,7 @@ term.addEventListener('click', (e) => {
         const thoughtBox = thoughtHdr.closest('.thought-box');
         if (thoughtBox) {
             thoughtBox.classList.toggle('collapsed');
+            persistChatHTML(state.activeSessionId);
         }
         return;
     }
@@ -11732,6 +11746,7 @@ term.addEventListener('click', (e) => {
         const toolBox = toolHdr.closest('.tool-box');
         if (toolBox) {
             toolBox.classList.toggle('collapsed');
+            persistChatHTML(state.activeSessionId);
         }
         e.stopPropagation();
         return;
@@ -11741,6 +11756,7 @@ term.addEventListener('click', (e) => {
         const toolGroup = toolGroupHdr.closest('.tool-group');
         if (toolGroup) {
             toolGroup.classList.toggle('collapsed');
+            persistChatHTML(state.activeSessionId);
         }
         return;
     }
