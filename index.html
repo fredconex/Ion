@@ -17226,11 +17226,19 @@ async function runTask(task, msgId, imageUrls, sessionId) {
             }
 
             while (true) {
+                // Abort check before blocking on the reader: if the controller was
+                // aborted (user pressed Esc / Stop), cancel the body stream so the
+                // connection is actually torn down, not just logically stopped.
+                if (!runGen.activeController || runGen.activeController.signal.aborted) {
+                    try { reader.cancel(); } catch (_) {}
+                    break;
+                }
+
                 let chunk;
                 try {
                     chunk = await reader.read();
                 } catch(readErr) {
-                    if (runGen.skipThinkingRequested) break;
+                    if (runGen.skipThinkingRequested || runGen.activeController === null) break;
                     throw readErr;
                 }
                 const { done, value } = chunk;
