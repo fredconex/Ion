@@ -1251,7 +1251,7 @@
             font-size: 11px; font-weight: 600; color: var(--dim);
             cursor: pointer; border-left: 2px solid transparent;
             border-radius: 6px; display: flex; align-items: center;
-            justify-content: center; position: relative; transition: all 0.15s ease;
+            justify-content: center; position: relative; transition: color 0.15s ease, background 0.15s ease;
         }
         .sidebar-nav-tab:hover { color: var(--fg); }
         .sidebar-nav-tab.active {
@@ -2934,6 +2934,9 @@
  .btn-confirm{padding:7px 18px}
  .btn-confirm.primary{background:linear-gradient(135deg,var(--accent),var(--accent-2));border-color:transparent;color:#fff;
   box-shadow:0 6px 18px rgba(var(--accent-rgb),.35)}
+ /* Modal buttons: no glow */
+ #yesno-modal .btn-confirm,#cleardata-modal .btn-confirm,#about-modal .btn-confirm,
+ #newtool-modal .btn-confirm,#models-modal .btn-confirm,#msg-delete-modal .btn-confirm,#msg-edit-modal .btn-confirm{box-shadow:none}
  .btn-confirm.primary:hover{filter:brightness(1.1);background:linear-gradient(135deg,var(--accent),var(--accent-2))}
  .tri-switch,.tri-btn{border-radius:999px}.tri-btn{padding:3px 12px}
  .settings-field-row input[type="text"],.settings-field-row input[type="number"],.settings-field-row input[type="password"],
