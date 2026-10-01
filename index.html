@@ -9082,7 +9082,7 @@ async function saveSession(sessionId, force) {
     if (state.sessions[id]) {
         state.sessions[id].messages = ctx.messages;
         if (isLive) {
-            state.sessions[id].chatHTML = term.innerHTML;
+            state.sessions[id].chatHTML = serializeTermHTML();
             state.sessions[id].openTabs = state.openTabs;
             state.sessions[id].activeTab = state.activeTab;
         }
@@ -9225,6 +9225,7 @@ async function restoreActiveSessionContent() {
 
     if (current.chatHTML) {
         term.innerHTML = current.chatHTML;
+        stripTransientLiveUI(term);
         removeAllSkipThinkingButtons();
         rehydrateToolErrorTooltips();
     } else {
@@ -9296,11 +9297,19 @@ function reconcileLiveGenUI(outgoingId, incomingId) {
             outgoingGen.spinInterval = null;
         }
         outgoingGen.spinEl = null;
+        if (outgoingGen.retryStatusEl) {
+            outgoingGen.retryStatusEl.remove();
+            outgoingGen.retryStatusEl = null;
+        }
+        if (outgoingGen.pendingToolDiv) {
+            outgoingGen.pendingToolDiv.remove();
+            outgoingGen.pendingToolDiv = null;
+        }
     }
 
     const incomingGen = getGenState(incomingId);
     if (incomingGen.isRunning) {
-        startSpinner(incomingGen._lastSpinnerText || 'Generating response...', incomingId);
+        startSpinner(incomingGen._lastSpinnerText || 'Generating response...', incomingId, true);
     }
     updateGenGlow();
     updatePromptSendButton();
@@ -11719,7 +11728,7 @@ async function persistChatHTML(sessionId) {
     const id = sessionId || state.activeSessionId;
     const rec = state.sessions[id];
     if (!rec) return;
-    rec.chatHTML = term.innerHTML;
+    rec.chatHTML = serializeTermHTML();
     rec.updatedAt = Date.now();
     const wsKey = getWorkspaceSessionKey();
     await patchSessionRecordInDB(wsKey, id, { chatHTML: rec.chatHTML, updatedAt: rec.updatedAt });
@@ -14025,7 +14034,7 @@ async function commitMsgDelete(msgId, revert) {
     }
 
     updateTokenStatus(state.lastTokenUsage);
-    state.sessions[state.activeSessionId].chatHTML = term.innerHTML;
+    state.sessions[state.activeSessionId].chatHTML = serializeTermHTML();
     updateWelcomeVisibility();
     showToast(`Message deleted${revert ? ' and file changes reverted' : ''}`, 'success');
 }
@@ -14158,6 +14167,30 @@ function showToast(message, kind = 'info', durationMs = 2600) {
         el.classList.remove('toast-visible');
         setTimeout(() => el.remove(), 220);
     }, durationMs);
+}
+
+// Transient, per-generation UI that must never be persisted into a session's
+// chatHTML: the live spinner, retry status and the "Preparing tool call" line.
+// Persisting them left frozen copies behind that piled up (next to the fresh
+// spinner) every time you switched away from and back to a running session.
+const TRANSIENT_LIVE_SELECTOR = '[data-live-spinner], .retry-status, [data-pending-tool]';
+
+function stripTransientLiveUI(root) {
+    root.querySelectorAll(TRANSIENT_LIVE_SELECTOR).forEach(el => el.remove());
+    // Legacy sessions saved before the markers existed: unmarked spinner lines.
+    Array.from(root.children).forEach(el => {
+        if (el.classList && el.classList.contains('log-entry') &&
+            el.querySelector(':scope > .spinner-icon') &&
+            (el.querySelector(':scope > .dim') || el.querySelector(':scope > .pending-tool-label'))) {
+            el.remove();
+        }
+    });
+}
+
+function serializeTermHTML() {
+    const clone = term.cloneNode(true);
+    stripTransientLiveUI(clone);
+    return clone.innerHTML;
 }
 
 function reorderSpinnerToBottom(sessionId) {
@@ -14748,7 +14781,7 @@ function renderToolCallBox(toolName, args, resultOutput, isDone = false, isError
 let fIdx = 0;
 const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-function startSpinner(text, sessionId) {
+function startSpinner(text, sessionId, resume) {
     const sid = sessionId || state.activeSessionId;
     const gen = getGenState(sid);
     stopSpinner(sid);
@@ -14773,22 +14806,29 @@ function startSpinner(text, sessionId) {
         statusModeBadge.style.background = "var(--yellow)";
     }
 
-    gen.genSessionStartMs = Date.now();
-    gen.genStartTime = performance.now();
-    gen.genFirstTokenTime = null;
-    gen.genEndTime = null;
-    gen.genTokenCount = 0;
-    gen.actualGenTokenCount = null;
-    gen.genFinishReason = null;
-    gen.genTks = null;
-    gen.genServerTks = null;
+    // `resume` = re-attaching the spinner after a session switch: keep the
+    // running generation's timers/token stats instead of resetting them.
+    if (!resume) {
+        gen.genSessionStartMs = Date.now();
+        gen.genStartTime = performance.now();
+        gen.genFirstTokenTime = null;
+        gen.genEndTime = null;
+        gen.genTokenCount = 0;
+        gen.actualGenTokenCount = null;
+        gen.genFinishReason = null;
+        gen.genTks = null;
+        gen.genServerTks = null;
+        gen.genStatsRendered = false;
+    }
     gen.currentAssistantDiv = null;
-    gen.genStatsRendered = false;
     gen._lastSpinnerText = text;
 
     if (isLive) {
+        // Never allow more than one live spinner in the terminal.
+        term.querySelectorAll('[data-live-spinner]').forEach(el => el.remove());
         gen.spinEl = document.createElement('div');
         gen.spinEl.className = 'log-entry';
+        gen.spinEl.dataset.liveSpinner = '1';
         gen.spinEl.dataset.baseText = text;
         gen.spinEl.innerHTML = `<span class="spinner-icon">${frames[0]}</span><span class="dim">${escapeHTML(text)}</span>`;
         term.appendChild(gen.spinEl);
@@ -17349,7 +17389,7 @@ async function runTask(task, msgId, imageUrls, sessionId) {
                             }
                             if (isRunLive()) {
                                 if (!runGen.pendingToolDiv) {
-                                    runGen.pendingToolDiv = print(`<div class="log-entry" style="color:var(--dim);"><span class="spinner-icon">${frames[0]}</span><span class="pending-tool-label">Preparing tool call...</span></div>`, "", runSessionId);
+                                    runGen.pendingToolDiv = print(`<div class="log-entry" data-pending-tool="1" style="color:var(--dim);"><span class="spinner-icon">${frames[0]}</span><span class="pending-tool-label">Preparing tool call...</span></div>`, "", runSessionId);
                                 }
                                 const pendingLabel = runGen.pendingToolDiv && runGen.pendingToolDiv.querySelector('.pending-tool-label');
                                 if (pendingLabel) {
