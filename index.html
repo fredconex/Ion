@@ -7706,6 +7706,23 @@ function currentWsName() {
     return rootHandle ? rootHandle.name : '_default_ws_';
 }
 
+// Ids of sessions deleted during this page lifetime. Late async writes
+// (title generation, background-run saves, in-flight saveSession calls) check
+// this so they can't resurrect a deleted session as a partial "ghost" record.
+const deletedSessionIds = new Set();
+
+async function sessionRecordExistsInDB(wsKey, sessionId) {
+    try {
+        const db = await getDB();
+        return await new Promise((res) => {
+            const tx = db.transaction(STORE_SESSIONS, 'readonly');
+            const req = tx.objectStore(STORE_SESSIONS).getKey(sessionRecordKey(wsKey, sessionId));
+            req.onsuccess = () => res(req.result !== undefined);
+            req.onerror = () => res(true); // unknown -> don't drop the session
+        });
+    } catch (e) { return true; }
+}
+
 function sessionRecordKey(wsKey, sessionId) {
     return `${wsKey}::session::${sessionId}`;
 }
@@ -7748,6 +7765,7 @@ async function loadSessionRecordFromDB(wsKey, sessionId) {
 }
 
 async function patchSessionRecordInDB(wsKey, sessionId, patch) {
+    if (!sessionId || deletedSessionIds.has(sessionId)) return null;
     try {
         const db = await getDB();
         const key = sessionRecordKey(wsKey, sessionId);
@@ -8996,7 +9014,16 @@ function getWorkspaceSessionKey() {
 async function selectInitialSession() {
     const wsKey = getWorkspaceSessionKey();
     const index = await loadSessionIndexFromDB(wsKey);
-    const sessionIds = (index && Array.isArray(index.sessionIds)) ? index.sessionIds : [];
+    const rawIds = (index && Array.isArray(index.sessionIds)) ? index.sessionIds : [];
+    // Drop junk ids (undefined/null/non-strings, duplicates) and ids whose record
+    // no longer exists in the DB (left behind by an earlier delete).
+    const sessionIds = [];
+    for (const id of rawIds) {
+        if (typeof id !== 'string' || !id || sessionIds.includes(id)) continue;
+        if (!(await sessionRecordExistsInDB(wsKey, id))) continue;
+        sessionIds.push(id);
+    }
+    const prunedIndex = sessionIds.length !== rawIds.length;
 
     if (sessionIds.length > 0) {
         const activeId = (index.activeSessionId && sessionIds.includes(index.activeSessionId))
@@ -9018,7 +9045,11 @@ async function selectInitialSession() {
             msgCount: countConversationMessages(activeRecord.messages)
         };
         state.activeSessionId = activeId;
+        for (const k of Object.keys(state.sessionMeta)) {
+            if (!sessionIds.includes(k)) delete state.sessionMeta[k];
+        }
         state._lastSavedIndex = { sessionIds: sessionIds.slice(), activeSessionId: activeId, meta: { ...state.sessionMeta } };
+        if (prunedIndex) await saveSessionIndexToDB(wsKey, state._lastSavedIndex);
     } else {
         const defaultId = 'sess_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
         state.sessions = {
@@ -9072,6 +9103,8 @@ async function saveSession(sessionId, force) {
     const ctx = sessionCtx(id);
     if (ctx.deleted) return;
 
+    if (!id || deletedSessionIds.has(id) || !state.sessions[id]) return;
+
     const gen = getGenState(id);
 
     if (!gen.hasNewContent && !force) return;
@@ -9095,6 +9128,8 @@ async function saveSession(sessionId, force) {
         }
         delete state.sessions[id]._loaded;
         await persistCheckpoint(id);
+        // The session may have been deleted while we awaited.
+        if (!state.sessions[id] || deletedSessionIds.has(id)) return;
 
         const patch = {
             id: state.sessions[id].id,
@@ -9125,6 +9160,7 @@ async function saveSession(sessionId, force) {
             patch.systemPromptMode = state.sessions[id].systemPromptMode;
         }
         const merged = await patchSessionRecordInDB(wsKey, id, patch);
+        if (!state.sessions[id] || deletedSessionIds.has(id)) return;
         if (merged) {
             if (typeof merged.title === 'string') state.sessions[id].title = merged.title;
             if (merged._titleGenerated) state.sessions[id]._titleGenerated = true;
@@ -9277,6 +9313,16 @@ async function switchSession(sessionId) {
 
     state.activeSessionId = sessionId;
     await ensureSessionLoaded(sessionId);
+    if (!state.sessions[sessionId]) {
+        // Ghost entry (no record behind it): roll back, prune it, and tell the user.
+        state.activeSessionId = outgoingId;
+        state.sessionIds = (state.sessionIds || []).filter(id => id !== sessionId);
+        if (state.sessionMeta) delete state.sessionMeta[sessionId];
+        await saveActiveSession(true);
+        renderSessionPopoverList();
+        showToast('That session no longer exists and was removed from the list', 'info');
+        return;
+    }
     await restoreActiveSessionContent();
     renderSessionPopoverList();
     hideSessionPopover();
@@ -9384,6 +9430,7 @@ async function deleteSession(sessionId, e) {
         return;
     }
 
+    deletedSessionIds.add(sessionId);
     await deleteBaselineFromDB(currentWsName(), sessionId);
     await deleteSessionRecordFromDB(getWorkspaceSessionKey(), sessionId);
     if (state.activeSessionId === sessionId) {
@@ -9392,15 +9439,32 @@ async function deleteSession(sessionId, e) {
         delete state.sessions[sessionId]._attachments;
     }
     delete state.sessions[sessionId];
+    if (state.sessionMeta) delete state.sessionMeta[sessionId];
     state.sessionIds = (state.sessionIds || []).filter(id => id !== sessionId);
     if (state.activeSessionId === sessionId) {
-        const remainingId = state.sessionIds[0];
-        state.activeSessionId = remainingId;
-        await ensureSessionLoaded(remainingId);
+        // Pick the first remaining session that actually has a record; drop any
+        // that don't instead of making a ghost the active session.
+        let nextId = null;
+        while (state.sessionIds.length) {
+            const candidate = state.sessionIds[0];
+            await ensureSessionLoaded(candidate);
+            if (state.sessions[candidate]) { nextId = candidate; break; }
+            state.sessionIds.shift();
+            if (state.sessionMeta) delete state.sessionMeta[candidate];
+        }
+        if (!nextId) {
+            nextId = 'sess_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
+            const now = Date.now();
+            state.sessions[nextId] = { id: nextId, title: 'Untitled Session', createdAt: now, updatedAt: now, runningTimeMs: 0, messages: [], chatHTML: '', openTabs: ['chat'], activeTab: 'chat', systemPrompt: null };
+            state.sessionIds = [nextId];
+        }
+        state.activeSessionId = nextId;
         await restoreActiveSessionContent();
     }
 
-    await saveActiveSession();
+    // force: otherwise saveSession bails when there is no new content and the
+    // session index in the DB keeps the deleted id (it reappears on refresh).
+    await saveActiveSession(true);
     renderSessionPopoverList();
 }
 
@@ -9421,6 +9485,7 @@ async function clearAllSessions() {
         }
     }
 
+    sessionIds.forEach(id => deletedSessionIds.add(id));
     for (const id of sessionIds) {
         await deleteBaselineFromDB(ws, id);
         await deleteSessionRecordFromDB(wsKey, id);
@@ -9527,7 +9592,8 @@ btnClearAllSessions.addEventListener('click', async (e) => {
 });
 
 function renderSessionPopoverList() {
-    const ids = (state.sessionIds && state.sessionIds.length) ? state.sessionIds : Object.keys(state.sessions);
+    const ids = ((state.sessionIds && state.sessionIds.length) ? state.sessionIds : Object.keys(state.sessions))
+        .filter(id => typeof id === 'string' && id);
     const metaFor = (id) => {
         if (state.sessions[id]) {
             const s = state.sessions[id];
