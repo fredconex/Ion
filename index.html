@@ -9518,7 +9518,6 @@ btnClearAllSessions.addEventListener('click', async (e) => {
 });
 
 function renderSessionPopoverList() {
-    sessionsList.innerHTML = '';
     const ids = (state.sessionIds && state.sessionIds.length) ? state.sessionIds : Object.keys(state.sessions);
     const metaFor = (id) => {
         if (state.sessions[id]) {
@@ -9537,7 +9536,18 @@ function renderSessionPopoverList() {
 
     const keys = ids.slice().sort((a, b) => (metaFor(a).createdAt || 0) - (metaFor(b).createdAt || 0));
 
+    // Reconcile rows in place instead of wiping and rebuilding:
+    // reusing existing <div>s avoids re-creating DOM nodes on every tick,
+    // which is what made the popover flash on each update.
+    const existingRows = new Map();
+    for (const el of Array.from(sessionsList.children)) {
+        const id = el.dataset.sessionId;
+        if (id) existingRows.set(id, el);
+    }
+
+    const seen = new Set();
     keys.forEach(k => {
+        seen.add(k);
         const s = metaFor(k);
         const isActive = k === state.activeSessionId;
         const msgCount = s.msgCount || 0;
@@ -9547,33 +9557,58 @@ function renderSessionPopoverList() {
         const isGeneratingNow = isSessionRunning(s.id);
         const runStr = `${isGeneratingNow ? '▸ ' : ''}${formatDuration(runMs)}`;
 
-        const row = document.createElement('div');
-        row.className = `session-item-row ${isActive ? 'active' : ''}`;
-        row.innerHTML = `
-            <div class="session-item-info">
-                <div class="session-item-title">
-                    ${escapeHTML(displayTitle)}
-                    ${isActive ? '<span class="green" style="font-size:11px; margin-left:4px;">●</span>' : ''}
-                </div>
-                <div class="session-item-meta-row">
-                    <span class="meta-field">${msgCount} msgs</span>
-                    <span class="meta-field">· run ${runStr}</span>
-                </div>
-                <div class="session-item-meta-row">
-                    <span class="meta-id">${escapeHTML(s.id)}</span>
-                    <span class="meta-field">· ${dateStr}</span>
-                </div>
+        let row = existingRows.get(k);
+        if (!row) {
+            row = document.createElement('div');
+            row.dataset.sessionId = k;
+            row.className = 'session-item-row';
+            const info = document.createElement('div');
+            info.className = 'session-item-info';
+            const actions = document.createElement('div');
+            actions.className = 'session-item-actions';
+            const delBtn = document.createElement('button');
+            delBtn.className = 'btn-del-session icon-btn';
+            delBtn.innerHTML = '<span class="icon" style="font-size:14px;">delete</span>';
+            delBtn.addEventListener('click', (e) => deleteSession(k, e));
+            actions.appendChild(delBtn);
+            row.appendChild(info);
+            row.appendChild(actions);
+            row.addEventListener('click', () => switchSession(k));
+            existingRows.set(k, row);
+            sessionsList.appendChild(row);
+        }
+
+        // Only toggle the active class when it actually changes, so the
+        // CSS transition fires at most once per state change.
+        const wantClass = `session-item-row ${isActive ? 'active' : ''}`;
+        if (row.className !== wantClass) row.className = wantClass;
+
+        const info = row.querySelector('.session-item-info');
+        info.innerHTML = `
+            <div class="session-item-title">
+                ${escapeHTML(displayTitle)}
+                ${isActive ? '<span class="green" style="font-size:11px; margin-left:4px;">●</span>' : ''}
             </div>
-            <div class="session-item-actions">
-                <button class="btn-del-session icon-btn" title="${keys.length > 1 ? 'Delete session' : 'Clear session'}"><span class="icon" style="font-size:14px;">delete</span></button>
+            <div class="session-item-meta-row">
+                <span class="meta-field">${msgCount} msgs</span>
+                <span class="meta-field">· run ${runStr}</span>
+            </div>
+            <div class="session-item-meta-row">
+                <span class="meta-id">${escapeHTML(s.id)}</span>
+                <span class="meta-field">· ${dateStr}</span>
             </div>
         `;
-
-        row.addEventListener('click', () => switchSession(s.id));
         const delBtn = row.querySelector('.btn-del-session');
-        if (delBtn) delBtn.addEventListener('click', (e) => deleteSession(s.id, e));
-        sessionsList.appendChild(row);
+        if (delBtn) delBtn.title = keys.length > 1 ? 'Delete session' : 'Clear session';
     });
+
+    // Drop rows for sessions that no longer exist.
+    for (const [id, el] of existingRows) {
+        if (!seen.has(id)) {
+            el.remove();
+            existingRows.delete(id);
+        }
+    }
 }
 
 document.addEventListener('click', (e) => {
