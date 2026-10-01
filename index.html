@@ -2486,14 +2486,14 @@
         .compression-box .tool-badge.compress { background: rgba(120, 120, 120, 0.14); color: var(--dim); }
         .compression-box:not(.running) .tool-summary { color: var(--dim); }
         .compression-box:not(.running) .compression-metric { color: var(--dim); background: rgba(120,120,120,0.06); border-color: rgba(120,120,120,0.12); }
-        .compression-box.running { border-color: rgba(85, 152, 231, 0.45); background: rgba(85, 152, 231, 0.06); }
+        .compression-box.running { border-color: rgba(120, 120, 120, 0.45); background: rgba(120, 120, 120, 0.06); }
         .compression-box.running .tool-box-header {
             background: linear-gradient(
                 90deg,
                 transparent 0%,
-                rgba(85, 152, 231, 0.06) 35%,
-                rgba(85, 152, 231, 0.18) 50%,
-                rgba(85, 152, 231, 0.06) 65%,
+                rgba(120, 120, 120, 0.06) 35%,
+                rgba(120, 120, 120, 0.18) 50%,
+                rgba(120, 120, 120, 0.06) 65%,
                 transparent 100%
             );
             background-size: 250% 100%;
@@ -2504,7 +2504,7 @@
             padding: 8px 4px; font-size: 11.5px; color: var(--dim);
         }
         .compression-progress .spinner-icon {
-            font-size: 14px; color: var(--blue); margin-right: 0;
+            font-size: 14px; color: var(--dim); margin-right: 0;
         }
         .compression-metrics { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 6px 0; }
         .compression-metric {
@@ -7531,7 +7531,7 @@ function updateGenGlow() {
     if (activeGen.retryStatusActive) status = 'retrying';
     else if (permQueue.some(r => r.sessionId === state.activeSessionId)
           || pendingUIQueue.some(r => r.sessionId === state.activeSessionId)) status = 'asking';
-    else if (activeGen.isRunning) status = 'generating';
+    else if (activeGen.compressionInFlight || activeGen.isRunning) status = 'generating';
 
     glowEl.classList.toggle('on', enabled && !!status);
     if (status) glowEl.style.setProperty('--glow-rgb', GLOW_STATUS_COLORS[status]);
@@ -13036,7 +13036,7 @@ async function compressContext(sessionId, { silent = false, manual = false } = {
     const compressController = new AbortController();
     gen.activeController = compressController;
     gen.compressionInFlight = true;
-    if (sid === state.activeSessionId) updatePromptSendButton();
+    if (sid === state.activeSessionId) { updatePromptSendButton(); updateGenGlow(); }
 
     let summaryText = '';
     try {
@@ -13073,7 +13073,7 @@ async function compressContext(sessionId, { silent = false, manual = false } = {
     } finally {
         gen.compressionInFlight = false;
         if (gen.activeController === compressController) gen.activeController = null;
-        if (sid === state.activeSessionId) updatePromptSendButton();
+        if (sid === state.activeSessionId) { updatePromptSendButton(); updateGenGlow(); }
     }
 
     const summaryMsg = {
@@ -13245,7 +13245,7 @@ function finalizeCompressionBox(wrapper, entry) {
 
 function finalizeCompressionBoxError(wrapper, message, cancelled) {
     if (!wrapper || !wrapper.isConnected) return;
-    wrapper.innerHTML = `<div class="tool-box done-box compression-box error-box">
+    wrapper.innerHTML = `<div class="tool-box done-box compression-box error-box${cancelled ? ' collapsed' : ''}">
         <div class="tool-box-header">
             <span class="icon icon-chevron">expand_more</span>
             <span class="tool-io-indicator io-mixed"><span class="icon">compress</span></span>
@@ -14660,7 +14660,7 @@ function abortGeneration({ toast = null, showResumeUI = true, sessionId } = {}) 
     stopSpinner(sid);
     gen.isRunning = false;
     gen.compressionInFlight = false;
-    if (sid === state.activeSessionId) updatePromptSendButton();
+    if (sid === state.activeSessionId) { updatePromptSendButton(); updateGenGlow(); }
 
     if (gen.thinkingTimerInterval) {
         clearInterval(gen.thinkingTimerInterval);
