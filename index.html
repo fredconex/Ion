@@ -399,6 +399,14 @@
             white-space: pre-line; margin-bottom: 16px;
         }
         #yesno-modal-btns { display: flex; justify-content: flex-end; gap: 8px; }
+        #yesno-modal-input {
+            display: none; width: 100%; box-sizing: border-box; margin: -4px 0 12px;
+            padding: 8px 10px; font-family: var(--font-mono); font-size: 12px;
+            background: var(--bg-input); color: var(--fg);
+            border: 1px solid var(--border-highlight); border-radius: 8px; outline: none;
+        }
+        #yesno-modal-input:focus { border-color: var(--primary); }
+        #yesno-modal-error { display: none; margin: -6px 0 12px; font-size: 12px; color: var(--red); line-height: 1.4; }
         .btn-confirm {
             font-family: var(--font-mono); font-size: 12px; font-weight: 600;
             padding: 6px 16px; border-radius: 6px;
@@ -3081,6 +3089,8 @@
     <div id="yesno-modal-overlay">
         <div id="yesno-modal">
             <div id="yesno-modal-message"></div>
+            <input id="yesno-modal-input" type="text" spellcheck="false" autocomplete="off">
+            <div id="yesno-modal-error"></div>
             <div id="yesno-modal-btns">
                 <button id="yesno-modal-save" class="btn-confirm primary">Save</button>
                 <button id="yesno-modal-discard" class="btn-confirm">Don't save</button>
@@ -3661,7 +3671,7 @@
                         </button>
                     </div>
 
-                    <button id="btn-tab-save" class="btn-tab-action" title="Save file [Ctrl+S]" style="display:none;">
+                    <button id="btn-tab-save" class="btn-tab-action" title="Save file [Ctrl+S] · Save As [Ctrl+Shift+S]" style="display:none;">
                         <span class="icon" style="font-size: 15px;">save</span>
                     </button>
                 </div>
@@ -3693,7 +3703,7 @@
                         <span class="icon" id="diff-layout-icon" style="font-size: 13px;">view_stream</span>
                         <span id="diff-layout-text">Inline</span>
                     </button>
-                    <button id="btn-diff-save" class="pill-btn" title="Save modified file changes [Ctrl+S]">
+                    <button id="btn-diff-save" class="pill-btn" title="Save modified file changes [Ctrl+S] · Save As [Ctrl+Shift+S]">
                         <span class="icon" style="font-size: 13px;">save</span>
                         <span>Save</span>
                     </button>
@@ -7440,6 +7450,12 @@ window.addEventListener('keydown', (e) => {
         e.preventDefault();
         e.stopPropagation();
 
+        if (e.shiftKey) {
+            // Save As; ignore while a dialog (including Save As itself) is already open.
+            if (document.getElementById('yesno-modal-overlay').style.display !== 'flex') saveFileAs();
+            return false;
+        }
+
         if (state.activeTab && state.activeTab.startsWith('filediff:')) {
             saveDiffModifiedFile();
         } else if (state.activeTab && state.activeTab !== 'chat') {
@@ -7834,7 +7850,7 @@ window.revertFileToCheckpoint = async (filepath, timelineIndex) => {
         mkdir: 'the point where this directory was created',
     };
     const label = labelMap[target.kind] || `the checkpoint from ${new Date(target.ts).toLocaleString()}`;
-    if (!confirm(`Revert ${filepath} to ${label}? Later changes will be discarded.`)) return;
+    if (!await confirmDialog(`Revert ${filepath} to ${label}? Later changes will be discarded.`, { confirmLabel: 'Revert', danger: true })) return;
 
     try {
         // Truncate the op log: keep only ops strictly before this entry.
@@ -7995,7 +8011,7 @@ window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
 
     const summary = actions.map(p => p.kind === 'delete' ? 'delete' : p.kind === 'rename' ? `rename ${p.filepath} → ${p.targetPath}` : `restore ${p.filepath}`).join(', ');
     const shortLabel = (promptLabel || 'this prompt').slice(0, 120) + (promptLabel && promptLabel.length > 120 ? '…' : '');
-    if (!(opts && opts.skipConfirm) && !confirm(`Revert to right before "${shortLabel}"?\n\nThis will ${summary}. Later changes will be discarded.`)) return;
+    if (!(opts && opts.skipConfirm) && !await confirmDialog(`Revert to right before "${shortLabel}"?\n\nThis will ${summary}. Later changes will be discarded.`, { confirmLabel: 'Revert', danger: true })) return;
 
     const ok = await executeRevertPlan(finalActions, { forgetPromptIds: Array.from(forgetIds) });
     if (ok > 0) {
@@ -8354,7 +8370,7 @@ function recomputeAllModifiedFromOps() {
 }
 
 window.discardFile = async (filepath) => {
-    if (!confirm(`Discard all changes in ${filepath} and revert to session checkpoint?`)) return;
+    if (!await confirmDialog(`Discard all changes in ${filepath} and revert to session checkpoint?`, { confirmLabel: 'Discard', danger: true })) return;
     const original = registry.originalFiles[filepath];
     const actions = (original === undefined)
         ? [{ kind: 'delete', filepath }]
@@ -8371,7 +8387,7 @@ window.restoreAllModifiedFiles = async () => {
         showToast('No modified files to discard', 'info');
         return;
     }
-    if (!confirm(`Discard all changes across ${state.modifiedFiles.size} file(s)?`)) return;
+    if (!await confirmDialog(`Discard all changes across ${state.modifiedFiles.size} file(s)?`, { confirmLabel: 'Discard all', danger: true })) return;
 
     const files = Array.from(state.modifiedFiles);
     const actions = files.map(fp => {
@@ -9471,10 +9487,10 @@ btnCreateSession.addEventListener('click', (e) => {
 });
 
 const btnClearAllSessions = document.getElementById('btn-clear-all-sessions');
-btnClearAllSessions.addEventListener('click', (e) => {
+btnClearAllSessions.addEventListener('click', async (e) => {
     e.stopPropagation();
     const count = (state.sessionIds && state.sessionIds.length) || Object.keys(state.sessions).length;
-    if (!confirm(`Clear all ${count} session${count === 1 ? '' : 's'}? This deletes all chat history and checkpoints and can't be undone.`)) return;
+    if (!await confirmDialog(`Clear all ${count} session${count === 1 ? '' : 's'}? This deletes all chat history and checkpoints and can't be undone.`, { confirmLabel: 'Clear all', danger: true })) return;
     clearAllSessions();
 });
 
@@ -9798,6 +9814,120 @@ function confirmSaveDiscard(message) {
     });
 }
 
+function confirmDialog(message, opts = {}) {
+    const { confirmLabel = 'OK', cancelLabel = 'Cancel', danger = false } = opts;
+    return new Promise((resolve) => {
+        const overlay = document.getElementById('yesno-modal-overlay');
+        const msgEl = document.getElementById('yesno-modal-message');
+        const okBtn = document.getElementById('yesno-modal-save');
+        const extraBtn = document.getElementById('yesno-modal-discard');
+        const cancelBtn = document.getElementById('yesno-modal-cancel');
+        const prev = { ok: okBtn.textContent, cancel: cancelBtn.textContent, extra: extraBtn.style.display };
+        msgEl.innerText = message;
+        okBtn.textContent = confirmLabel;
+        cancelBtn.textContent = cancelLabel;
+        extraBtn.style.display = 'none';
+        overlay.style.display = 'flex';
+        const finish = (val) => {
+            overlay.style.display = 'none';
+            okBtn.textContent = prev.ok;
+            cancelBtn.textContent = prev.cancel;
+            extraBtn.style.display = prev.extra;
+            okBtn.removeEventListener('click', onOk);
+            cancelBtn.removeEventListener('click', onCancel);
+            overlay.removeEventListener('click', onOverlay);
+            document.removeEventListener('keydown', onKey);
+            resolve(val);
+        };
+        const onOk = () => finish(true);
+        const onCancel = () => finish(false);
+        const onOverlay = (e) => { if (e.target === overlay) finish(false); };
+        const onKey = (e) => {
+            if (e.key === 'Escape') { e.stopPropagation(); finish(false); }
+            else if (e.key === 'Enter' && !danger) { e.preventDefault(); finish(true); }
+        };
+        okBtn.addEventListener('click', onOk);
+        cancelBtn.addEventListener('click', onCancel);
+        overlay.addEventListener('click', onOverlay);
+        document.addEventListener('keydown', onKey);
+        // Destructive prompts default focus to Cancel so a stray Enter can't confirm.
+        (danger ? cancelBtn : okBtn).focus();
+    });
+}
+window.confirmDialog = confirmDialog;
+
+// Non-blocking text prompt built on the same modal. Resolves to the entered string, or null if cancelled.
+// `validate(value)` may return an error message; the dialog stays open and shows it until the value is valid.
+function promptDialog(message, defaultValue = '', opts = {}) {
+    const { confirmLabel = 'OK', cancelLabel = 'Cancel', validate = null } = opts;
+    return new Promise((resolve) => {
+        const overlay = document.getElementById('yesno-modal-overlay');
+        const msgEl = document.getElementById('yesno-modal-message');
+        const inputEl = document.getElementById('yesno-modal-input');
+        const errEl = document.getElementById('yesno-modal-error');
+        const okBtn = document.getElementById('yesno-modal-save');
+        const extraBtn = document.getElementById('yesno-modal-discard');
+        const cancelBtn = document.getElementById('yesno-modal-cancel');
+        const prev = { ok: okBtn.textContent, cancel: cancelBtn.textContent, extra: extraBtn.style.display };
+        msgEl.innerText = message;
+        inputEl.value = defaultValue;
+        inputEl.style.display = 'block';
+        errEl.style.display = 'none';
+        okBtn.textContent = confirmLabel;
+        cancelBtn.textContent = cancelLabel;
+        extraBtn.style.display = 'none';
+        overlay.style.display = 'flex';
+        const finish = (val) => {
+            overlay.style.display = 'none';
+            inputEl.style.display = 'none';
+            errEl.style.display = 'none';
+            okBtn.textContent = prev.ok;
+            cancelBtn.textContent = prev.cancel;
+            extraBtn.style.display = prev.extra;
+            okBtn.removeEventListener('click', onOk);
+            cancelBtn.removeEventListener('click', onCancel);
+            overlay.removeEventListener('click', onOverlay);
+            inputEl.removeEventListener('input', onInput);
+            document.removeEventListener('keydown', onKey);
+            resolve(val);
+        };
+        const onOk = () => {
+            const v = inputEl.value;
+            const err = validate ? validate(v) : null;
+            if (err) { errEl.textContent = err; errEl.style.display = 'block'; inputEl.focus(); return; }
+            finish(v);
+        };
+        const onCancel = () => finish(null);
+        const onOverlay = (e) => { if (e.target === overlay) finish(null); };
+        const onInput = () => { errEl.style.display = 'none'; };
+        const onKey = (e) => {
+            if (e.key === 'Escape') { e.stopPropagation(); finish(null); }
+            else if (e.key === 'Enter' && !e.isComposing && document.activeElement !== cancelBtn) { e.preventDefault(); onOk(); }
+        };
+        okBtn.addEventListener('click', onOk);
+        cancelBtn.addEventListener('click', onCancel);
+        overlay.addEventListener('click', onOverlay);
+        inputEl.addEventListener('input', onInput);
+        document.addEventListener('keydown', onKey);
+        // Pre-select just the base name (not the folder or extension) so typing replaces it.
+        inputEl.focus();
+        const slash = defaultValue.lastIndexOf('/') + 1;
+        const dot = defaultValue.lastIndexOf('.');
+        inputEl.setSelectionRange(slash, dot > slash ? dot : defaultValue.length);
+    });
+}
+window.promptDialog = promptDialog;
+
+// Validator for file/folder names typed into promptDialog. Returns an error string or null.
+function validateEntryName(v, { allowSlash = true } = {}) {
+    const s = String(v || '').trim();
+    if (!s) return 'Enter a name.';
+    if (!allowSlash && /[\/\\]/.test(s)) return 'The name can\'t contain slashes.';
+    if (s.replace(/\\/g, '/').split('/').some(seg => seg === '.' || seg === '..')) return 'The name can\'t contain "." or ".." segments.';
+    if (/[<>:"|?*\x00-\x1f]/.test(s)) return 'The name contains characters that aren\'t allowed: < > : " | ? *';
+    return null;
+}
+
 async function closeTab(tabId) {
     if (isFileDirty(tabId)) {
         const choice = await confirmSaveDiscard(`Do you want to save changes you made to ${tabId}?`);
@@ -10108,6 +10238,100 @@ btnTabSave.addEventListener('click', (e) => {
     e.stopPropagation();
     saveEditorFile();
 });
+
+// Normalizes a user-entered workspace path and rejects anything we can't safely write.
+// Returns { path } or { error }.
+function normalizeSaveAsPath(raw) {
+    const p = String(raw || '').trim().replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^(\.\/)+/, '').replace(/^\/+/, '');
+    if (!p) return { error: 'Enter a file path.' };
+    if (p.endsWith('/')) return { error: 'The path must end with a file name.' };
+    if (p.split('/').some(seg => seg === '.' || seg === '..')) return { error: 'Paths can\'t contain "." or ".." segments.' };
+    if (/[<>:"|?*\x00-\x1f]/.test(p)) return { error: 'The path contains characters that aren\'t allowed: < > : " | ? *' };
+    if (isAgentPath(p) || isVirtualAgentFile(p) || isSecurityProtectedPath(p)) return { error: 'That location is protected and can\'t be written to.' };
+    const meta = registry.meta[p];
+    if (meta && meta.kind === 'directory') return { error: 'A folder with that name already exists.' };
+    return { path: p };
+}
+
+async function workspaceDirExists(dirPath) {
+    if (!dirPath) return true;
+    const meta = registry.meta[dirPath];
+    if (meta && meta.kind === 'directory') return true;
+    if (!rootHandle) return false;
+    try { await getDirectoryHandleByPath(dirPath, false); return true; } catch (e) { return false; }
+}
+
+// Save As (Ctrl+Shift+S): writes the current editor contents (including unsaved edits) to a new
+// workspace path and opens it in a new tab. The original file and its tab are left untouched.
+async function saveFileAs() {
+    if (state.isSavingAs || state.isSaving) return;
+
+    let srcPath = null, content = null, isDiff = false;
+    if (state.activeTab && state.activeTab.startsWith('filediff:') && state.currentDiffFilepath && monacoDiffEditor) {
+        srcPath = state.currentDiffFilepath;
+        content = monacoDiffEditor.getModifiedEditor().getValue();
+        isDiff = true;
+    } else if (state.activeTab && state.activeTab === state.currentEditorPath && monacoEditor) {
+        // Only a real text tab: the editor's current model must belong to this path
+        // (binary/image tabs keep a stale model from the previously opened file).
+        const model = monacoModels.get(state.currentEditorPath);
+        if (model && monacoEditor.getModel() === model) {
+            srcPath = state.currentEditorPath;
+            content = model.getValue();
+        }
+    }
+    if (srcPath === null) return;
+
+    state.isSavingAs = true;
+    try {
+        let target = null;
+        let initial = srcPath;
+        while (true) {
+            const raw = await promptDialog('Save As\n\nPath relative to the workspace root:', initial, {
+                confirmLabel: 'Save',
+                validate: (v) => normalizeSaveAsPath(v).error || null,
+            });
+            if (raw === null) return; // cancelled
+            target = normalizeSaveAsPath(raw).path;
+
+            if (target === srcPath) {
+                // Same path: behaves like a normal save.
+                state.isSavingAs = false;
+                await (isDiff ? saveDiffModifiedFile() : saveEditorFile());
+                return;
+            }
+
+            const exists = (await fileExistsOnDisk(target)) || registry.files[target] !== undefined;
+            if (exists) {
+                const note = isFileDirty(target) ? ' Its open tab has unsaved changes that will be lost.' : '';
+                const ok = await confirmDialog(`"${target}" already exists. Replace it?${note}`, { confirmLabel: 'Replace', danger: true });
+                if (!ok) { initial = raw; continue; } // back to the path prompt
+            }
+            break;
+        }
+
+        const parent = target.split('/').slice(0, -1).join('/');
+        if (parent && !(await workspaceDirExists(parent))) {
+            const r = await fs.mkdir(parent, { mode: 'ui' });
+            if (r && r.error) { showToast(r.error, 'error'); return; }
+        }
+
+        const res = await writeDisk(target, content);
+        if ((res && res.output && res.output.startsWith('ERROR:')) || registry.files[target] !== content) {
+            showToast(`Could not save as ${target}`, 'error');
+            return;
+        }
+
+        await openFileTab(target);
+        await syncWorkspace(false);
+        showToast(`Saved as ${target}`, 'success');
+    } catch (err) {
+        showToast(`Save As failed: ${err.message}`, 'error');
+    } finally {
+        state.isSavingAs = false;
+    }
+}
+window.saveFileAs = saveFileAs;
 
 const promptAttachments = document.getElementById('prompt-attachments');
 let attachmentIdCounter = 0;
@@ -10845,7 +11069,7 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
         const targetDir = node ? (node.kind === 'directory' ? node.path : node.path.split('/').slice(0, -1).join('/')) : "";
 
         if (action === 'new-file') {
-            const name = prompt("Enter file name:", "new_file.txt");
+            const name = (await promptDialog('New file name:', 'new_file.txt', { confirmLabel: 'Create', validate: (v) => validateEntryName(v) }))?.trim();
             if (!name) return;
             const fullPath = targetDir ? `${targetDir}/${name}` : name;
             if (isAgentPath(fullPath)) {
@@ -10856,7 +11080,7 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
             await openFileTab(fullPath);
             await syncWorkspace(false);
         } else if (action === 'new-folder') {
-            const name = prompt("Enter folder name:", "new_folder");
+            const name = (await promptDialog('New folder name:', 'new_folder', { confirmLabel: 'Create', validate: (v) => validateEntryName(v) }))?.trim();
             if (!name) return;
             const fullPath = targetDir ? `${targetDir}/${name}` : name;
             if (isAgentPath(fullPath)) {
@@ -10873,7 +11097,7 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
         } else if (action === 'attach-prompt') {
             attachReference({ type: 'file', filepath: node.path });
         } else if (action === 'rename') {
-            const newName = prompt("Rename to:", node.name);
+            const newName = (await promptDialog(`Rename "${node.name}" to:`, node.name, { confirmLabel: 'Rename', validate: (v) => validateEntryName(v, { allowSlash: false }) }))?.trim();
             if (!newName || newName === node.name) return;
             const oldPath = node.path;
             const parent = oldPath.split('/').slice(0, -1).join('/');
@@ -10894,7 +11118,7 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
                 showToast(`Rename failed: ${err.message}`, 'error');
             }
         } else if (action === 'delete') {
-            if (!confirm(`Delete ${node.name}?`)) return;
+            if (!await confirmDialog(`Delete ${node.name}?`, { confirmLabel: 'Delete', danger: true })) return;
             if (isToolFilePath(node.path)) {
                 const toolName = node.path.split('/').pop().replace('.js', '');
                 const tool = Object.values(toolRegistry).find(t => t.fileName === toolName);
@@ -10916,7 +11140,7 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
                 await syncWorkspace(false);
             }
         } else if (action === 'restore-default') {
-            if (!confirm(`Restore ${node.name} to its built-in default? Your current content will be lost.`)) return;
+            if (!await confirmDialog(`Restore ${node.name} to its built-in default? Your current content will be lost.`, { confirmLabel: 'Restore', danger: true })) return;
             const res = restoreAgentFile(node.path);
             if (res.error) {
                 showToast(res.error, 'error');
@@ -10928,7 +11152,7 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
 });
 
 btnNewFile.addEventListener('click', async () => {
-    const name = prompt("Enter file name:", "new_file.txt");
+    const name = (await promptDialog('New file name:', 'new_file.txt', { confirmLabel: 'Create', validate: (v) => validateEntryName(v) }))?.trim();
     if (!name) return;
     if (isAgentPath(name)) {
         showToast('Cannot create files inside .agent', 'error');
@@ -10940,7 +11164,7 @@ btnNewFile.addEventListener('click', async () => {
 });
 
 btnNewFolder.addEventListener('click', async () => {
-    const name = prompt("Enter folder name:", "new_folder");
+    const name = (await promptDialog('New folder name:', 'new_folder', { confirmLabel: 'Create', validate: (v) => validateEntryName(v) }))?.trim();
     if (!name) return;
     if (isAgentPath(name)) {
         showToast('Cannot create folders inside .agent', 'error');
@@ -11845,9 +12069,9 @@ function wireModelsDetailEvents() {
 
     // Remove the whole provider
     const removeBtn = mmDetailEl.querySelector('.mm-remove-provider-btn');
-    removeBtn.addEventListener('click', () => {
+    removeBtn.addEventListener('click', async () => {
         const name = MODEL_PROVIDERS[pi].provider || 'this provider';
-        if (!confirm(`Remove "${name}" and all its models?`)) return;
+        if (!await confirmDialog(`Remove "${name}" and all its models?`, { confirmLabel: 'Remove', danger: true })) return;
         MODEL_PROVIDERS.splice(pi, 1);
         modelsModalEl.classList.remove('mm-detail-open');
         if (_mmSelectedIdx >= MODEL_PROVIDERS.length) _mmSelectedIdx = MODEL_PROVIDERS.length - 1;
@@ -16642,6 +16866,7 @@ async function submitPrompt() {
 - <span class="cyan">/session</span> — Open top session menu<br>
 - <span class="cyan">/clear</span> — Reset session (clears messages, chat, modified files)<br>
 - <span class="cyan">/restore</span> — Discard all modified files to original baseline<br>
+- <span class="cyan">Ctrl+S</span> / <span class="cyan">Ctrl+Shift+S</span> — Save / Save As (editor)<br>
 - <span class="cyan">@&lt;file&gt;</span> — Reference file context in prompt<br>
 - <span class="yellow">ESC</span> — Cancel current generation</div>`, "dim");
                 focusPrompt();
