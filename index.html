@@ -3863,7 +3863,7 @@
                             </div>
                         </div>
                         <input type="file" id="prompt-attach-input" multiple accept="image/*" style="display:none;" />
-                        <input type="file" id="prompt-attach-doc-input" multiple accept=".txt,.md,.json,.js,.html,.css,.csv,.log,.py,.rs,.java,.go,.sh,.yml,.yaml,.xml,.ts,.tsx,.jsx,.ini,.toml,.srt,.vtt" style="display:none;" />
+                        <input type="file" id="prompt-attach-doc-input" multiple style="display:none;" />
                         <div id="autocomplete-popup"></div>
                         <textarea id="cmd" placeholder="Ask agent or type / for commands, @ for files..." rows="1" spellcheck="false" autofocus></textarea>
                         <button id="prompt-symbol" class="magenta" type="button" title="Send prompt">&gt;</button>
@@ -6170,7 +6170,8 @@ const fs = (() => {
     async function create(path, content, opts = {}) {
         const sid = opts.sessionId || state.activeSessionId;
         if (isSecurityProtectedPath(path)) return { error: `ERROR: ${path} is a protected path.` };
-        await rawWrite(path, content);
+        try { await rawWrite(path, content); }
+        catch (e) { if (e && e.encodingError) return { error: `ERROR: ${e.message}` }; throw e; }
         // track=false: disk-only mutation that must not be recorded (discard/reset paths).
         if (opts.track !== false) {
             await record({ kind: 'create', path, content, mode: opts.mode || 'ui' }, sid);
@@ -6190,7 +6191,8 @@ const fs = (() => {
                 previousContent = await readFileContent(path);
             }
         }
-        await rawWrite(path, content);
+        try { await rawWrite(path, content); }
+        catch (e) { if (e && e.encodingError) return { error: `ERROR: ${e.message}` }; throw e; }
         // track=false: disk-only mutation that must not be recorded (discard/reset paths).
         if (opts.track !== false) {
             await record({ kind: existed ? 'write' : 'create', path, content, previousContent, mode: opts.mode || 'ui' }, sid);
@@ -8680,6 +8682,7 @@ async function runWorkspaceSearch() {
 
     for (const fp of paths) {
         if (totalMatches >= SEARCH_MAX_TOTAL_RESULTS) { truncated = true; break; }
+        if (await resolveIsBinary(fp)) continue;
         const text = await readFileContent(fp);
         if (!text) continue;
         const lines = text.split('\n');
@@ -10217,8 +10220,9 @@ async function switchTab(tabId) {
 
         const isImage = /\.(png|jpg|jpeg|gif|ico|svg|webp)$/i.test(tabId);
         const meta = registry.meta[tabId];
+        const isBinaryFile = await resolveIsBinary(tabId);
 
-        if (meta?.isBinary && !isImage) {
+        if (isBinaryFile && !isImage) {
             monacoContainer.style.display = 'none';
             htmlPreviewFrame.style.display = 'none';
             editorBinaryNotice.style.display = 'flex';
@@ -10684,7 +10688,6 @@ function removeReference(idx) {
 async function handleAttachFile(file) {
     const ext = (file.name.match(/\.([a-zA-Z0-9]+)$/)?.[1] || '').toLowerCase();
     const isImage = file.type && file.type.startsWith('image/');
-    const isText = file.type && file.type.startsWith('text/') || ['txt','md','json','js','html','css','csv','log','py','rs','java','go','sh','yml','yaml','xml','ts','tsx','jsx','ini','toml','srt','vtt'].includes(ext);
     try {
         if (isImage) {
             if (!currentModelHasVision()) {
@@ -10699,8 +10702,18 @@ async function handleAttachFile(file) {
                 dataUrl,
                 mimeType: 'image/png'
             });
-        } else if (isText) {
-            const text = await file.text();
+        } else {
+            // No extension whitelist: decide from the file's bytes, so any text file
+            // (.c, .sql, Dockerfile, extensionless, unknown formats) can be attached.
+            const sniffed = await readFileTextSniffed(file);
+            if (sniffed.binary) {
+                showToast(`Cannot attach ${file.name || 'file'}: it looks like a binary file, not text`, 'error');
+                return;
+            }
+            const text = sniffed.text;
+            if (file.size > 1024 * 1024) {
+                showToast(`${file.name || 'File'} is ${formatFileSize(file.size)}; large attachments may not fit in the model's context`, 'info');
+            }
             pastedTextCounter++;
             attachReference({
                 type: 'paste',
@@ -10708,8 +10721,6 @@ async function handleAttachFile(file) {
                 content: text,
                 lineCount: text.split('\n').length
             });
-        } else {
-            showToast(`Unsupported file type: ${file.name}`, 'error');
         }
     } catch (err) {
         showToast(`Could not read file: ${err.message}`, 'error');
@@ -10859,6 +10870,173 @@ function formatFileSize(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
+// ---------------------------------------------------------------------------
+// Content-based text/binary detection.
+// File extensions are only a hint; the first bytes of the file decide.
+// ---------------------------------------------------------------------------
+const SNIFF_BYTES = 8192;
+// Extensions that are binary in practice: trusted without reading the file.
+const BINARY_EXT_DEFINITE = /\.(png|jpg|jpeg|gif|ico|bmp|webp|tif|tiff|heic|avif|psd|pdf|zip|tar|gz|xz|bz2|zst|lzma|7z|rar|exe|dll|so|dylib|mp4|mkv|webm|mp3|m4a|aac|wav|flac|ogg|avi|mov|pyc|pyo|ttf|otf|woff|woff2|eot|sqlite|sqlite3|gguf|ggml|ppu|o|a|lib|class|jar|wasm|node|swf|iso|apk|dmg|pkl|npy|npz|parquet|onnx|safetensors|docx|xlsx|pptx|odt|ods|odp|mdb|accdb|dds|tga|pdb)$/i;
+// Extensions that are usually binary but are sometimes text (.dat, .res, .obj, .lps ...): sniff them.
+const BINARY_EXT_AMBIGUOUS = /\.(bin|dat|res|lps|obj|db|img|pb)$/i;
+
+// Scan-time hint only (no I/O).
+function isBinaryByExtension(name) {
+    return BINARY_EXT_DEFINITE.test(name) || BINARY_EXT_AMBIGUOUS.test(name);
+}
+
+const BINARY_MAGIC = [
+    [0x89, 0x50, 0x4E, 0x47],                       // PNG
+    [0xFF, 0xD8, 0xFF],                             // JPEG
+    [0x47, 0x49, 0x46, 0x38],                       // GIF8
+    [0x25, 0x50, 0x44, 0x46, 0x2D],                 // %PDF-
+    [0x50, 0x4B, 0x03, 0x04], [0x50, 0x4B, 0x05, 0x06], // ZIP (docx, xlsx, jar, apk ...)
+    [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C],           // 7z
+    [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07],           // RAR
+    [0x1F, 0x8B],                                   // gzip
+    [0x7F, 0x45, 0x4C, 0x46],                       // ELF
+    [0xCF, 0xFA, 0xED, 0xFE], [0xCE, 0xFA, 0xED, 0xFE], [0xCA, 0xFE, 0xBA, 0xBE], // Mach-O / Java class
+    [0x00, 0x61, 0x73, 0x6D],                       // WASM
+    [0x53, 0x51, 0x4C, 0x69, 0x74, 0x65, 0x20, 0x66, 0x6F, 0x72, 0x6D, 0x61, 0x74, 0x20, 0x33, 0x00], // SQLite
+    [0x4F, 0x67, 0x67, 0x53],                       // OggS
+    [0x66, 0x4C, 0x61, 0x43],                       // fLaC
+    [0x52, 0x49, 0x46, 0x46]                        // RIFF (wav, avi, webp)
+];
+
+// Classifies a byte sample. `partial` = the sample is only the start of a larger file.
+// Returns { binary, encoding } where encoding is one of
+// 'utf-8' | 'utf-8-bom' | 'utf-16le' | 'utf-16be' | 'windows-1252' | null (binary).
+function sniffBytes(u8, partial) {
+    const n = u8.length;
+    if (n === 0) return { binary: false, encoding: 'utf-8' };
+    const starts = (sig) => n >= sig.length && sig.every((b, i) => u8[i] === b);
+
+    const controlRatio = (text) => {
+        let bad = 0;
+        for (let i = 0; i < text.length; i++) {
+            const c = text.charCodeAt(i);
+            if ((c < 0x20 && c !== 9 && c !== 10 && c !== 12 && c !== 13 && c !== 27) || c === 0xFFFD) bad++;
+        }
+        return text.length ? bad / text.length : 0;
+    };
+
+    if (starts([0xEF, 0xBB, 0xBF])) return { binary: false, encoding: 'utf-8-bom' };
+    // UTF-32 BOMs: TextDecoder can't decode them, so don't pretend they are text.
+    if (starts([0xFF, 0xFE, 0x00, 0x00]) || starts([0x00, 0x00, 0xFE, 0xFF])) return { binary: true, encoding: null };
+    const utf16 = starts([0xFF, 0xFE]) ? 'utf-16le' : (starts([0xFE, 0xFF]) ? 'utf-16be' : null);
+    if (utf16) {
+        const text = new TextDecoder(utf16).decode(u8.subarray(0, n - (n % 2)));
+        return controlRatio(text) > 0.05 ? { binary: true, encoding: null } : { binary: false, encoding: utf16 };
+    }
+
+    for (const sig of BINARY_MAGIC) if (starts(sig)) return { binary: true, encoding: null };
+
+    let suspicious = 0;
+    for (let i = 0; i < n; i++) {
+        const b = u8[i];
+        if (b === 0) return { binary: true, encoding: null };   // NUL byte: same rule git uses
+        if ((b < 0x20 && b !== 9 && b !== 10 && b !== 12 && b !== 13 && b !== 27) || b === 0x7F) suspicious++;
+    }
+    if (suspicious / n > 0.05) return { binary: true, encoding: null };
+
+    try {
+        // stream:true so a multibyte char cut off at the sample edge isn't treated as invalid
+        new TextDecoder('utf-8', { fatal: true }).decode(u8, { stream: !!partial });
+        return { binary: false, encoding: 'utf-8' };
+    } catch (e) {
+        // Not valid UTF-8 but no binary markers: legacy 8-bit text (Latin-1 / Windows-1252).
+        return { binary: false, encoding: 'windows-1252' };
+    }
+}
+
+function encodingLabel(enc) {
+    return enc === 'utf-8-bom' ? 'utf-8' : enc;
+}
+
+// Reads a File/Blob as text, deciding binary vs text from its bytes.
+// Returns { binary:true } or { binary:false, text, encoding }.
+async function readFileTextSniffed(file) {
+    const head = new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer());
+    const s = sniffBytes(head, file.size > head.length);
+    if (s.binary) return { binary: true, text: null, encoding: null };
+    const label = encodingLabel(s.encoding);
+    const text = label === 'utf-8'
+        ? await file.text()   // also strips a UTF-8 BOM
+        : new TextDecoder(label).decode(await file.arrayBuffer());
+    return { binary: false, text, encoding: s.encoding };
+}
+
+// Workspace files: sniff once per (size, mtime) and cache.
+const sniffCache = new Map();
+async function sniffWorkspaceFile(fp) {
+    const handle = registry.meta[fp]?.handle || await getHandleByPath(fp);
+    if (!handle) throw new Error('no handle');
+    const file = await handle.getFile();
+    const sig = `${file.size}:${file.lastModified}`;
+    const hit = sniffCache.get(fp);
+    if (hit && hit.sig === sig) return hit;
+    const head = new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer());
+    const s = sniffBytes(head, file.size > head.length);
+    const res = { sig, binary: s.binary, encoding: s.encoding };
+    sniffCache.set(fp, res);
+    return res;
+}
+
+// Authoritative "is this file binary?". Extension is a hint; content overrides it
+// in both directions (unknown-extension text is text, a text-looking .dat that is binary stays binary).
+async function resolveIsBinary(fp) {
+    const meta = registry.meta[fp];
+    if (!meta || meta.kind !== 'file') return false;
+    if (meta.virtual || !rootHandle) return !!meta.isBinary;
+    if (BINARY_EXT_DEFINITE.test(fp)) return true;
+    try {
+        const r = await sniffWorkspaceFile(fp);
+        meta.isBinary = r.binary;
+        if (r.encoding) meta.encoding = r.encoding; else delete meta.encoding;
+        return r.binary;
+    } catch (e) {
+        return !!meta.isBinary;
+    }
+}
+
+// Encodes text for writing back in the file's original encoding, so editing a
+// UTF-16 / BOM / Windows-1252 file doesn't silently convert it to UTF-8.
+let _cp1252Rev = null;
+function encodeForDisk(content, enc, path) {
+    if (!enc || enc === 'utf-8' || typeof content !== 'string') return content;
+    if (enc === 'utf-8-bom') return new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), content]);
+    if (enc === 'utf-16le' || enc === 'utf-16be') {
+        const le = enc === 'utf-16le';
+        const buf = new Uint8Array(2 + content.length * 2);
+        buf[0] = le ? 0xFF : 0xFE; buf[1] = le ? 0xFE : 0xFF;
+        for (let i = 0; i < content.length; i++) {
+            const c = content.charCodeAt(i);
+            buf[2 + i * 2] = le ? (c & 0xFF) : (c >> 8);
+            buf[3 + i * 2] = le ? (c >> 8) : (c & 0xFF);
+        }
+        return buf;
+    }
+    if (enc === 'windows-1252') {
+        if (!_cp1252Rev) {
+            const d = new TextDecoder('windows-1252');
+            _cp1252Rev = new Map();
+            for (let b = 0; b < 256; b++) _cp1252Rev.set(d.decode(new Uint8Array([b])), b);
+        }
+        const out = new Uint8Array(content.length);
+        for (let i = 0; i < content.length; i++) {
+            const b = _cp1252Rev.get(content[i]);
+            if (b === undefined) {
+                const err = new Error(`Cannot write ${path}: the file is encoded as windows-1252 and the new content contains a character it cannot represent ("${content[i]}"). Replace it (for example with plain ASCII).`);
+                err.encodingError = true;
+                throw err;
+            }
+            out[i] = b;
+        }
+        return out;
+    }
+    return content;
+}
+
 async function getHandleByPath(filepath, create = false) {
     if (!rootHandle) return null;
     const parts = filepath.split('/').filter(Boolean);
@@ -10901,7 +11079,14 @@ async function readFileContent(filepath) {
         const handle = await getHandleByPath(filepath);
         if (!handle) return "";
         const file = await handle.getFile();
-        const text = await file.text();
+        let text;
+        const sniffed = await readFileTextSniffed(file);
+        if (sniffed.binary) {
+            text = await file.text();   // unchanged legacy behaviour; callers check isBinary first
+        } else {
+            text = sniffed.text;
+            if (registry.meta[filepath]) registry.meta[filepath].encoding = sniffed.encoding;
+        }
         if (registry.files[filepath] === undefined) {
             registry.files[filepath] = text;
         }
@@ -10934,6 +11119,13 @@ async function rawWrite(path, content) {
         registry.meta[path] = { kind: 'file' };
         return;
     }
+    // Keep the file's existing encoding (UTF-16, BOM, Windows-1252) instead of silently converting to UTF-8.
+    let enc = registry.meta[path]?.encoding;
+    if (!enc) {
+        try { enc = (await sniffWorkspaceFile(path)).encoding; } catch (e) { enc = null; }   // new file -> utf-8
+    }
+    const payload = encodeForDisk(content, enc, path);   // may throw before the file is touched
+
     const parts = path.split('/').filter(Boolean);
     const fileName = parts.pop();
     let parentHandle = rootHandle;
@@ -10942,10 +11134,10 @@ async function rawWrite(path, content) {
     }
     const fh = await parentHandle.getFileHandle(fileName, { create: true });
     const w = await fh.createWritable();
-    await w.write(content);
+    await w.write(payload);
     await w.close();
     registry.files[path] = content;
-    registry.meta[path] = { kind: 'file' };
+    registry.meta[path] = (enc && enc !== 'utf-8') ? { kind: 'file', encoding: enc } : { kind: 'file' };
 }
 
 // Disk-only delete. Does not touch opsLog or modifiedFiles.
@@ -11459,7 +11651,7 @@ async function fastTraverseDirectory(handle, path = "", targetMap) {
         if (isSecurityProtectedPath(fullPath)) continue;
         if (entry.kind === 'file') {
             let size = 0;
-            let isBinary = /\.(png|jpg|jpeg|gif|ico|bmp|webp|pdf|zip|tar|gz|7z|rar|exe|dll|so|dylib|bin|dat|mp4|mp3|wav|flac|ogg|avi|mov|pyc|pyo|ttf|otf|woff|woff2|eot|db|sqlite|sqlite3|gguf|ggml|res|lps|ppu|o|obj|a|lib|class|jar|wasm|node|swf|iso|img|apk|dmg|pkl|npy|npz|parquet|onnx|pb|safetensors)$/i.test(entry.name);
+            let isBinary = isBinaryByExtension(entry.name);   // hint only; resolveIsBinary() confirms from content on first use
             
             targetMap[fullPath] = {
                 kind: 'file',
@@ -13978,9 +14170,12 @@ function showEditConfirmModal(msgId) {
     _pendingEditRevertIds = hasEdits ? candidateIds : [];
     _pendingEditText = newText;
 
-    // Always show the confirmation modal (same as delete); only offer revert if there is something to revert.
-    if (msgEditRevertBtn) msgEditRevertBtn.style.display = hasEdits ? '' : 'none';
-    msgEditModalOverlay.classList.add('visible');
+    if (hasEdits) {
+        msgEditModalOverlay.classList.add('visible');
+    } else {
+        // No file changes to revert — commit the edit directly.
+        commitEditFromModal(false);
+    }
 }
 
 function commitEditFromModal(revert) {
@@ -16178,6 +16373,7 @@ async function rawRename(oldPath, newPath) {
             registry.files[resolvedNewPath] = oldContent;
         } else {
             // Fallback: copy + delete at the raw layer so fs.rename records one op.
+            if (oldMeta && oldMeta.encoding) registry.meta[resolvedNewPath] = { kind: 'file', encoding: oldMeta.encoding };
             await rawWrite(resolvedNewPath, oldContent);
             await rawDelete(oldPath);
         }
@@ -16415,7 +16611,7 @@ const TOOL_API_METHODS = {
         !(isAgentPath(f) && !isToolFilePath(f) && !isVirtualAgentFile(f))
     ),
     fileExists: async (toolName, [fp]) => !!registry.meta[fp] && !isSecurityProtectedPath(fp) && !isSensitiveUserFile(fp) && !shouldHideFromTools(fp),
-    isBinary: async (toolName, [fp]) => !!registry.meta[fp]?.isBinary,
+    isBinary: async (toolName, [fp]) => resolveIsBinary(fp),
     isSensitiveFile: async (toolName, [fp]) => isSensitiveUserFile(fp),
     // Generic per-tool settings lookup: reads TOOL_META.settings-declared values, configured
     // per tool in Settings > Tools, falling back to that setting's declared default.
