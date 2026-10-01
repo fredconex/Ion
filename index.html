@@ -112,12 +112,24 @@
         #app-initializer .init-text { color: var(--dim); font-size: 12px; letter-spacing: 0.5px; }
         .no-folder-overlay {
             position: absolute; inset: 0;
-            background: rgba(13, 13, 13, 0.82);
-            backdrop-filter: blur(2px); z-index: 50;
+            background: var(--bg-main);
+            z-index: 50;
             display: flex; align-items: center; justify-content: center;
             flex-direction: column; border-radius: 8px;
             cursor: default; transition: opacity 0.2s ease;
         }
+        .no-folder-overlay-footer {
+            position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+            display: flex; flex-direction: column; align-items: center; gap: 8px;
+        }
+        .no-folder-overlay-footer-credit { color: var(--dim); font-size: 11px; }
+        .no-folder-overlay-footer a {
+            color: var(--dim); font-size: 11px; text-decoration: none; transition: color 0.15s ease;
+            display: inline-flex; align-items: center; gap: 5px;
+        }
+        .no-folder-overlay-footer a .icon { font-size: 14px; color: var(--dim); }
+        .no-folder-overlay-footer a:hover { color: var(--primary); }
+        .no-folder-overlay-footer a:hover .icon { color: var(--primary); }
         .no-folder-overlay.hidden { opacity: 0; pointer-events: none; }
         .no-folder-overlay .icon { font-size: 28px; color: var(--dim); }
         .no-folder-overlay span { color: var(--dim); font-size: 12px; }
@@ -1228,7 +1240,8 @@
             cursor: col-resize; z-index: 50; touch-action: none;
         }
         #sidebar-resizer::before {
-            content: ''; position: absolute; left: 2px; right: 2px; top: 12%; bottom: 12%;
+            content: ''; position: absolute; left: 50%; top: 12%; bottom: 12%;
+            transform: translateX(-0.5px);
             border-left: 1px solid transparent;
             transition: border-color 0.15s ease;
         }
@@ -3760,6 +3773,13 @@
                             <span class="icon" style="font-size:14px;">edit_note</span>
                             <span>Open models settings</span>
                         </button>
+                    </div>
+                </div>
+                <div class="no-folder-overlay-footer">
+                    <div class="no-folder-overlay-footer-credit">Created by Fredconex</div>
+                    <div style="display: flex; gap: 18px;">
+                        <a href="https://github.com/fredconex/Ion" target="_blank" rel="noopener noreferrer"><span class="icon" style="font-size:14px;">code</span>GitHub Repository</a>
+                        <a href="https://www.paypal.com/donate/?hosted_button_id=24CJHH95X3AQS" target="_blank" rel="noopener noreferrer"><span class="icon" style="font-size:14px;">favorite</span>Support Development</a>
                     </div>
                 </div>
             </div>
