@@ -3101,7 +3101,7 @@
             </div>
         </div>
         <div class="win-title">
-            <span>Ion v0.2.5</span>
+            <span>Ion v0.2.6</span>
         </div>
 
         <div style="flex-grow: 1;"></div>
@@ -3253,7 +3253,7 @@
             </div>
 
             <div class="about-name">Ion</div>
-            <span class="about-version">v0.2.5</span>
+            <span class="about-version">v0.2.6</span>
 
             <hr class="about-divider">
 
@@ -11645,10 +11645,21 @@ btnCollapseAll.addEventListener('click', () => {
     renderExplorerTree();
 });
 
-let isSyncingWorkspace = false;
+let syncWorkspaceChain = Promise.resolve();
 
-async function syncWorkspace(silent = true) {
-    if (!rootHandle || state.isSaving || isSyncingWorkspace) return;
+function syncWorkspace(silent = true) {
+    if (!rootHandle || state.isSaving) return Promise.resolve();
+    // Chain instead of dropping: an explicit refresh must actually run, not be
+    // swallowed by a background pass that is already in flight, or a write that
+    // just landed on disk can stay invisible to tools for seconds.
+    syncWorkspaceChain = syncWorkspaceChain
+        .catch(() => {})
+        .then(() => runSyncWorkspace(silent));
+    return syncWorkspaceChain;
+}
+
+async function runSyncWorkspace(silent = true) {
+    if (!rootHandle || state.isSaving) return;
 
     try {
         const perm = await rootHandle.queryPermission({ mode: 'readwrite' });
@@ -11658,8 +11669,6 @@ async function syncWorkspace(silent = true) {
     } catch(e) {
         return;
     }
-
-    isSyncingWorkspace = true;
 
     try {
         gitignoreCache.clear();
@@ -11711,8 +11720,6 @@ async function syncWorkspace(silent = true) {
             showToast(`Workspace updated: ${Object.keys(registry.meta).length} items`, 'success');
         }
     } catch(e) {
-    } finally {
-        isSyncingWorkspace = false;
     }
 }
 
@@ -15870,12 +15877,16 @@ async function addFilesToWorkspace(list, baseDir = '') {
             const w = await fh.createWritable();
             await w.write(it.file); await w.close();
             delete registry.files[it.path];
-            if (registry.meta[it.path]) { delete registry.meta[it.path].encoding; }
+            // Register the file in the live registry immediately. Relying on the
+            // syncWorkspace() call below means a freshly dropped file is invisible
+            // to tools (find/grep/read) until the next sync pass actually runs -
+            // and the explicit refresh here can be coalesced away by the re-entrancy
+            // guard while the background tick's traversal is still in flight.
+            registry.meta[it.path] = { kind: 'file', size: it.file.size, isBinary: false, handle: fh };
+            registry.files[it.path] = await readFileContent(it.path);
             const model = (typeof monacoModels !== 'undefined') && monacoModels.get(it.path);
             if (model && !isFileDirty(it.path)) {
-                const fresh = await readFileContent(it.path);
-                withDirtyTrackingSuppressed(() => model.setValue(fresh));
-                registry.files[it.path] = fresh;
+                withDirtyTrackingSuppressed(() => model.setValue(registry.files[it.path]));
             }
             added++;
         } catch (e) { showToast(`Could not add ${it.path}: ${e.message}`, 'error'); }
@@ -17244,7 +17255,7 @@ const TOOL_API_METHODS = {
         !isSensitiveUserFile(f) &&
         !shouldHideFromTools(f) &&
         !(isAgentPath(f) && !isToolFilePath(f) && !isVirtualAgentFile(f))
-    ),
+    ).sort(),
     fileExists: async (toolName, [fp]) => !!registry.meta[fp] && !isSecurityProtectedPath(fp) && !isSensitiveUserFile(fp) && !shouldHideFromTools(fp),
     isBinary: async (toolName, [fp]) => resolveIsBinary(fp),
     isSensitiveFile: async (toolName, [fp]) => isSensitiveUserFile(fp),
