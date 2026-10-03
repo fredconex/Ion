@@ -16352,6 +16352,17 @@ let wsUploadTargetDir = '';
         backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop) close(); });
         backdrop.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); if (e.key === 'Enter' && e.target.id === 'vws-name') $('#vws-create').click(); });
 
+        function updateNameToUnique() {
+            const el = $('#vws-name');
+            const raw = el.value.replace(/[\/\\]/g, '-').trim();
+            if (!raw) return;
+            const existing = new Set(getRecentFolders().map(f => f.name));
+            if (!existing.has(raw)) return;
+            let n = 2;
+            while (existing.has(raw + ' (' + n + ')')) n++;
+            el.value = raw + ' (' + n + ')';
+        }
+
         $('#vws-create').addEventListener('click', async () => {
             const name = $('#vws-name').value.replace(/[\/\\]/g, '-').trim();
             if (!name) { $('#vws-name').focus(); return; }
@@ -16369,6 +16380,7 @@ let wsUploadTargetDir = '';
             } catch (err) { showToast('Could not create workspace: ' + err.message, 'error'); }
         });
         render();
+        updateNameToUnique();
         const nameEl = $('#vws-name'); nameEl.focus(); nameEl.select();
     }
     openBtn.addEventListener('click', () => { if (!isNoFolderOverlayHidden()) open(); });
