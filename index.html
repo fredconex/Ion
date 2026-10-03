@@ -9,6 +9,14 @@
     <link id="ion-favicon" rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 6L3 12L7 18' stroke='%2356b6c2' stroke-width='2'/%3E%3Cpath d='M13 4L8 12H16L11 20' stroke='%23a855f7' stroke-width='2'/%3E%3Cpath d='M17 6L21 12L17 18' stroke='%2356b6c2' stroke-width='2'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <script>
+    /* Folder access (File System Access API): without it only virtual workspaces can be used. */
+    (function () {
+        var ok = typeof window.showDirectoryPicker === 'function' && window.isSecureContext !== false;
+        if (!ok) document.documentElement.classList.add('no-fsa');
+    })();
+    </script>
+    <style>html.no-fsa #no-folder-btn, html.no-fsa #no-folder-btn-label { display: none !important; }</style>
+    <script>
     /* Accent color — applied before first paint so the UI never flashes with a
        stale accent. Reads the persisted AppConfig, and the full applyTheme()
        below re-runs this whenever the accent changes. */
@@ -3028,6 +3036,50 @@
             #model-select-btn { max-width: 96px; }
         }
     </style>
+    <style>
+    .tree-node .node-dl { margin-left: auto; font-size: 14px; color: var(--dim); opacity: 0; padding: 2px; border-radius: 4px; cursor: pointer; flex-shrink: 0; }
+    .tree-node:hover .node-dl { opacity: 1; }
+    .tree-node .node-dl:hover { color: var(--primary); background: var(--bg-hover); }
+    @media (hover: none) { .tree-node .node-dl { opacity: 0.7; } }
+    #sidebar-view-explorer.drop-active #file-tree { outline: 1px dashed var(--primary); outline-offset: -3px; background: rgba(var(--primary-rgb), 0.06); }
+    .tree-node.drop-target { background: rgba(var(--primary-rgb), 0.18) !important; outline: 1px dashed var(--primary); outline-offset: -1px; }
+    #sessions-popover { width: min(420px, calc(100vw - 16px)); padding: 8px; box-sizing: border-box; }
+    #sessions-popover .popover-header { gap: 8px; }
+    #sessions-popover .popover-header-title { flex-shrink: 0; }
+    #sessions-list { padding-right: 0; scrollbar-gutter: auto; }
+    #ws-popover-row { display: flex; align-items: center; gap: 5px; flex: 1 1 0; min-width: 0; padding: 3px 8px; background: var(--bg-hover); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; }
+    #ws-popover-row .icon { font-size: 14px; color: var(--primary); flex-shrink: 0; }
+    #ws-popover-name { color: var(--fg); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    @media (max-width: 600px) { #sessions-popover { width: calc(100vw - 16px); max-width: none; } }
+    #explorer-io-menu { display: none; position: fixed; background: var(--bg-panel); border: 1px solid var(--border-highlight); border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.85); padding: 5px; min-width: 190px; max-width: 240px; z-index: 200; }
+    #explorer-io-menu.open { display: block; }
+    #explorer-io-menu .explorer-io-hint { margin: 4px 2px 1px; padding: 6px 8px 2px; border-top: 1px solid var(--border); font-size: 10px; line-height: 1.4; color: var(--dim); }
+    #btn-explorer-io.active { color: var(--primary); border-color: rgba(var(--primary-rgb), 0.4); background: rgba(var(--primary-rgb), 0.12); }
+    .recent-folder-item .vws-tag { font-size: 9px; color: var(--primary); border: 1px solid rgba(var(--primary-rgb), 0.4); border-radius: 4px; padding: 0 4px; margin-left: 6px; text-transform: uppercase; }
+    .vws-backdrop { position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .vws-card { width: 100%; max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; gap: 12px; background: var(--bg-panel); border: 1px solid var(--border-highlight); border-radius: 14px; padding: 18px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+    .vws-title { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--fg); font-size: 14px; }
+    .vws-title .icon { color: var(--primary); font-size: 18px; }
+    .vws-card input[type=text] { width: 100%; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--fg); font-family: inherit; font-size: 13px; outline: none; }
+    .vws-card input[type=text]:focus { border-color: var(--primary); }
+    .vws-drop { border: 1.5px dashed var(--border-highlight); border-radius: 10px; padding: 18px 12px; text-align: center; color: var(--dim); display: flex; flex-direction: column; align-items: center; gap: 6px; transition: all .15s; }
+    .vws-drop.over { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.08); color: var(--fg); }
+    .vws-drop .icon { font-size: 28px; }
+    .vws-links { display: flex; gap: 8px; }
+    .vws-link { background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--primary); padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 12px; }
+    .vws-link:hover { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.1); }
+    #vws-list { overflow-y: auto; max-height: 220px; display: flex; flex-direction: column; gap: 2px; }
+    .vws-row { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 6px; font-size: 12px; }
+    .vws-row:hover { background: var(--bg-hover); }
+    .vws-row .vws-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .vws-row .vws-size { color: var(--dim); font-size: 11px; }
+    .vws-row .icon { font-size: 14px; color: var(--dim); cursor: pointer; }
+    .vws-row .icon:hover { color: var(--red); }
+    .vws-actions { display: flex; align-items: center; gap: 8px; }
+    .vws-actions .vws-summary { flex: 1; color: var(--dim); font-size: 11px; }
+    .vws-btn { border: 1px solid var(--border); background: var(--bg-input); color: var(--fg); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-family: inherit; font-size: 12px; }
+    .vws-btn.primary { background: var(--primary); border-color: var(--primary); color: #111; font-weight: 700; }
+    </style>
 </head>
 <body>
 
@@ -3086,7 +3138,11 @@
                     <span class="icon" style="font-size: 14px;">view_list</span>
                     <span>Sessions</span>
                 </div>
-                <div style="display:flex; align-items:center; gap:6px;">
+                <div id="ws-popover-row" title="">
+                    <span id="ws-popover-icon" class="icon">folder</span>
+                    <span id="ws-popover-name"></span>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                     <button id="btn-clear-all-sessions" class="icon-btn" title="Clear all sessions (including local history)">
                         <span class="icon" style="font-size: 15px;">delete_sweep</span>
                     </button>
@@ -3571,6 +3627,7 @@
                     <div class="sidebar-header-actions">
                         <button id="btn-new-file" class="icon-btn" title="New File"><span class="icon" style="font-size:15px;">note_add</span></button>
                         <button id="btn-new-folder" class="icon-btn" title="New Folder"><span class="icon" style="font-size:15px;">create_new_folder</span></button>
+                        <button id="btn-explorer-io" class="icon-btn" title="Import / Export files" aria-haspopup="menu" aria-expanded="false"><span class="icon" style="font-size:15px;">import_export</span></button>
                         <button id="btn-reload-tree" class="icon-btn" title="Refresh Explorer"><span class="icon" style="font-size:15px;">refresh</span></button>
                         <button id="btn-collapse-all" class="icon-btn" title="Collapse Folders"><span class="icon" style="font-size:15px;">unfold_less</span></button>
                     </div>
@@ -3626,6 +3683,18 @@
             </div>
 
 
+            <div id="explorer-io-menu" role="menu">
+                <div class="context-menu-item" id="btn-upload-files" role="menuitem">
+                    <span class="icon" style="font-size:14px; color:var(--green);">upload_file</span>
+                    <span>Add files…</span>
+                </div>
+                <div class="context-menu-item" id="btn-download-zip" role="menuitem">
+                    <span class="icon" style="font-size:14px; color:var(--green);">folder_zip</span>
+                    <span>Download all as .zip</span>
+                </div>
+                <div class="explorer-io-hint">Tip: drop files onto the explorer, or onto a folder, to add them.</div>
+            </div>
+
             <div id="explorer-context-menu">
                 <div class="context-menu-item" data-action="new-file" data-scope="dir">
                     <span class="icon" style="font-size:14px; color:var(--primary);">note_add</span>
@@ -3634,6 +3703,10 @@
                 <div class="context-menu-item" data-action="new-folder" data-scope="dir">
                     <span class="icon" style="font-size:14px; color:var(--yellow);">create_new_folder</span>
                     <span>New Folder</span>
+                </div>
+                <div class="context-menu-item" data-action="upload-files" data-scope="dir">
+                    <span class="icon" style="font-size:14px; color:var(--green);">upload_file</span>
+                    <span>Add Files Here…</span>
                 </div>
                 <div class="context-menu-separator"></div>
                 <div class="context-menu-item" data-action="open-tab" data-scope="file">
@@ -3647,6 +3720,14 @@
                 <div class="context-menu-item" data-action="attach-prompt" data-scope="file">
                     <span class="icon" style="font-size:14px; color:var(--magenta);">alternate_email</span>
                     <span>Attach to Prompt (@)</span>
+                </div>
+                <div class="context-menu-item" data-action="download" data-scope="downloadable">
+                    <span class="icon" style="font-size:14px; color:var(--green);">download</span>
+                    <span>Download</span>
+                </div>
+                <div class="context-menu-item" data-action="download-zip" data-scope="downloaddir">
+                    <span class="icon" style="font-size:14px; color:var(--green);">folder_zip</span>
+                    <span>Download as .zip</span>
                 </div>
                 <div class="context-menu-item" data-action="restore-default" data-scope="restorable">
                     <span class="icon" style="font-size:14px; color:var(--magenta);">restart_alt</span>
@@ -3763,6 +3844,10 @@
                     <button id="no-folder-btn" class="folder-action" style="margin-bottom: 16px; width: 220px; justify-content: center;">
                         <span class="icon" style="font-size:14px;">folder_open</span>
                         <span id="no-folder-btn-label">Open Folder</span>
+                    </button>
+                    <button id="no-folder-virtual-btn" class="folder-action" style="margin-bottom: 16px; width: 220px; justify-content: center;" title="Create an in-memory workspace, no folder on disk needed">
+                        <span class="icon" style="font-size:14px;">cloud_queue</span>
+                        <span>New Virtual Workspace</span>
                     </button>
                     <div id="recent-folders-section" style="display:none; width: 280px;">
                         <div style="font-size:11px; color:var(--dim); font-weight:700; text-transform:uppercase; margin-bottom:8px; letter-spacing:0.5px;">Recent Workspaces</div>
@@ -7686,8 +7771,9 @@ function getDB() {
 
 async function getMostRecentHandle() {
     const folders = getRecentFolders();
-    if (!folders.length) return null;
+    if (!folders.filter(f => !f.virtual).length) return null;
     const newest = folders
+        .filter(f => !f.virtual)
         .slice()
         .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
     return await loadRecentHandleFromDB(newest.name);
@@ -7746,7 +7832,7 @@ async function deleteBaselineFromDB(wsName, sessionId) {
 }
 
 function currentWsName() {
-    return rootHandle ? rootHandle.name : '_default_ws_';
+    return rootHandle ? wsStorageName(rootHandle) : '_default_ws_';
 }
 
 // Ids of sessions deleted during this page lifetime. Late async writes
@@ -9051,7 +9137,7 @@ function countConversationMessages(msgs) {
 }
 
 function getWorkspaceSessionKey() {
-    const ws = rootHandle ? rootHandle.name : '_default_ws_';
+    const ws = rootHandle ? wsStorageName(rootHandle) : '_default_ws_';
     return `codeagent_sessions_${ws}`;
 }
 
@@ -11289,6 +11375,7 @@ function renderTreeNodeChildren(childrenMap, containerEl, depth = 0) {
             ${iconHTML}
             <span class="node-label" title="${escapeHTML(node.path)}">${escapeHTML(node.name)}</span>
             ${statusBadge}
+            ${(!isDir && isDownloadablePath(node.path)) ? '<span class="node-dl icon" title="Download">download</span>' : ''}
         `;
 
         nodeEl.addEventListener('click', async (e) => {
@@ -11306,6 +11393,8 @@ function renderTreeNodeChildren(childrenMap, containerEl, depth = 0) {
         });
 
         nodeEl.addEventListener('contextmenu', (e) => showContextMenu(e, node));
+        const dlBtn = nodeEl.querySelector('.node-dl');
+        if (dlBtn) dlBtn.addEventListener('click', (ev) => { ev.stopPropagation(); downloadPath(node.path); });
 
         containerEl.appendChild(nodeEl);
 
@@ -11334,6 +11423,8 @@ function contextItemApplies(scope, node) {
         }
     }
 
+    if (scope === 'downloadable') return node.kind !== 'directory' && isDownloadablePath(node.path);
+    if (scope === 'downloaddir') return node.kind === 'directory' && isDownloadablePath(node.path);
     if (scope === 'file') return node.kind !== 'directory';
     if (scope === 'changed') return node.kind !== 'directory' && state.modifiedFiles.has(node.path);
     if (scope === 'restorable') return node.kind !== 'directory' && isRestorableAgentFile(node.path) && (!isToolFilePath(node.path) || isToolModified(toolNameFromPath(node.path)));
@@ -11415,7 +11506,8 @@ document.addEventListener('click', () => {
 });
 
 fileTreeEl.addEventListener('contextmenu', (e) => {
-    if (e.target === fileTreeEl || e.target.classList.contains('tree-children')) {
+    // Anywhere in the tree that is not a node (empty space) acts as the workspace root.
+    if (!e.target.closest('.tree-node')) {
         showContextMenu(e, null);
     }
 });
@@ -11429,7 +11521,7 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
         contextMenu.style.display = 'none';
         const action = item.getAttribute('data-action');
         const node = state.selectedContextItem;
-        if (!node && action !== 'new-file' && action !== 'new-folder') return;
+        if (!node && action !== 'new-file' && action !== 'new-folder' && action !== 'upload-files') return;   // empty space = workspace root
         if (!contextItemApplies(item.getAttribute('data-scope'), node)) return;
 
         const targetDir = node ? (node.kind === 'directory' ? node.path : node.path.split('/').slice(0, -1).join('/')) : "";
@@ -11456,6 +11548,13 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
             await fs.mkdir(fullPath, { mode: 'ui' });
             state.expandedFolders.add(fullPath);
             await syncWorkspace(false);
+        } else if (action === 'download') {
+            downloadPath(node.path);
+        } else if (action === 'download-zip') {
+            downloadZip(node.path);
+        } else if (action === 'upload-files') {
+            wsUploadTargetDir = targetDir;
+            document.getElementById('ws-upload-input').click();
         } else if (action === 'open-tab') {
             if (node.kind !== 'directory') openFileTab(node.path);
         } else if (action === 'view-diff') {
@@ -11591,7 +11690,7 @@ async function syncWorkspace(silent = true) {
             updateStatusInfo();
         }
 
-        await saveWorkspaceCacheToDB(rootHandle.name, registry.meta);
+        await saveWorkspaceCacheToDB(wsStorageName(rootHandle), registry.meta);
 
         if (state.activeTab && state.activeTab !== 'chat' && !state.activeTab.startsWith('filediff:')) {
             const fp = state.activeTab;
@@ -13987,28 +14086,10 @@ window.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => location.reload(), 900);
     });
 
-    const lastHandle = await getMostRecentHandle();
-    let restoredWorkspaceSilently = false;
-
-    if (lastHandle) {
-        try {
-            const perm = await lastHandle.queryPermission({ mode: 'readwrite' });
-            if (perm === 'granted') {
-                await setWorkspace(lastHandle);
-                restoredWorkspaceSilently = true;
-            }
-        } catch(e) {}
-    }
-
-    if (!restoredWorkspaceSilently) {
-        renderRecentFoldersList();
-        renderExplorerTree();
-        if (lastHandle) {
-            showWorkspaceReconnectPrompt(lastHandle);
-        } else {
-            await loadAllSessions();
-        }
-    }
+    // Startup always lands on the workspace picker; the user chooses what to open (see Recent Workspaces).
+    renderRecentFoldersList();
+    renderExplorerTree();
+    await loadAllSessions();
 
     await initMonaco();
 
@@ -15452,7 +15533,544 @@ window.continueTask = async () => {
     await runTask("Continue execution with the next required steps until completion.");
 };
 
+// ======================= Virtual workspaces =======================
+// An in-memory filesystem that implements the same handle API as the File System Access API
+// (getFileHandle / getDirectoryHandle / removeEntry / values / createWritable / move ...), so the
+// rest of the app treats it exactly like a real folder. Nothing is written to the user's disk;
+// a snapshot is kept in the browser's IndexedDB so the workspace survives a reload.
+function updateWorkspaceTitle() {
+    const row = document.getElementById('ws-popover-row'), nm = document.getElementById('ws-popover-name'), ic = document.getElementById('ws-popover-icon');
+    if (!row || !nm) return;
+    const name = rootHandle ? rootHandle.name : '';
+    nm.textContent = name;
+    if (ic) ic.textContent = rootHandle && rootHandle.isVirtual ? 'cloud_queue' : 'folder';
+    row.title = rootHandle ? (rootHandle.isVirtual ? 'Virtual workspace: ' : 'Workspace: ') + name : '';
+    row.style.display = name ? 'flex' : 'none';
+}
+let HAS_FS_API = typeof window.showDirectoryPicker === 'function' && window.isSecureContext !== false;
+function markNoFsApi() {   // called when the picker turns out to be unusable at runtime
+    HAS_FS_API = false;
+    document.documentElement.classList.add('no-fsa');
+    const rb = document.getElementById('no-folder-btn'); if (rb) rb.hidden = true;
+    renderRecentFoldersList();
+}
+function wsStorageName(h) { return h && h.isVirtual ? 'virtual_' + h.vid : h.name; }
+
+class VFSNode {
+    constructor(kind, name, parent) {
+        this.kind = kind; this.name = name; this.parent = parent; this.mtime = Date.now();
+        if (kind === 'file') this.blob = new Blob([]); else this.children = new Map();
+    }
+}
+function vfsRoot(n) { while (n.parent) n = n.parent; return n; }
+function vfsWrap(n) { return n._h || (n._h = n.kind === 'file' ? new VFSFileHandle(n) : new VFSDirHandle(n)); }
+function vfsErr(name, msg) { return new DOMException(msg, name); }
+function vfsCheckName(name) {
+    if (!name || name === '.' || name === '..' || /[\/\\]/.test(name)) throw new TypeError('Invalid entry name: ' + name);
+}
+const VFS_MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp', svg: 'image/svg+xml', ico: 'image/x-icon' };
+
+class VFSFileHandle {
+    constructor(n) { this._n = n; this.kind = 'file'; this.isVirtual = true; }
+    get name() { return this._n.name; }
+    async getFile() {
+        const n = this._n, ext = (n.name.split('.').pop() || '').toLowerCase();
+        return new File([n.blob], n.name, { lastModified: n.mtime, type: n.blob.type || VFS_MIME[ext] || '' });
+    }
+    async createWritable(opts) {
+        const n = this._n;
+        let parts = opts && opts.keepExistingData ? [n.blob] : [];
+        return {
+            write: async (d) => {
+                if (d && d.type === 'truncate') { parts = d.size === 0 ? [] : [new Blob(parts).slice(0, d.size)]; return; }
+                if (d && d.type === 'write') d = d.data;
+                parts.push(d);
+            },
+            truncate: async (s) => { parts = s === 0 ? [] : [new Blob(parts).slice(0, s)]; },
+            seek: async () => {},
+            abort: async () => {},
+            close: async () => { n.blob = new Blob(parts, { type: n.blob.type }); n.mtime = Date.now(); vfsChanged(n); }
+        };
+    }
+    async move(a, b) {
+        const n = this._n;
+        const dir = b === undefined ? n.parent : a._n, newName = b === undefined ? a : b;
+        vfsCheckName(newName);
+        n.parent.children.delete(n.name);
+        n.name = newName; n.parent = dir; dir.children.set(newName, n);
+        vfsChanged(n);
+    }
+    async isSameEntry(o) { return !!o && o._n === this._n; }
+    async queryPermission() { return 'granted'; }
+    async requestPermission() { return 'granted'; }
+}
+
+class VFSDirHandle {
+    constructor(n) { this._n = n; this.kind = 'directory'; this.isVirtual = true; }
+    get name() { return this._n.name; }
+    get vid() { const r = vfsRoot(this._n); return r._ws && r._ws.vid; }
+    async *entries() { for (const [k, c] of Array.from(this._n.children)) yield [k, vfsWrap(c)]; }
+    async *values() { for (const c of Array.from(this._n.children.values())) yield vfsWrap(c); }
+    async *keys() { for (const k of Array.from(this._n.children.keys())) yield k; }
+    [Symbol.asyncIterator]() { return this.entries(); }
+    async _get(name, kind, create) {
+        const c = this._n.children.get(name);
+        if (c) { if (c.kind !== kind) throw vfsErr('TypeMismatchError', 'Entry type mismatch: ' + name); return vfsWrap(c); }
+        if (!create) throw vfsErr('NotFoundError', 'Not found: ' + name);
+        vfsCheckName(name);
+        const n = new VFSNode(kind, name, this._n);
+        this._n.children.set(name, n); vfsChanged(n);
+        return vfsWrap(n);
+    }
+    async getFileHandle(name, o) { return this._get(name, 'file', !!(o && o.create)); }
+    async getDirectoryHandle(name, o) { return this._get(name, 'directory', !!(o && o.create)); }
+    async removeEntry(name, o) {
+        const c = this._n.children.get(name);
+        if (!c) throw vfsErr('NotFoundError', 'Not found: ' + name);
+        if (c.kind === 'directory' && c.children.size && !(o && o.recursive)) throw vfsErr('InvalidModificationError', 'Directory not empty');
+        this._n.children.delete(name); vfsChanged(this._n);
+    }
+    async isSameEntry(o) { return !!o && o._n === this._n; }
+    async queryPermission() { return 'granted'; }
+    async requestPermission() { return 'granted'; }
+}
+
+function vfsPutDir(root, path) {
+    let d = root;
+    for (const p of path.split('/').filter(Boolean)) {
+        let c = d.children.get(p);
+        if (!c || c.kind !== 'directory') { c = new VFSNode('directory', p, d); d.children.set(p, c); }
+        d = c;
+    }
+    return d;
+}
+function vfsPutFile(root, path, blob) {
+    const parts = path.split('/').filter(Boolean), fname = parts.pop();
+    const d = vfsPutDir(root, parts.join('/'));
+    let f = d.children.get(fname);
+    if (!f || f.kind !== 'file') { f = new VFSNode('file', fname, d); d.children.set(fname, f); }
+    f.blob = blob; f.mtime = Date.now();
+}
+
+function vfsChanged(n) {
+    const r = vfsRoot(n);
+    if (!r._ws) return;
+    r._dirty = true;
+    clearTimeout(r._t);
+    r._t = setTimeout(() => vfsFlush(r), 500);
+}
+async function vfsFlush(h) {
+    const r = h instanceof VFSNode ? h : h._n;
+    if (!r._ws) return;
+    clearTimeout(r._t);
+    r._dirty = false;
+    const entries = [];
+    const walk = (node, p) => {
+        for (const [k, c] of node.children) {
+            const path = p ? p + '/' + k : k;
+            if (c.kind === 'file') entries.push({ path, kind: 'file', blob: c.blob });
+            else { entries.push({ path, kind: 'directory' }); walk(c, path); }
+        }
+    };
+    walk(r, '');
+    try {
+        const db = await getDB();
+        const tx = db.transaction(STORE_HANDLES, 'readwrite');
+        tx.objectStore(STORE_HANDLES).put({ vid: r._ws.vid, name: r.name, entries, updated: Date.now() }, 'vws_' + r._ws.vid);
+        await new Promise(res => { tx.oncomplete = res; tx.onerror = res; tx.onabort = res; });
+    } catch (e) {}
+}
+
+function vfsFlushIfDirty() {
+    if (rootHandle && rootHandle.isVirtual && rootHandle._n._dirty) vfsFlush(rootHandle);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') vfsFlushIfDirty(); });
+window.addEventListener('pagehide', vfsFlushIfDirty);
+
+async function createVirtualWorkspace(name, list) {
+    const vid = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const root = new VFSNode('directory', name, null);
+    root._ws = { vid };
+    for (const it of list) { if (it.dir) vfsPutDir(root, it.path); else vfsPutFile(root, it.path, it.file); }
+    await vfsFlush(root);
+    return vfsWrap(root);
+}
+
+async function openVirtualWorkspaceById(vid) {
+    try {
+        const db = await getDB();
+        const snap = await new Promise((res) => {
+            const req = db.transaction(STORE_HANDLES, 'readonly').objectStore(STORE_HANDLES).get('vws_' + vid);
+            req.onsuccess = () => res(req.result); req.onerror = () => res(null);
+        });
+        if (!snap) {
+            showToast('Virtual workspace data not found', 'error'); return;
+        }
+        const root = new VFSNode('directory', snap.name, null);
+        root._ws = { vid };
+        for (const e of snap.entries) { if (e.kind === 'directory') vfsPutDir(root, e.path); else vfsPutFile(root, e.path, e.blob); }
+        const folders = getRecentFolders(), f = folders.find(x => x.vid === vid);
+        if (f) { f.lastAccessed = Date.now(); saveRecentFolders(folders); }
+        await setWorkspace(vfsWrap(root));
+    } catch (e) { showToast('Could not open virtual workspace: ' + e.message, 'error'); }
+}
+
+async function removeVirtualWorkspace(vid, name) {
+    if (!await confirmDialog(`Delete virtual workspace "${name}"? Its files will be permanently removed.`, { confirmLabel: 'Delete', danger: true })) return;
+    try {
+        const db = await getDB();
+        const tx = db.transaction(STORE_HANDLES, 'readwrite');
+        tx.objectStore(STORE_HANDLES).delete('vws_' + vid);
+        await new Promise(res => { tx.oncomplete = res; tx.onerror = res; });
+    } catch (e) {}
+    saveRecentFolders(getRecentFolders().filter(f => f.vid !== vid));
+    renderRecentFoldersList();
+}
+
+// ---- Download helpers (single file + store-only .zip writer, no dependencies) ----
+function isDownloadablePath(p) { return !isAgentPath(p) && !isVirtualAgentFile(p) && p.split('/')[0] !== '.agent'; }
+
+function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+async function vfsReadBlob(path) {
+    if (rootHandle) { try { return await (await getHandleByPath(path)).getFile(); } catch (e) {} }
+    if (registry.files[path] !== undefined) return new Blob([registry.files[path]]);
+    return null;
+}
+async function downloadPath(path) {
+    const meta = registry.meta[path];
+    if (!meta) return;
+    if (meta.kind === 'directory') return downloadZip(path);
+    const blob = await vfsReadBlob(path);
+    if (!blob) { showToast('Could not read ' + path, 'error'); return; }
+    triggerDownload(blob, path.split('/').pop());
+}
+
+const _crcTable = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = _crcTable[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+
+function buildZip(entries) {   // entries: [{ path, data: Uint8Array | null (directory) }]
+    const enc = new TextEncoder(), chunks = [], central = [];
+    let offset = 0;
+    const d = new Date();
+    const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+    const dosDate = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+    for (const e of entries) {
+        const isDir = e.data == null;
+        const name = enc.encode(isDir ? e.path.replace(/\/?$/, '/') : e.path);
+        const data = e.data || new Uint8Array(0);
+        const crc = isDir ? 0 : crc32(data);
+        const lh = new DataView(new ArrayBuffer(30));
+        lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+        lh.setUint16(10, dosTime, true); lh.setUint16(12, dosDate, true); lh.setUint32(14, crc, true);
+        lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, name.length, true);
+        chunks.push(new Uint8Array(lh.buffer), name, data);
+        const ch = new DataView(new ArrayBuffer(46));
+        ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+        ch.setUint16(12, dosTime, true); ch.setUint16(14, dosDate, true); ch.setUint32(16, crc, true);
+        ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, name.length, true);
+        ch.setUint32(38, isDir ? 0x10 : 0, true); ch.setUint32(42, offset, true);
+        central.push(new Uint8Array(ch.buffer), name);
+        offset += 30 + name.length + data.length;
+    }
+    let csize = 0; central.forEach(c => csize += c.length);
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+    end.setUint32(12, csize, true); end.setUint32(16, offset, true);
+    return new Blob([...chunks, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
+}
+
+async function downloadZip(prefix = '') {
+    if (!rootHandle) return;
+    const base = prefix ? prefix + '/' : '';
+    const paths = Object.keys(registry.meta).filter(p => (!prefix || p.startsWith(base)) && isDownloadablePath(p)).sort();
+    const entries = []; let files = 0;
+    for (const p of paths) {
+        const rel = prefix ? p.slice(base.length) : p;
+        if (!rel) continue;
+        if (registry.meta[p].kind === 'directory') { entries.push({ path: rel, data: null }); continue; }
+        const b = await vfsReadBlob(p);
+        if (!b) continue;
+        entries.push({ path: rel, data: new Uint8Array(await b.arrayBuffer()) }); files++;
+    }
+    if (!entries.length) { showToast('Nothing to download', 'info'); return; }
+    triggerDownload(buildZip(entries), (prefix ? prefix.split('/').pop() : (rootHandle.name || 'workspace')) + '.zip');
+    showToast(`Zipped ${files} file${files === 1 ? '' : 's'}`, 'success');
+}
+
+// ---- Dropped / picked files ----
+// Must be called synchronously from the drop handler (DataTransfer is invalidated after the first await).
+async function collectDropped(dt) {
+    // Everything that touches the DataTransfer must happen synchronously (before any await):
+    // Chromium empties it as soon as the event handler returns.
+    const out = [];
+    const jobs = [];
+    const items = Array.from(dt.items || []);
+    const looseFiles = Array.from(dt.files || []);
+    items.forEach(it => {
+        if (it.kind !== 'file') return;
+        let entry = null, file = null;
+        try { entry = it.webkitGetAsEntry ? it.webkitGetAsEntry() : null; } catch (e) {}
+        try { file = it.getAsFile ? it.getAsFile() : null; } catch (e) {}
+        jobs.push({ entry, file });
+    });
+    if (!jobs.length) looseFiles.forEach(f => jobs.push({ entry: null, file: f }));
+
+    const readEntries = (reader) => new Promise((res, rej) => reader.readEntries(res, rej));
+    const walk = async (en, prefix) => {
+        if (en.isFile) {
+            const f = await new Promise((res, rej) => en.file(res, rej));
+            out.push({ path: prefix + en.name, file: f });
+        } else if (en.isDirectory) {
+            const r = en.createReader(); let all = [];
+            for (;;) { const b = await readEntries(r); if (!b.length) break; all = all.concat(b); }
+            if (!all.length) out.push({ path: prefix + en.name, dir: true });
+            for (const c of all) await walk(c, prefix + en.name + '/');
+        }
+    };
+    for (const j of jobs) {
+        try {
+            if (j.entry) await walk(j.entry, '');
+            else if (j.file) out.push({ path: j.file.name, file: j.file });
+        } catch (e) {
+            // Entry API failed (some Chromium sources): fall back to the plain File when we have one.
+            if (j.file && j.file.size !== undefined && !(j.entry && j.entry.isDirectory)) out.push({ path: j.file.name, file: j.file });
+            else console.warn('Could not read dropped item', e);
+        }
+    }
+    return out;
+}
+
+async function addFilesToWorkspace(list, baseDir = '') {
+    if (!rootHandle) { showToast('Open a workspace first', 'info'); return; }
+    let skipped = 0;
+    let items = list.map(it => ({ ...it, path: (baseDir ? baseDir + '/' : '') + it.path.replace(/^\/+/, '') })).filter(it => {
+        const ok = it.path && !isAgentPath(it.path) && it.path.split('/')[0] !== '.agent' && !isSecurityProtectedPath(it.path);
+        if (!ok) skipped++;
+        return ok;
+    });
+    const existing = items.filter(it => !it.dir && registry.meta[it.path] && registry.meta[it.path].kind === 'file');
+    if (existing.length) {
+        const replace = await confirmDialog(`${existing.length} file${existing.length === 1 ? '' : 's'} already exist${existing.length === 1 ? 's' : ''} (${existing[0].path}${existing.length > 1 ? ', …' : ''}). Replace ${existing.length === 1 ? 'it' : 'them'}?`, { confirmLabel: 'Replace' });
+        if (!replace) items = items.filter(it => !existing.includes(it));
+    }
+    let added = 0;
+    for (const it of items) {
+        try {
+            if (it.dir) { await getDirectoryHandleByPath(it.path, true); state.expandedFolders.add(it.path); continue; }
+            const parts = it.path.split('/'), name = parts.pop();
+            let dir = rootHandle, acc = '';
+            for (const p of parts) { dir = await dir.getDirectoryHandle(p, { create: true }); acc = acc ? acc + '/' + p : p; state.expandedFolders.add(acc); }
+            const fh = await dir.getFileHandle(name, { create: true });
+            const w = await fh.createWritable();
+            await w.write(it.file); await w.close();
+            delete registry.files[it.path];
+            if (registry.meta[it.path]) { delete registry.meta[it.path].encoding; }
+            const model = (typeof monacoModels !== 'undefined') && monacoModels.get(it.path);
+            if (model && !isFileDirty(it.path)) {
+                const fresh = await readFileContent(it.path);
+                withDirtyTrackingSuppressed(() => model.setValue(fresh));
+                registry.files[it.path] = fresh;
+            }
+            added++;
+        } catch (e) { showToast(`Could not add ${it.path}: ${e.message}`, 'error'); }
+    }
+    await syncWorkspace(true);
+    renderExplorerTree(); renderChangesPanel(); updateStatusInfo();
+    if (added) showToast(`Added ${added} file${added === 1 ? '' : 's'}${skipped ? ` (${skipped} skipped)` : ''}`, 'success');
+    else if (skipped) showToast(`${skipped} file${skipped === 1 ? '' : 's'} skipped (protected path)`, 'error');
+}
+
+['dragover', 'drop'].forEach(evt => window.addEventListener(evt, (e) => {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files') && !e.defaultPrevented) e.preventDefault();
+}));
+let wsUploadTargetDir = '';
+(function wireExplorerFileDrop() {
+    const input = document.createElement('input');
+    input.type = 'file'; input.multiple = true; input.id = 'ws-upload-input'; input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', async () => {
+        const list = Array.from(input.files).map(f => ({ path: f.name, file: f }));
+        input.value = '';
+        await addFilesToWorkspace(list, wsUploadTargetDir);
+        wsUploadTargetDir = '';
+    });
+    document.getElementById('btn-upload-files').addEventListener('click', () => { wsUploadTargetDir = ''; input.click(); });
+    document.getElementById('btn-download-zip').addEventListener('click', () => downloadZip(''));
+
+    const ioBtn = document.getElementById('btn-explorer-io'), ioMenu = document.getElementById('explorer-io-menu');
+    const closeIo = () => { ioMenu.classList.remove('open'); ioBtn.classList.remove('active'); ioBtn.setAttribute('aria-expanded', 'false'); };
+    ioBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (ioMenu.classList.contains('open')) { closeIo(); return; }
+        const r = ioBtn.getBoundingClientRect();
+        ioMenu.classList.add('open');
+        const w = ioMenu.offsetWidth;
+        ioMenu.style.top = (r.bottom + 6) + 'px';
+        ioMenu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+        ioBtn.classList.add('active'); ioBtn.setAttribute('aria-expanded', 'true');
+        if (typeof contextMenu !== 'undefined') contextMenu.style.display = 'none';
+    });
+    ioMenu.addEventListener('click', (e) => { e.stopPropagation(); if (e.target.closest('.context-menu-item')) closeIo(); });
+    document.addEventListener('click', closeIo);
+    window.addEventListener('resize', closeIo);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeIo(); });
+
+    const zone = document.getElementById('sidebar-view-explorer');
+    let hl = null;
+    const hasFiles = e => !!e.dataTransfer && (Array.from(e.dataTransfer.types || []).includes('Files') ||
+        Array.from(e.dataTransfer.items || []).some(i => i.kind === 'file'));
+    const clear = () => { zone.classList.remove('drop-active'); if (hl) { hl.classList.remove('drop-target'); hl = null; } };
+    const targetFor = (e) => {
+        const n = e.target.closest && e.target.closest('.tree-node[data-path]');
+        if (!n) return { dir: '', el: null };
+        const p = n.getAttribute('data-path'), m = registry.meta[p];
+        return (m && m.kind === 'directory') ? { dir: p, el: n } : { dir: p.split('/').slice(0, -1).join('/'), el: null };
+    };
+    ['dragenter', 'dragover'].forEach(evt => zone.addEventListener(evt, (e) => {
+        if (!hasFiles(e) || !rootHandle) return;
+        e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy';
+        const t = targetFor(e);
+        if (hl && hl !== t.el) hl.classList.remove('drop-target');
+        hl = t.el; if (hl) hl.classList.add('drop-target');
+        zone.classList.toggle('drop-active', !t.el);
+    }));
+    // Chromium reports relatedTarget = null on dragleave, so decide from the pointer position instead.
+    zone.addEventListener('dragleave', (e) => {
+        const r = zone.getBoundingClientRect();
+        if (e.clientX <= r.left || e.clientX >= r.right || e.clientY <= r.top || e.clientY >= r.bottom) clear();
+    });
+    zone.addEventListener('drop', (e) => {
+        if (!hasFiles(e) || !rootHandle) return;
+        e.preventDefault(); e.stopPropagation();
+        const t = targetFor(e);
+        clear();
+        const pending = collectDropped(e.dataTransfer);   // starts synchronously, captures entries now
+        pending.then(list => {
+            if (!list.length) { showToast('Nothing could be read from the drop', 'error'); return; }
+            return addFilesToWorkspace(list, t.dir);
+        }).catch(err => showToast('Drop failed: ' + (err && err.message || err), 'error'));
+    });
+})();
+
+// ---- "New Virtual Workspace" dialog ----
+(function wireVirtualWorkspaceDialog() {
+    const openBtn = document.getElementById('no-folder-virtual-btn');
+    if (!openBtn) return;
+    if (!HAS_FS_API) {
+        // Browsers without showDirectoryPicker can't open real folders: offer virtual workspaces only.
+        document.documentElement.classList.add('no-fsa');
+        const realBtn = document.getElementById('no-folder-btn');
+        if (realBtn) { realBtn.style.display = 'none'; realBtn.hidden = true; }
+        const note = document.createElement('div');
+        note.style.cssText = 'font-size:11px; color:var(--dim); max-width:260px; text-align:center; margin:-6px 0 14px;';
+        note.textContent = 'This browser can\'t open folders from disk, so workspaces are virtual (kept in the browser). Use a Chromium-based browser for real folders.';
+        openBtn.insertAdjacentElement('afterend', note);
+    }
+    let pending = new Map();   // path -> { path, file?, dir? }
+    let backdrop = null;
+
+    const hasFilesEv = e => !!e.dataTransfer && (Array.from(e.dataTransfer.types || []).includes('Files') ||
+        Array.from(e.dataTransfer.items || []).some(i => i.kind === 'file'));
+    const fmt = (n) => (typeof formatFileSize === 'function' ? formatFileSize(n) : n + ' B');
+    function render() {
+        const list = backdrop.querySelector('#vws-list');
+        const items = Array.from(pending.values()).sort((a, b) => a.path.localeCompare(b.path));
+        list.innerHTML = items.map(it => `
+            <div class="vws-row" data-path="${escapeHTML(it.path)}">
+                <span class="icon" style="cursor:default; color:var(--dim);">${it.dir ? 'folder' : 'description'}</span>
+                <span class="vws-path" title="${escapeHTML(it.path)}">${escapeHTML(it.path)}</span>
+                <span class="vws-size">${it.dir ? '' : fmt(it.file.size)}</span>
+                <span class="icon vws-remove" title="Remove">close</span>
+            </div>`).join('');
+        list.querySelectorAll('.vws-remove').forEach(b => b.addEventListener('click', () => {
+            pending.delete(b.parentElement.getAttribute('data-path')); render();
+        }));
+        const files = items.filter(i => !i.dir);
+        const total = files.reduce((s, i) => s + i.file.size, 0);
+        backdrop.querySelector('#vws-summary').textContent = files.length ? `${files.length} file${files.length === 1 ? '' : 's'} · ${fmt(total)}` : 'No files yet (you can add them later)';
+    }
+    function add(list) { list.forEach(it => pending.set(it.path, it)); render(); }
+    function close() { if (backdrop) { backdrop.remove(); backdrop = null; } pending = new Map(); }
+
+    function open() {
+        if (backdrop) return;
+        backdrop = document.createElement('div');
+        backdrop.className = 'vws-backdrop';
+        backdrop.innerHTML = `
+            <div class="vws-card" role="dialog" aria-label="New virtual workspace">
+                <div class="vws-title"><span class="icon">cloud_queue</span><span>New Virtual Workspace</span></div>
+                <input type="text" id="vws-name" value="Virtual Workspace" maxlength="60" spellcheck="false" autocomplete="off">
+                <div class="vws-drop" id="vws-drop">
+                    <span class="icon">upload_file</span>
+                    <div>Drop files or folders here</div>
+                    <div class="vws-links">
+                        <button type="button" class="vws-link" id="vws-pick-files">Browse files</button>
+                    </div>
+                </div>
+                <div id="vws-list"></div>
+                <div class="vws-actions">
+                    <span class="vws-summary" id="vws-summary"></span>
+                    <button type="button" class="vws-btn" id="vws-cancel">Cancel</button>
+                    <button type="button" class="vws-btn primary" id="vws-create">Create</button>
+                </div>
+                <input type="file" multiple id="vws-in-files" style="display:none">
+            </div>`;
+        document.body.appendChild(backdrop);
+        const $ = (s) => backdrop.querySelector(s);
+        const drop = $('#vws-drop');
+
+        $('#vws-pick-files').addEventListener('click', () => $('#vws-in-files').click());
+        $('#vws-in-files').addEventListener('change', (e) => { add(Array.from(e.target.files).map(f => ({ path: f.name, file: f }))); e.target.value = ''; });
+
+        ['dragenter', 'dragover'].forEach(evt => backdrop.addEventListener(evt, (e) => {
+            if (!hasFilesEv(e)) return;
+            e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; drop.classList.add('over');
+        }));
+        backdrop.addEventListener('dragleave', (e) => {
+            if (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= innerWidth || e.clientY >= innerHeight) drop.classList.remove('over');
+        });
+        backdrop.addEventListener('drop', (e) => {
+            e.preventDefault(); e.stopPropagation(); drop.classList.remove('over');
+            collectDropped(e.dataTransfer).then(list => {
+                if (!list.length) { showToast('Nothing could be read from the drop', 'error'); return; }
+                add(list);
+            }).catch(err => showToast('Drop failed: ' + (err && err.message || err), 'error'));
+        });
+
+        $('#vws-cancel').addEventListener('click', close);
+        backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop) close(); });
+        backdrop.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); if (e.key === 'Enter' && e.target.id === 'vws-name') $('#vws-create').click(); });
+
+        $('#vws-create').addEventListener('click', async () => {
+            const name = $('#vws-name').value.replace(/[\/\\]/g, '-').trim();
+            if (!name) { $('#vws-name').focus(); return; }
+            const list = Array.from(pending.values());
+            close();
+            try {
+                if (rootHandle) await closeWorkspaceNoConfirm();
+                const handle = await createVirtualWorkspace(name, list);
+                const folders = getRecentFolders().filter(f => f.vid !== handle.vid);
+                folders.unshift({ name, virtual: true, vid: handle.vid, lastAccessed: Date.now() });
+                saveRecentFolders(folders);
+                await setWorkspace(handle);
+                renderRecentFoldersList();
+                showToast(`Virtual workspace "${name}" created`, 'success');
+            } catch (err) { showToast('Could not create workspace: ' + err.message, 'error'); }
+        });
+        render();
+        const nameEl = $('#vws-name'); nameEl.focus(); nameEl.select();
+    }
+    openBtn.addEventListener('click', () => { if (!isNoFolderOverlayHidden()) open(); });
+})();
+
 async function pickFolderWithMemory() {
+    if (!HAS_FS_API) throw new Error('showDirectoryPicker is not supported in this browser');
     const options = { mode: 'readwrite', id: 'code_agent_workspace' };
     if (rootHandle) options.startIn = rootHandle;
     return await window.showDirectoryPicker(options);
@@ -15468,7 +16086,9 @@ function getRecentFolders() {
 }
 
 function saveRecentFolders(folders) {
-    localStorage.setItem('recent_folders_json', JSON.stringify(folders.slice(0, MAX_RECENT_FOLDERS)));
+    let realCount = 0;   // virtual workspaces are never evicted (they hold the user's only copy of the files)
+    const keep = folders.filter(f => f.virtual || (realCount++ < MAX_RECENT_FOLDERS));
+    localStorage.setItem('recent_folders_json', JSON.stringify(keep));
 }
 
 async function saveRecentHandleToDB(name, handle) {
@@ -15525,7 +16145,7 @@ function isNoFolderOverlayHidden() {
 
 function renderRecentFoldersList() {
     if (!recentFoldersList) return;
-    const folders = getRecentFolders();
+    const folders = getRecentFolders().filter(f => f.virtual || HAS_FS_API);
     folders.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
     if (folders.length === 0) {
         recentFoldersSection.style.display = 'none';
@@ -15533,12 +16153,12 @@ function renderRecentFoldersList() {
     }
     recentFoldersSection.style.display = 'block';
     recentFoldersList.innerHTML = folders.map(folder => `
-        <div class="recent-folder-item" data-folder-name="${escapeHTML(folder.name)}" title="${escapeHTML(folder.name)}">
-            <span class="icon folder-icon">folder</span>
+        <div class="recent-folder-item" data-folder-name="${escapeHTML(folder.name)}" ${folder.virtual ? `data-vid="${escapeHTML(folder.vid)}"` : ''} title="${escapeHTML(folder.name)}">
+            <span class="icon folder-icon">${folder.virtual ? 'cloud_queue' : 'folder'}</span>
             <div class="recent-folder-info">
-                <div class="recent-folder-name">${escapeHTML(folder.name)}</div>
+                <div class="recent-folder-name">${escapeHTML(folder.name)}${folder.virtual ? '<span class="vws-tag">virtual</span>' : ''}</div>
             </div>
-            <button class="recent-folder-remove icon-btn" data-remove-name="${escapeHTML(folder.name)}" title="Remove from list">
+            <button class="recent-folder-remove icon-btn" data-remove-name="${escapeHTML(folder.name)}" ${folder.virtual ? `data-remove-vid="${escapeHTML(folder.vid)}"` : ''} title="${folder.virtual ? 'Delete virtual workspace' : 'Remove from list'}">
                 <span class="icon" style="font-size:14px;">close</span>
             </button>
         </div>
@@ -15551,6 +16171,7 @@ function renderRecentFoldersList() {
 
             const folderName = item.dataset.folderName;
             if (rootHandle) await closeWorkspaceNoConfirm();
+            if (item.dataset.vid) { await openVirtualWorkspaceById(item.dataset.vid); return; }
 
             try {
                 const handle = await loadRecentHandleFromDB(folderName);
@@ -15577,6 +16198,7 @@ function renderRecentFoldersList() {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (isNoFolderOverlayHidden()) return;
+            if (btn.dataset.removeVid) { removeVirtualWorkspace(btn.dataset.removeVid, btn.dataset.removeName); return; }
             removeFromRecentFolders(btn.dataset.removeName);
         });
     });
@@ -15584,6 +16206,7 @@ function renderRecentFoldersList() {
 
 async function setWorkspace(handle) {
     rootHandle = handle;
+    updateWorkspaceTitle();
 
     if (btnExitWorkspace) btnExitWorkspace.style.display = 'flex';
     if (btnSessionToggle) btnSessionToggle.style.display = 'flex';
@@ -15630,7 +16253,9 @@ function closeWorkspace() {
         }
     }
 
+    if (rootHandle.isVirtual) vfsFlush(rootHandle);
     rootHandle = null;
+    updateWorkspaceTitle();
 
     // Auto-collapse the sidebar when leaving a workspace; restore it on the next open.
     if (!window.innerWidth <= 600) setSidebarCollapsed(true);
@@ -15719,7 +16344,12 @@ document.getElementById('no-folder-btn').addEventListener('click', async () => {
         const handle = await pickFolderWithMemory();
         await setWorkspace(handle);
         await addToRecentFolders(handle);
-    } catch(e) { /* user cancelled */ }
+    } catch(e) {
+        if (e && e.name !== 'AbortError') {   // AbortError = user cancelled
+            markNoFsApi();
+            showToast('This browser can\'t open folders from disk. Use a virtual workspace instead.', 'info', 4000);
+        }
+    }
 });
 
 if (btnExitWorkspace) {
@@ -15732,6 +16362,9 @@ if (btnExitWorkspace) {
 // Detects binary content by sampling the first few KB.
 function isBinaryContent(s) {
     if (!s) return false;
+    // Tools can write raw bytes (Uint8Array) into the registry; that is binary by definition,
+    // and calling String methods like .match on it would throw.
+    if (typeof s !== 'string') return true;
     const sampleLen = Math.min(s.length, 4096);
     const sample = s.slice(0, sampleLen);
     const nullCount = (sample.match(/\u0000/g) || []).length;
@@ -15760,6 +16393,8 @@ function trimCommonLines(a, b) {
 
 function computeLineDiffCounts(beforeText, afterText) {
     if (beforeText === afterText) return { added: 0, removed: 0 };
+    // Raw bytes (or any non-text value) have no meaningful line diff; never let them break the stats pass.
+    if (typeof beforeText !== 'string' || typeof afterText !== 'string') return { added: 0, removed: 0 };
     if (isBinaryContent(beforeText) || isBinaryContent(afterText)) return { added: 0, removed: 0 };
 
     const normA = beforeText.replace(/\r\n/g, '\n');
@@ -16765,54 +17400,117 @@ const TOOL_API_METHODS = {
     }
 };
 
+let toolWorkerIframe = null;
+const toolWorkerOutbox = [];         // messages queued before the worker is ready
+let toolWorkerReady = false;
+
 function getToolWorker() {
     if (toolWorker) return toolWorker;
-    const blob = new Blob([TOOL_WORKER_SOURCE], { type: 'application/javascript' });
-    const url = URL.createObjectURL(blob);
-    toolWorker = new Worker(url);
-    toolWorker.addEventListener('message', async (e) => {
-        const msg = e.data;
-        if (msg.type === 'api') {
-            const entry = toolWorkerPending.get(msg.runId);
-            const impl = TOOL_API_METHODS[msg.method];
-            if (!impl || !entry) {
-                toolWorker.postMessage({ type: 'api-result', id: msg.id, error: `Unknown api method: ${msg.method}` });
-                return;
+
+    // 1. Sandboxed iframe => opaque origin => origin-scoped storage is unreachable.
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('sandbox', 'allow-scripts'); // NOTE: no allow-same-origin
+    iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;';
+    iframe.srcdoc = `<!doctype html><meta charset="utf-8"><script>
+        let worker = null;
+        window.addEventListener('message', (e) => {
+            const m = e.data || {};
+            if (m.type === 'tool-init') {
+                const blob = new Blob([m.source], { type: 'application/javascript' });
+                worker = new Worker(URL.createObjectURL(blob));
+                worker.onmessage = (ev) => parent.postMessage({ tool: 'msg',  data: ev.data }, '*');
+                worker.onerror   = (ev) => parent.postMessage({ tool: 'err',  message: ev.message }, '*');
+                parent.postMessage({ tool: 'ready' }, '*');
+            } else if (m.type === 'tool-post' && worker) {
+                worker.postMessage(m.data);
+            } else if (m.type === 'tool-kill' && worker) {
+                worker.terminate(); worker = null;
             }
+        });
+    <\/script>`;
+    document.body.appendChild(iframe);
+    toolWorkerIframe = iframe;
+
+    // 2. Route everything from the iframe into the existing message handler.
+    window.addEventListener('message', (e) => {
+        if (!e.data || !e.data.tool) return;
+        if (e.data.tool === 'ready') {
+            toolWorkerReady = true;
+            for (const d of toolWorkerOutbox) iframe.contentWindow.postMessage({ type: 'tool-post', data: d }, '*');
+            toolWorkerOutbox.length = 0;
+            return;
+        }
+        if (e.data.tool === 'err') {
+            for (const [, entry] of toolWorkerPending) {
+                clearTimeout(entry.timeoutId);
+                entry.reject(new Error(`Tool worker crashed: ${e.data.message || 'unknown error'}`));
+            }
+            toolWorkerPending.clear();
+            if (iframe.parentNode) iframe.remove();
+            toolWorker = toolWorkerIframe = null;
+            toolWorkerReady = false;
+            return;
+        }
+        if (e.data.tool === 'msg') handleToolWorkerMessage(e.data.data);
+    });
+
+    // 3. Proxy that quacks like a Worker so nothing else in the file changes.
+    toolWorker = {
+        postMessage(data) {
+            if (toolWorkerReady && iframe.contentWindow)
+                iframe.contentWindow.postMessage({ type: 'tool-post', data }, '*');
+            else
+                toolWorkerOutbox.push(data);
+        },
+        terminate() {
+            if (iframe.contentWindow) iframe.contentWindow.postMessage({ type: 'tool-kill' }, '*');
+            if (iframe.parentNode) iframe.remove();
+            toolWorker = toolWorkerIframe = null;
+            toolWorkerReady = false;
+        }
+    };
+
+    // 4. Boot once the iframe document is ready.
+    iframe.addEventListener('load', () => {
+        iframe.contentWindow.postMessage({ type: 'tool-init', source: TOOL_WORKER_SOURCE }, '*');
+    }, { once: true });
+
+    return toolWorker;
+}
+
+function handleToolWorkerMessage(msg) {
+    if (msg.type === 'api') {
+        const entry = toolWorkerPending.get(msg.runId);
+        const impl = TOOL_API_METHODS[msg.method];
+        if (!impl || !entry) {
+            toolWorker.postMessage({ type: 'api-result', id: msg.id, error: `Unknown api method: ${msg.method}` });
+            return;
+        }
+        (async () => {
             try {
                 const value = await impl(entry.toolName, msg.args || [], entry.sessionId, entry);
                 toolWorker.postMessage({ type: 'api-result', id: msg.id, value });
             } catch (err) {
                 toolWorker.postMessage({ type: 'api-result', id: msg.id, error: err.message || String(err) });
             }
-        } else if (msg.type === 'done') {
-            const entry = toolWorkerPending.get(msg.runId);
-            if (!entry) return;
-            toolWorkerPending.delete(msg.runId);
-            clearTimeout(entry.timeoutId);
-            if (msg.error) entry.reject(new Error(msg.error));
-            else {
-                const outputStr = msg.output === undefined ? '(no output)' : String(msg.output);
-                const failed = outputStr.startsWith('ERROR:');
-                entry.resolve({
-                    output: msg.output,
-                    displayHtml: msg.displayHtml || entry.displayHtml || null,
-                    summary: msg.summary || (failed ? null : entry.headerMsg) || null,
-                    image: msg.image || null
-                });
-            }
+        })();
+    } else if (msg.type === 'done') {
+        const entry = toolWorkerPending.get(msg.runId);
+        if (!entry) return;
+        toolWorkerPending.delete(msg.runId);
+        clearTimeout(entry.timeoutId);
+        if (msg.error) entry.reject(new Error(msg.error));
+        else {
+            const outputStr = msg.output === undefined ? '(no output)' : String(msg.output);
+            const failed = outputStr.startsWith('ERROR:');
+            entry.resolve({
+                output: msg.output,
+                displayHtml: msg.displayHtml || entry.displayHtml || null,
+                summary: msg.summary || (failed ? null : entry.headerMsg) || null,
+                image: msg.image || null
+            });
         }
-    });
-    toolWorker.addEventListener('error', (e) => {
-        for (const [runId, entry] of toolWorkerPending) {
-            clearTimeout(entry.timeoutId);
-            entry.reject(new Error(`Tool worker crashed: ${e.message || 'unknown error'}`));
-        }
-        toolWorkerPending.clear();
-        toolWorker.terminate();
-        toolWorker = null;
-    });
-    return toolWorker;
+    }
 }
 
 const TOOL_TIMEOUT_MS = 30000;
@@ -17416,6 +18114,14 @@ async function runTask(task, msgId, imageUrls, sessionId) {
                     await maybeAutoCompress(runSessionId);
                 } catch (e) {
                     console.warn('Mid-turn auto-compress failed:', e);
+                }
+                // Aborting auto-compression mid-turn must abort the entire run,
+                // otherwise the loop silently starts a fresh generation afterwards.
+                if (runGen.retryCancelled) {
+                    runGen.genFinishReason = 'abort';
+                    if (!runGen.genEndTime) runGen.genEndTime = performance.now();
+                    renderGenStats(runSessionId);
+                    break;
                 }
             }
             firstIteration = false;
