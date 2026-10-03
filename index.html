@@ -1376,6 +1376,10 @@
         }
         .tree-node:hover { background: var(--bg-hover); }
         .tree-node.selected { background: rgba(var(--primary-rgb), 0.15); color: #fff; }
+        #file-tree { user-select: none; -webkit-user-select: none; }
+        #file-tree:focus { outline: none; }
+        #file-tree:focus-visible, #file-tree:focus-within { outline: none; }
+        #file-tree:focus .tree-node.selected { background: rgba(var(--primary-rgb), 0.28); }
         .tree-node .node-chevron {
             font-size: 14px; color: var(--dim); width: 14px;
             text-align: center; transition: transform 0.15s;
@@ -6267,14 +6271,13 @@ const fs = (() => {
     async function write(path, content, opts = {}) {
         const sid = opts.sessionId || state.activeSessionId;
         if (isSecurityProtectedPath(path)) return { error: `ERROR: ${path} is a protected path.` };
-        const existed = await fileExistsOnDisk(path) || registry.files[path] !== undefined;
+        const onDisk = await fileExistsOnDisk(path);
+        const existed = onDisk || registry.files[path] !== undefined;
         // Capture pre-write content before rawWrite overwrites registry.files.
+        // Always read the pre-write content from disk (not the registry cache) so an external edit is never mistaken for ours.
         let previousContent;
         if (existed) {
-            previousContent = registry.files[path];
-            if (previousContent === undefined) {
-                previousContent = await readFileContent(path);
-            }
+            previousContent = onDisk ? await readFileContent(path) : registry.files[path];
         }
         try { await rawWrite(path, content); }
         catch (e) { if (e && e.encodingError) return { error: `ERROR: ${e.message}` }; throw e; }
@@ -10028,11 +10031,11 @@ tabsListContainer.addEventListener('auxclick', (e) => {
     closeTab(tabId);
 });
 
-async function openFileTab(filepath) {
+async function openFileTab(filepath, opts = {}) {
     if (!state.openTabs.includes(filepath)) {
         state.openTabs.push(filepath);
     }
-    await switchTab(filepath);
+    await switchTab(filepath, opts);
 }
 
 async function openAttachmentTab(attachmentId) {
@@ -10217,9 +10220,62 @@ async function closeTab(tabId) {
     }
 }
 
+// Explorer multi-selection. While empty, the highlight just follows the active tab.
+const explorerSelection = new Set();
+let explorerAnchor = null;   // range start for Shift+click
+let explorerSelectionCleared = false;   // user clicked empty space: show no highlight instead of following the active tab
+
+function isExplorerNodeSelected(path) {
+    if (explorerSelection.size) return explorerSelection.has(path);
+    return !explorerSelectionCleared && state.activeTab === path;
+}
+
+function visibleExplorerPaths() {
+    return Array.from(document.querySelectorAll('#file-tree .tree-node')).map(el => el.getAttribute('data-path'));
+}
+
+function setExplorerSelection(paths, anchor) {
+    explorerSelection.clear();
+    paths.forEach(p => explorerSelection.add(p));
+    explorerSelectionCleared = false;
+    if (anchor !== undefined) explorerAnchor = anchor;
+    updateExplorerSelection();
+}
+
+// Paths the explorer is acting on: the selection, else the active file tab.
+function getExplorerSelectedPaths() {
+    const sel = Array.from(explorerSelection).filter(p => registry.meta[p]);
+    if (sel.length) return sel;
+    if (explorerSelectionCleared) return [];
+    return (state.activeTab && registry.meta[state.activeTab]) ? [state.activeTab] : [];
+}
+
+// Applies a Shift / Ctrl(Cmd) click to the selection. Returns true when it was a modified click.
+function applyExplorerModifierClick(path, e) {
+    const range = e.shiftKey, additive = e.ctrlKey || e.metaKey;
+    if (!range && !additive) return false;
+    const rows = visibleExplorerPaths();
+    // Selection currently shown as highlighted (may be just the active tab).
+    const current = explorerSelection.size ? Array.from(explorerSelection)
+        : (!explorerSelectionCleared && rows.includes(state.activeTab) ? [state.activeTab] : []);
+
+    if (range) {
+        let anchor = explorerAnchor && rows.includes(explorerAnchor) ? explorerAnchor : (current[0] && rows.includes(current[0]) ? current[0] : path);
+        const a = rows.indexOf(anchor), b = rows.indexOf(path);
+        const slice = rows.slice(Math.min(a, b), Math.max(a, b) + 1);
+        // Shift replaces the selection with the range; Ctrl+Shift adds the range to it.
+        setExplorerSelection(additive ? [...current, ...slice] : slice, anchor);
+    } else {
+        const next = new Set(current);
+        if (next.has(path)) next.delete(path); else next.add(path);
+        setExplorerSelection(Array.from(next), path);
+    }
+    return true;
+}
+
 function updateExplorerSelection() {
     document.querySelectorAll('#file-tree .tree-node').forEach(node => {
-        if (node.getAttribute('data-path') === state.activeTab) {
+        if (isExplorerNodeSelected(node.getAttribute('data-path'))) {
             node.classList.add('selected');
         } else {
             node.classList.remove('selected');
@@ -10227,8 +10283,10 @@ function updateExplorerSelection() {
     });
 }
 
-async function switchTab(tabId) {
+async function switchTab(tabId, opts = {}) {
     state.activeTab = tabId;
+    // Any tab switch that did not come from an explorer click re-syncs the explorer highlight to the active tab.
+    if (!opts.keepFocus) { explorerSelection.clear(); explorerAnchor = null; explorerSelectionCleared = false; }
     renderTabs();
     updateExplorerSelection();
     saveActiveSession();
@@ -10374,7 +10432,8 @@ async function switchTab(tabId) {
         if (isHtml && state.editorViewMode === 'preview') {
             setEditorSubView('preview');
         } else {
-            setEditorSubView('edit');
+            // keepFocus: opened from the explorer, so focus stays in the explorer instead of jumping into the editor.
+            setEditorSubView('edit', { focus: !opts.keepFocus });
         }
     }
 }
@@ -10431,7 +10490,7 @@ document.addEventListener('click', (e) => {
     }
 });
 
-function setEditorSubView(mode) {
+function setEditorSubView(mode, opts = {}) {
     state.editorViewMode = mode;
     if (mode === 'preview') {
         btnViewPreview.classList.add('active');
@@ -10446,7 +10505,7 @@ function setEditorSubView(mode) {
         monacoContainer.style.display = 'block';
         if (monacoEditor) {
             monacoEditor.layout();
-            monacoEditor.focus();
+            if (opts.focus !== false) monacoEditor.focus();
         }
     }
 }
@@ -11200,6 +11259,7 @@ async function readFileContentForTool(filepath) {
 
 // Disk-only write. Does not touch opsLog or modifiedFiles.
 async function rawWrite(path, content) {
+    wsMutationEpoch++;
     if (!rootHandle) {
         registry.files[path] = content;
         registry.meta[path] = { kind: 'file' };
@@ -11223,11 +11283,19 @@ async function rawWrite(path, content) {
     await w.write(payload);
     await w.close();
     registry.files[path] = content;
-    registry.meta[path] = (enc && enc !== 'utf-8') ? { kind: 'file', encoding: enc } : { kind: 'file' };
+    // Merge into the existing entry so size/isBinary/handle are not thrown away by a write.
+    const prevMeta = registry.meta[path];
+    const nextMeta = (prevMeta && prevMeta.kind === 'file') ? prevMeta : { kind: 'file' };
+    nextMeta.handle = fh;
+    nextMeta.isBinary = false;
+    if (enc && enc !== 'utf-8') nextMeta.encoding = enc; else delete nextMeta.encoding;
+    registry.meta[path] = nextMeta;
+    wsMutationEpoch++;
 }
 
 // Disk-only delete. Does not touch opsLog or modifiedFiles.
 async function rawDelete(path) {
+    wsMutationEpoch++;
     if (!rootHandle) {
         delete registry.meta[path];
         delete registry.files[path];
@@ -11240,13 +11308,21 @@ async function rawDelete(path) {
         parentHandle = await parentHandle.getDirectoryHandle(p);
     }
     await parentHandle.removeEntry(targetName, { recursive: true });
+    // Folders: drop everything beneath the path too, not just the folder entry.
+    const prefix = path + '/';
+    for (const k of Object.keys(registry.meta)) {
+        if (k === path || k.startsWith(prefix)) { delete registry.meta[k]; delete registry.files[k]; }
+    }
     delete registry.meta[path];
     delete registry.files[path];
+    wsMutationEpoch++;
 }
 
 async function rawMkdir(path) {
+    wsMutationEpoch++;
     await getDirectoryHandleByPath(path, true);
     registry.meta[path] = { kind: 'directory' };
+    wsMutationEpoch++;
 }
 
 // Kept as a public wrapper for the few remaining direct callers (tool delete
@@ -11316,6 +11392,8 @@ function buildHierarchicalTree() {
 
 function renderExplorerTree() {
     buildHierarchicalTree();
+    for (const p of Array.from(explorerSelection)) if (!registry.meta[p]) explorerSelection.delete(p);
+    if (explorerAnchor && !registry.meta[explorerAnchor]) explorerAnchor = null;
     fileTreeEl.innerHTML = '';
     const fileCount = Object.keys(registry.meta).filter(k => registry.meta[k]?.kind === 'file' && !isAgentPath(k)).length;
     fileCountEl.innerText = fileCount;
@@ -11345,7 +11423,7 @@ function renderTreeNodeChildren(childrenMap, containerEl, depth = 0) {
         const isFaint = node.path === CUSTOM_TOOLS_DIR || node.path === TOOLS_DIR || node.path === PROMPTS_DIR || isVirtualAgentFile(node.path);
 
         const nodeEl = document.createElement('div');
-        nodeEl.className = `tree-node ${isExpanded ? 'expanded' : ''} ${state.activeTab === node.path ? 'selected' : ''} ${isFaint ? 'tree-node-faint' : ''}`;
+        nodeEl.className = `tree-node ${isExpanded ? 'expanded' : ''} ${isExplorerNodeSelected(node.path) ? 'selected' : ''} ${isFaint ? 'tree-node-faint' : ''}`;
         nodeEl.setAttribute('data-path', node.path);
         const INDENT_PER_LEVEL = 18;
         nodeEl.style.paddingLeft = `${depth * INDENT_PER_LEVEL + 6}px`;
@@ -11380,13 +11458,24 @@ function renderTreeNodeChildren(childrenMap, containerEl, depth = 0) {
 
         nodeEl.addEventListener('click', async (e) => {
             e.stopPropagation();
+            // Shift / Ctrl(Cmd) click only changes the selection: no editor open, no folder toggle.
+            if (applyExplorerModifierClick(node.path, e)) {
+                fileTreeEl.focus({ preventScroll: true });
+                return;
+            }
+            explorerSelection.clear();
+            explorerSelection.add(node.path);
+            explorerAnchor = node.path;
+            explorerSelectionCleared = false;
             if (isDir) {
                 if (isExpanded) state.expandedFolders.delete(node.path);
                 else state.expandedFolders.add(node.path);
                 renderExplorerTree();
             } else {
-                await openFileTab(node.path);
+                await openFileTab(node.path, { keepFocus: true });
             }
+            // Keep keyboard focus in the explorer (not the editor) so Del / shortcuts act on the selection.
+            fileTreeEl.focus({ preventScroll: true });
             if (window.innerWidth <= 600) {
                 toggleMobileSidebar(false);
             }
@@ -11493,6 +11582,9 @@ function showContextMenu(e, node) {
     e.preventDefault();
     e.stopPropagation();
     state.selectedContextItem = node;
+    if (node && !(explorerSelection.size > 1 && explorerSelection.has(node.path))) {
+        setExplorerSelection([node.path], node.path);
+    }
 
     if (!applyContextScopes(node)) return;
 
@@ -11560,7 +11652,18 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
         } else if (action === 'view-diff') {
             window.openFileDiff(node.path);
         } else if (action === 'attach-prompt') {
-            attachReference({ type: 'file', filepath: node.path });
+            // Right-clicking inside a multi-selection attaches every selected file (folders are skipped).
+            const inMulti = explorerSelection.size > 1 && explorerSelection.has(node.path);
+            const filePaths = inMulti
+                ? visibleExplorerPaths().filter(pth => explorerSelection.has(pth) && registry.meta[pth] && registry.meta[pth].kind !== 'directory')
+                : [node.path];
+            const already = new Set(state.attachedReferences.filter(r => r.type === 'file').map(r => r.filepath));
+            const toAttach = filePaths.filter(pth => !already.has(pth) || !inMulti);
+            toAttach.forEach(pth => attachReference({ type: 'file', filepath: pth }));
+            if (inMulti) {
+                const dupes = filePaths.length - toAttach.length;
+                showToast(`Attached ${toAttach.length} file${toAttach.length === 1 ? '' : 's'}${dupes ? ` (${dupes} already attached)` : ''}`, 'success');
+            }
         } else if (action === 'rename') {
             const newName = (await promptDialog(`Rename "${node.name}" to:`, node.name, { confirmLabel: 'Rename', validate: (v) => validateEntryName(v, { allowSlash: false }) }))?.trim();
             if (!newName || newName === node.name) return;
@@ -11583,27 +11686,10 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
                 showToast(`Rename failed: ${err.message}`, 'error');
             }
         } else if (action === 'delete') {
-            if (!await confirmDialog(`Delete ${node.name}?`, { confirmLabel: 'Delete', danger: true })) return;
-            if (isToolFilePath(node.path)) {
-                const toolName = node.path.split('/').pop().replace('.js', '');
-                const tool = Object.values(toolRegistry).find(t => t.fileName === toolName);
-                if (!tool) {
-                    showToast(`Tool "${toolName}" not found in registry.`, 'error');
-                    return;
-                }
-                if (tool.locked) {
-                    showToast(`"${tool.name}" is locked. Unlock it first to delete.`, 'error');
-                    return;
-                }
-                const deleted = await deleteToolFile(tool.name, tool.fileName);
-                renderExplorerTree();
-                renderToolsList();
-                showToast(deleted ? `Deleted "${tool.name}"` : `Could not delete "${tool.name}"`, deleted ? 'success' : 'error');
-            } else {
-                await deleteFileOrDirectory(node.path);
-                closeTab(node.path);
-                await syncWorkspace(false);
-            }
+            const picked = (explorerSelection.size > 1 && explorerSelection.has(node.path))
+                ? Array.from(explorerSelection).filter(pth => registry.meta[pth]).map(pth => ({ name: pth.split('/').pop(), path: pth, kind: registry.meta[pth].kind || 'file' }))
+                : [node];
+            await deleteExplorerNodes(picked);
         } else if (action === 'restore-default') {
             if (!await confirmDialog(`Restore ${node.name} to its built-in default? Your current content will be lost.`, { confirmLabel: 'Restore', danger: true })) return;
             const res = restoreAgentFile(node.path);
@@ -11614,6 +11700,98 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
             }
         }
     });
+});
+
+// Deletes explorer nodes (files, folders, custom tools) after one confirmation. Shared by the context menu and the Del key.
+let explorerDeleteBusy = false;
+async function deleteExplorerNodes(nodes) {
+    if (!nodes || !nodes.length || explorerDeleteBusy) return;
+    // Drop non-deletable entries, and entries already covered by a selected parent folder.
+    const deletable = nodes.filter(n => contextItemApplies('deletable', n));
+    const skipped = nodes.length - deletable.length;
+    const paths = new Set(deletable.map(n => n.path));
+    const targets = deletable.filter(n => {
+        const parts = n.path.split('/');
+        for (let i = 1; i < parts.length; i++) if (paths.has(parts.slice(0, i).join('/'))) return false;
+        return true;
+    });
+    if (!targets.length) {
+        showToast(nodes.length === 1 ? `${nodes[0].path} can't be deleted` : `None of the ${nodes.length} selected items can be deleted`, 'error');
+        return;
+    }
+
+    explorerDeleteBusy = true;
+    try {
+        const label = targets.length === 1 ? `Delete ${targets[0].name}?` : `Delete ${targets.length} items?`;
+        if (!await confirmDialog(label, { confirmLabel: 'Delete', danger: true })) return;
+
+        let deletedCount = 0, failed = 0, lastError = null;
+        for (const node of targets) {
+            try {
+                if (isToolFilePath(node.path)) {
+                    const toolName = node.path.split('/').pop().replace('.js', '');
+                    const tool = Object.values(toolRegistry).find(t => t.fileName === toolName);
+                    if (!tool) { failed++; lastError = `Tool "${toolName}" not found in registry.`; continue; }
+                    if (tool.locked) { failed++; lastError = `"${tool.name}" is locked. Unlock it first to delete.`; continue; }
+                    if (await deleteToolFile(tool.name, tool.fileName)) deletedCount++;
+                    else { failed++; lastError = `Could not delete "${tool.name}"`; }
+                } else {
+                    await deleteFileOrDirectory(node.path);
+                    deletedCount++;
+                    // Close the tab of the deleted file, or every tab inside a deleted folder.
+                    const toClose = state.openTabs.filter(t => t === node.path || t.startsWith(node.path + '/'));
+                    for (const t of toClose) await closeTab(t);
+                }
+            } catch (err) {
+                failed++; lastError = `Delete failed: ${err.message || err}`;
+            }
+        }
+        renderToolsList();
+        await syncWorkspace(false);
+
+        if (failed || skipped) {
+            const bits = [];
+            if (deletedCount) bits.push(`Deleted ${deletedCount}`);
+            if (failed) bits.push(`${failed} failed`);
+            if (skipped) bits.push(`${skipped} protected`);
+            showToast(targets.length === 1 && lastError ? lastError : bits.join(', '), deletedCount ? 'success' : 'error');
+        } else if (targets.length > 1) {
+            showToast(`Deleted ${deletedCount} items`, 'success');
+        }
+
+        // Leave nothing selected: closing tabs may have activated another file, and the highlight (and a
+        // following Del) must not land on it or on a neighbouring row.
+        explorerSelection.clear();
+        explorerAnchor = null;
+        explorerSelectionCleared = true;
+        updateExplorerSelection();
+    } finally {
+        explorerDeleteBusy = false;
+        fileTreeEl.focus({ preventScroll: true });
+    }
+}
+
+// Clicking empty space in the explorer clears the selection (row clicks stop propagation, so only blank area gets here).
+fileTreeEl.addEventListener('click', (e) => {
+    if (e.target.closest('.tree-node')) return;
+    explorerSelection.clear();
+    explorerAnchor = null;
+    explorerSelectionCleared = true;
+    updateExplorerSelection();
+    fileTreeEl.focus({ preventScroll: true });
+});
+
+// Explorer keyboard: with the explorer focused, Del (Cmd+Backspace on macOS) removes the selected items.
+fileTreeEl.tabIndex = 0;
+fileTreeEl.addEventListener('keydown', async (e) => {
+    const isDel = e.key === 'Delete' || (e.key === 'Backspace' && e.metaKey);
+    if (!isDel || e.ctrlKey || e.altKey || e.shiftKey) return;
+    if (e.target !== fileTreeEl) return;   // ignore keys from inline inputs inside the tree
+    const nodes = getExplorerSelectedPaths().map(p => ({ name: p.split('/').pop(), path: p, kind: registry.meta[p].kind || 'file' }));
+    if (!nodes.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    await deleteExplorerNodes(nodes);
 });
 
 btnNewFile.addEventListener('click', async () => {
@@ -11646,16 +11824,128 @@ btnCollapseAll.addEventListener('click', () => {
 });
 
 let syncWorkspaceChain = Promise.resolve();
+let syncQueuedJob = null;          // a queued sync that has not started scanning yet (callers can share it)
+let wsMutationEpoch = 0;           // bumped by every raw write/delete/mkdir/rename; lets a scan detect that it raced a change
 
 function syncWorkspace(silent = true) {
     if (!rootHandle || state.isSaving) return Promise.resolve();
     // Chain instead of dropping: an explicit refresh must actually run, not be
     // swallowed by a background pass that is already in flight, or a write that
     // just landed on disk can stay invisible to tools for seconds.
-    syncWorkspaceChain = syncWorkspaceChain
+    // A job that is queued but has not started yet will still scan after this call, so share it.
+    if (syncQueuedJob) {
+        if (!silent) syncQueuedJob.silent = false;
+        return syncQueuedJob.promise;
+    }
+    const job = { silent };
+    job.promise = syncWorkspaceChain
         .catch(() => {})
-        .then(() => runSyncWorkspace(silent));
-    return syncWorkspaceChain;
+        .then(() => { syncQueuedJob = null; return runSyncWorkspace(job.silent); });
+    syncQueuedJob = job;
+    syncWorkspaceChain = job.promise;
+    return job.promise;
+}
+
+// Merges a fresh disk scan into registry.meta instead of replacing it, so per-file state
+// (resolved isBinary, encoding, size) survives and entries added mid-scan are not lost.
+// Returns true when the set of paths or their kinds changed.
+function mergeWorkspaceMeta(scanned, allowRemoval) {
+    let structChanged = false;
+    for (const p of Object.keys(scanned)) {
+        const fresh = scanned[p];
+        const cur = registry.meta[p];
+        if (!cur || cur.kind !== fresh.kind || cur.virtual) {
+            registry.meta[p] = fresh;
+            structChanged = true;
+        } else {
+            cur.handle = fresh.handle;   // refresh the handle, keep everything we have learned about the file
+        }
+    }
+    if (allowRemoval) {
+        for (const p of Object.keys(registry.meta)) {
+            if (scanned[p]) continue;
+            const cur = registry.meta[p];
+            if (cur && (cur.virtual || cur.attachment)) continue;   // owned by the register*VirtualFile() calls
+            delete registry.meta[p];
+            structChanged = true;
+        }
+    }
+    return structChanged;
+}
+
+// Same visibility rules the scan applies: is this path something a scan would list?
+function isScanVisiblePath(fp) {
+    const parts = fp.split('/').filter(Boolean);
+    let cur = '';
+    for (const part of parts) {
+        cur = cur ? `${cur}/${part}` : part;
+        if (shouldSkipScanEntry(part, cur)) return false;
+    }
+    return parts.length > 0;
+}
+
+// Cheap per-path refresh straight from disk: used by tools so a single read/edit/exists never works from stale metadata.
+async function refreshPathMeta(fp) {
+    if (!rootHandle || typeof fp !== 'string' || !fp) return;
+    const cur = registry.meta[fp];
+    if (cur && (cur.virtual || cur.attachment)) return;
+    if (isAgentPath(fp) || isToolFilePath(fp) || isAttachmentPath(fp) || fp === MODELS_FILE || fp === CONFIG_FILE || isPromptFileMode(fp)) return;
+    if (fp === PLAN_FILE || !isScanVisiblePath(fp)) return;   // the plan file can live only in memory
+
+    const parts = fp.split('/').filter(Boolean);
+    let kind = null, handle = null;
+    try {
+        handle = await getHandleByPath(fp);
+        kind = 'file';
+    } catch (e) {
+        if (e && e.name === 'TypeMismatchError') {
+            try { handle = await getDirectoryHandleByPath(fp, false); kind = 'directory'; } catch (e2) {}
+        }
+    }
+
+    if (!kind) {
+        // Gone from disk: drop it (and anything beneath it) from the registry.
+        if (cur) {
+            for (const k of Object.keys(registry.meta)) {
+                if (k === fp || k.startsWith(fp + '/')) {
+                    if (registry.meta[k] && (registry.meta[k].virtual || registry.meta[k].attachment)) continue;
+                    delete registry.meta[k];
+                }
+            }
+            renderExplorerTree();
+        }
+        return;
+    }
+
+    let added = false;
+    // Make sure every ancestor folder is known so the explorer can show the file.
+    let dirPath = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+        dirPath = dirPath ? `${dirPath}/${parts[i]}` : parts[i];
+        if (!registry.meta[dirPath]) {
+            let dh = null;
+            try { dh = await getDirectoryHandleByPath(dirPath, false); } catch (e) {}
+            registry.meta[dirPath] = { kind: 'directory', size: 0, isBinary: false, handle: dh };
+            added = true;
+        }
+    }
+    if (!cur || cur.kind !== kind) {
+        registry.meta[fp] = kind === 'file'
+            ? { kind: 'file', size: 0, isBinary: isBinaryByExtension(parts[parts.length - 1]), handle }
+            : { kind: 'directory', size: 0, isBinary: false, handle };
+        added = true;
+    } else {
+        cur.handle = handle;
+    }
+    if (added) renderExplorerTree();
+}
+
+// Full refresh for tools that need the whole file list: waits out an in-progress editor save, then
+// runs a sync that is guaranteed to start after this call (never reuses a scan that began earlier).
+async function ensureWorkspaceFresh() {
+    if (!rootHandle) return;
+    for (let i = 0; state.isSaving && i < 40; i++) await new Promise(r => setTimeout(r, 50));
+    await syncWorkspace(true);
 }
 
 async function runSyncWorkspace(silent = true) {
@@ -11671,22 +11961,24 @@ async function runSyncWorkspace(silent = true) {
     }
 
     try {
-        gitignoreCache.clear();
-        await prescanGitignoreFiles(rootHandle, "");
-
-        const newMeta = {};
-        await fastTraverseDirectory(rootHandle, "", newMeta);
+        // Scan, and rescan if a write/delete/rename landed on disk while we were walking the tree.
+        let newMeta, epoch, tries = 0;
+        do {
+            epoch = wsMutationEpoch;
+            gitignoreCache.clear();
+            await prescanGitignoreFiles(rootHandle, "");
+            newMeta = {};
+            await fastTraverseDirectory(rootHandle, "", newMeta);
+        } while (epoch !== wsMutationEpoch && ++tries < 3);
+        // If it still raced, only add/update this round; removals wait for the next clean scan.
+        const allowRemoval = epoch === wsMutationEpoch;
 
         if (registry.files[PLAN_FILE] && !newMeta[PLAN_FILE]) {
             newMeta[PLAN_FILE] = { kind: 'file', size: registry.files[PLAN_FILE].length, isBinary: false };
         }
 
-        const oldKeys = Object.keys(registry.meta);
-        const newKeys = Object.keys(newMeta);
-        const structChanged = oldKeys.length !== newKeys.length ||
-            newKeys.some(k => !registry.meta[k] || registry.meta[k].kind !== newMeta[k].kind);
+        const structChanged = mergeWorkspaceMeta(newMeta, allowRemoval);
 
-        registry.meta = newMeta;
         registerToolsVirtualFiles();
         registerModelsVirtualFile();
         registerConfigVirtualFile();
@@ -11703,7 +11995,7 @@ async function runSyncWorkspace(silent = true) {
 
         if (state.activeTab && state.activeTab !== 'chat' && !state.activeTab.startsWith('filediff:')) {
             const fp = state.activeTab;
-            const meta = newMeta[fp];
+            const meta = registry.meta[fp];
             if (meta && meta.kind === 'file' && !meta.isBinary) {
                 const freshContent = await readFileContent(fp);
                 if (monacoEditor && !isFileDirty(fp)) {
@@ -11746,15 +12038,17 @@ async function prescanGitignoreFiles(handle, path = "") {
     }
 }
 
+// Single rule for what a workspace scan skips (also used by refreshPathMeta so both agree).
+function shouldSkipScanEntry(name, fullPath) {
+    if (IGNORED_DIRS.has(name)) return true;
+    if (name.startsWith('.') && name !== PLAN_FILE && name !== '.gitignore' && name !== CUSTOM_TOOLS_DIR) return true;
+    return isSecurityProtectedPath(fullPath);
+}
+
 async function fastTraverseDirectory(handle, path = "", targetMap) {
     for await (const entry of handle.values()) {
-        if (IGNORED_DIRS.has(entry.name)) continue;
-        if (entry.name.startsWith('.') && entry.name !== PLAN_FILE && entry.name !== '.gitignore' && entry.name !== CUSTOM_TOOLS_DIR) {
-            continue;
-        }
-
         const fullPath = path ? `${path}/${entry.name}` : entry.name;
-        if (isSecurityProtectedPath(fullPath)) continue;
+        if (shouldSkipScanEntry(entry.name, fullPath)) continue;
         if (entry.kind === 'file') {
             let size = 0;
             let isBinary = isBinaryByExtension(entry.name);   // hint only; resolveIsBinary() confirms from content on first use
@@ -16963,6 +17257,7 @@ function isToolOrAgentPath(path) {
 
 // Disk-only rename. Validates and moves on disk; no opsLog/history bookkeeping.
 async function rawRename(oldPath, newPath) {
+    wsMutationEpoch++;
     // Extract strictly the new filename, ignoring any directory paths passed in
     const newName = newPath.split('/').filter(Boolean).pop();
     if (!newName) return { error: `ERROR: Invalid new file name.` };
@@ -17024,6 +17319,7 @@ async function rawRename(oldPath, newPath) {
             await rawDelete(oldPath);
         }
 
+        wsMutationEpoch++;
         return { ok: true, resolvedNewPath };
     } catch(e) {
         return { error: `ERROR: ${e.message}` };
@@ -17410,6 +17706,24 @@ const TOOL_API_METHODS = {
         return null;
     }
 };
+
+// Tools must never act on stale workspace state: refresh from disk before each call that depends on it.
+// Per-path calls re-check just that path (cheap); listFiles runs a full merge-sync that starts after the call.
+(function makeToolApiFresh() {
+    ['readFile', 'writeFile', 'readImage', 'readFileBytes', 'renameFile', 'fileExists', 'isBinary'].forEach(name => {
+        const orig = TOOL_API_METHODS[name];
+        TOOL_API_METHODS[name] = async (toolName, args, ...rest) => {
+            const a = args || [];
+            await refreshPathMeta(a[0]);
+            return orig(toolName, a, ...rest);
+        };
+    });
+    const origList = TOOL_API_METHODS.listFiles;
+    TOOL_API_METHODS.listFiles = async (...a) => {
+        await ensureWorkspaceFresh();
+        return origList(...a);
+    };
+})();
 
 let toolWorkerIframe = null;
 const toolWorkerOutbox = [];         // messages queued before the worker is ready
