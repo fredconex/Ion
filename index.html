@@ -16107,41 +16107,78 @@ async function downloadZip(prefix = '') {
 // ---- Dropped / picked files ----
 // Must be called synchronously from the drop handler (DataTransfer is invalidated after the first await).
 async function collectDropped(dt) {
-    // Everything that touches the DataTransfer must happen synchronously (before any await):
-    // Chromium empties it as soon as the event handler returns.
+    // Chromium invalidates the DataTransfer as soon as the drop handler returns,
+    // so EVERYTHING that touches it must happen synchronously, before any await.
     const out = [];
     const jobs = [];
     const items = Array.from(dt.items || []);
     const looseFiles = Array.from(dt.files || []);
+
     items.forEach(it => {
         if (it.kind !== 'file') return;
-        let entry = null, file = null;
+        let handle = null, entry = null, file = null;
+        // Modern API (Chromium 86+, recent Firefox): FileSystemHandle for files AND folders.
+        try { handle = it.getAsFileSystemHandle ? it.getAsFileSystemHandle() : null; } catch (e) {}
+        // Legacy API: FileSystemEntry (File or Directory). Widely supported.
         try { entry = it.webkitGetAsEntry ? it.webkitGetAsEntry() : null; } catch (e) {}
+        // Plain File fallback: only ever a file, never a folder.
         try { file = it.getAsFile ? it.getAsFile() : null; } catch (e) {}
-        jobs.push({ entry, file });
+        jobs.push({ handle, entry, file });
     });
-    if (!jobs.length) looseFiles.forEach(f => jobs.push({ entry: null, file: f }));
+    if (!jobs.length) looseFiles.forEach(f => jobs.push({ handle: null, entry: null, file: f }));
 
     const readEntries = (reader) => new Promise((res, rej) => reader.readEntries(res, rej));
-    const walk = async (en, prefix) => {
+
+    // Legacy FileSystemEntry walker.
+    const walkEntry = async (en, prefix) => {
         if (en.isFile) {
             const f = await new Promise((res, rej) => en.file(res, rej));
             out.push({ path: prefix + en.name, file: f });
         } else if (en.isDirectory) {
-            const r = en.createReader(); let all = [];
+            // Register the directory itself, so empty folders and the folder
+            // structure show up in the preview, not just the files inside it.
+            out.push({ path: prefix + en.name, dir: true });
+            const r = en.createReader();
+            let all = [];
             for (;;) { const b = await readEntries(r); if (!b.length) break; all = all.concat(b); }
-            if (!all.length) out.push({ path: prefix + en.name, dir: true });
-            for (const c of all) await walk(c, prefix + en.name + '/');
+            for (const c of all) await walkEntry(c, prefix + en.name + '/');
         }
     };
+
+    // Modern FileSystemHandle walker.
+    const walkHandle = async (h, prefix) => {
+        if (h.kind === 'file') {
+            const f = await h.getFile();
+            out.push({ path: prefix + h.name, file: f });
+        } else if (h.kind === 'directory') {
+            out.push({ path: prefix + h.name, dir: true });
+            for await (const child of h.values()) {
+                await walkHandle(child, prefix + h.name + '/');
+            }
+        }
+    };
+
     for (const j of jobs) {
         try {
-            if (j.entry) await walk(j.entry, '');
-            else if (j.file) out.push({ path: j.file.name, file: j.file });
+            let done = false;
+            if (j.handle) {
+                const h = await j.handle;
+                if (h) { await walkHandle(h, ''); done = true; }
+            }
+            if (!done && j.entry) {
+                await walkEntry(j.entry, '');
+                done = true;
+            }
+            if (!done && j.file) {
+                out.push({ path: j.file.name, file: j.file });
+            }
         } catch (e) {
-            // Entry API failed (some Chromium sources): fall back to the plain File when we have one.
-            if (j.file && j.file.size !== undefined && !(j.entry && j.entry.isDirectory)) out.push({ path: j.file.name, file: j.file });
-            else console.warn('Could not read dropped item', e);
+            // Fall back to the plain File if the entry/handle APIs failed for any reason.
+            if (j.file && typeof j.file.size === 'number') {
+                out.push({ path: j.file.name, file: j.file });
+            } else {
+                console.warn('Could not read dropped item', e);
+            }
         }
     }
     return out;
