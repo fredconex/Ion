@@ -7834,16 +7834,6 @@ function getDB() {
     });
 }
 
-async function getMostRecentHandle() {
-    const folders = getRecentFolders();
-    if (!folders.filter(f => !f.virtual).length) return null;
-    const newest = folders
-        .filter(f => !f.virtual)
-        .slice()
-        .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
-    return await loadRecentHandleFromDB(newest.name);
-}
-
 async function saveWorkspaceCacheToDB(wsName, metadataMap) {
     try {
         const db = await getDB();
@@ -16977,29 +16967,9 @@ function closeTabNoConfirm(tabId) {
     }
 }
 
-let pendingReconnectHandle = null;
-function showWorkspaceReconnectPrompt(handle) {
-    pendingReconnectHandle = handle;
-    const overlay = document.getElementById('no-folder-overlay');
-    if (overlay) overlay.classList.remove('hidden');
-}
-
 document.getElementById('no-folder-btn').addEventListener('click', async () => {
     if (isNoFolderOverlayHidden()) return;
     if (rootHandle) await closeWorkspaceNoConfirm();
-
-    if (pendingReconnectHandle) {
-        const h = pendingReconnectHandle;
-        pendingReconnectHandle = null;
-        try {
-            const perm = await h.requestPermission({ mode: 'readwrite' });
-            if (perm === 'granted') {
-                markRecentFolderAccessed(h.name);
-                await setWorkspace(h);
-                return;
-            }
-        } catch(e) {}
-    }
 
     try {
         const handle = await pickFolderWithMemory();
