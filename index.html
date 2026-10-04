@@ -1033,6 +1033,8 @@
             display: none; position: absolute; top: 0; left: 0;
             right: 0; bottom: 0; background: rgba(0, 0, 0, 0.55); z-index: 100;
         }
+        #settings-popover .settings-panel-head { gap: 8px; }
+        #settings-popover-close { display: none; }
         #settings-popover .settings-panel {
             position: absolute; top: 44px; right: 14px;
             background: var(--bg-panel); border: 1px solid var(--border-highlight);
@@ -2612,7 +2614,7 @@
             border-radius: 4px; padding: 8px 10px; max-height: 260px;
             overflow-y: auto; font-size: 11.5px; line-height: 1.5; color: var(--fg);
         }
-        @media (max-width: 600px) {
+        @media (max-width: 768px) {
             :root { --font-size-base: 12px; }
             body { font-size: 12px; align-items: stretch; justify-content: stretch; }
             #window { width: 100vw; height: 100dvh; max-width: none; border-radius: 0; border: none; }
@@ -2672,7 +2674,7 @@
             .context-menu-item { padding: 8px 10px; }
             #about-modal { width: 90vw; max-width: 280px; padding: 16px 14px; }
         }
-        @media (min-width: 601px) and (max-width: 900px) {
+        @media (min-width: 769px) and (max-width: 900px) {
             #window { width: 98vw; height: 96vh; border-radius: 10px; }
             #sidebar { width: 260px; min-width: 220px; }
             .ion-logo { width: 26px; height: 26px; }
@@ -2684,7 +2686,7 @@
             #chat > .log-entry.md-content { max-width: 88%; }
             .thought-body { max-height: 220px; }
         }
-        @media (min-width: 601px) and (max-width: 1100px) {
+        @media (min-width: 769px) and (max-width: 1100px) {
             #sidebar { width: 280px; min-width: 240px; }
         }
         @media (pointer: coarse) {
@@ -2693,7 +2695,7 @@
             .context-menu-item { min-height: 40px; }
             .prompt-chip { min-height: 26px; }
         }
-        @media (max-width: 600px) {
+        @media (max-width: 768px) {
             #statusbar { flex-wrap: wrap; gap: 4px; padding: 4px 8px; min-height: 28px; }
             #perm-banner { flex-direction: column; align-items: stretch; padding: 10px 12px; gap: 8px; }
             #perm-message { font-size: 11px; text-align: center; }
@@ -2736,7 +2738,7 @@
 
         /* ===== Mobile: full-screen Model Providers + New Tool ===== */
         .mm-back-btn { display: none; }
-        @media (max-width: 600px) {
+        @media (max-width: 768px) {
             #newtool-modal-overlay, #models-modal-overlay {
                 position: fixed; inset: 0; z-index: 500;
                 background: var(--bg-main);
@@ -2758,6 +2760,30 @@
             }
             #newtool-modal-footer, #models-modal-footer {
                 padding: 10px 14px calc(env(safe-area-inset-bottom, 0px) + 10px);
+            }
+
+            /* Security & Permissions: full-screen like model settings */
+            #settings-popover {
+                position: fixed; inset: 0; z-index: 500;
+                background: var(--bg-main) !important;
+                border: none !important; border-radius: 0 !important; box-shadow: none !important;
+                align-items: stretch; justify-content: stretch;
+            }
+            #settings-popover .settings-panel {
+                position: absolute; inset: 0; top: 0; right: 0;
+                width: 100vw; max-width: none; height: 100dvh; max-height: none;
+                border: none !important; border-radius: 0 !important; box-shadow: none !important;
+                background: var(--bg-main) !important;
+                padding: 0 14px 16px;
+            }
+            #settings-popover .settings-panel-head {
+                min-height: 54px;
+                padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 8px 14px;
+                box-sizing: content-box;
+            }
+            #settings-popover-close {
+                width: 42px; height: 42px; margin-left: auto;
+                display: flex; align-items: center; justify-content: center;
             }
             #newtool-modal-footer .btn-confirm { flex: 1; min-height: 44px; font-size: 14px; }
             #models-modal-footer-hint { font-size: 11px; }
@@ -3032,8 +3058,8 @@
  padding:9px 18px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
  .toast.toast-success .icon{color:var(--green)}.toast.toast-info .icon{color:var(--accent)}
 
- @media (min-width:601px){#sidebar.collapsed{width:52px;min-width:52px}}
- @media (max-width:600px){
+ @media (min-width:769px){#sidebar.collapsed{width:52px;min-width:52px}}
+ @media (max-width:768px){
   #window{border-radius:0;border:none}
   #titlebar{height:46px}
   #sidebar{border-radius:0 22px 22px 0;background:#0e0e10;margin-right:0}
@@ -3076,7 +3102,7 @@
             }
             #model-select-btn { max-width: min(100%, 260px); }
         }
-        @media (max-width: 600px) {
+        @media (max-width: 768px) {
             /* Full-screen modals: square, edge-to-edge */
             #newtool-modal, #models-modal {
                 border-radius: 0 !important; border: none !important; box-shadow: none !important;
@@ -3110,7 +3136,7 @@
     #ws-popover-row { display: flex; align-items: center; gap: 5px; flex: 1 1 0; min-width: 0; padding: 3px 8px; background: var(--bg-hover); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; }
     #ws-popover-row .icon { font-size: 14px; color: var(--primary); flex-shrink: 0; }
     #ws-popover-name { color: var(--fg); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-    @media (max-width: 600px) { #sessions-popover { width: calc(100vw - 16px); max-width: none; } }
+    @media (max-width: 768px) { #sessions-popover { width: calc(100vw - 16px); max-width: none; } }
     #explorer-io-menu { display: none; position: fixed; background: var(--bg-panel); border: 1px solid var(--border-highlight); border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.85); padding: 5px; min-width: 190px; max-width: 240px; z-index: 200; }
     #explorer-io-menu.open { display: block; }
     #explorer-io-menu .explorer-io-hint { margin: 4px 2px 1px; padding: 6px 8px 2px; border-top: 1px solid var(--border); font-size: 10px; line-height: 1.4; color: var(--dim); }
@@ -3509,6 +3535,9 @@
         <div class="settings-panel-head">
             <span class="icon">shield</span>
             <span class="head-label">Security &amp; Permissions</span>
+            <button id="settings-popover-close" class="icon-btn" title="Close">
+                <span class="icon">close</span>
+            </button>
         </div>
         <div class="popover-section-title" style="margin-top: 0; margin-bottom: 8px;">
             <span class="icon" style="font-size: 14px;">build</span>
@@ -8654,7 +8683,7 @@ const btnSidebarCollapse = document.getElementById('btn-sidebar-collapse');
 let isSidebarCollapsed = false;
 let savedSidebarWidth = null;
 function setSidebarCollapsed(collapsed) {
-    const isMobile = window.innerWidth <= 600;
+    const isMobile = window.innerWidth <= 768;
     if (isMobile) { toggleMobileSidebar(!collapsed); return; }
     if (collapsed) {
         savedSidebarWidth = parseInt(sidebarEl.style.width, 10) || Number(AppConfig.get('sidebar-width', 314)) || 314;
@@ -8672,7 +8701,7 @@ function setSidebarCollapsed(collapsed) {
 btnSidebarCollapse.addEventListener('click', () => setSidebarCollapsed(!sidebarEl.classList.contains('collapsed')));
 sidebarEl.addEventListener('click', (e) => {
     if (!sidebarEl.classList.contains('collapsed')) return;
-    if (window.innerWidth <= 600) return;
+    if (window.innerWidth <= 768) return;
     const target = e.target;
     if (!(target instanceof Element)) return;
     if (target === btnSidebarCollapse || btnSidebarCollapse.contains(target)) return;
@@ -8731,7 +8760,7 @@ resizerEl.addEventListener('pointerdown', (e) => {
 
 // Re-clamp if the window shrinks below the current sidebar width.
 window.addEventListener('resize', () => {
-    if (sidebarEl.classList.contains('collapsed') || window.innerWidth <= 600) return;
+    if (sidebarEl.classList.contains('collapsed') || window.innerWidth <= 768) return;
     const w = clampSidebarWidth(parseInt(sidebarEl.style.width, 10) || 314);
     if (w !== parseInt(sidebarEl.style.width, 10)) applySidebarWidth(w);
 });
@@ -11528,7 +11557,7 @@ function renderTreeNodeChildren(childrenMap, containerEl, depth = 0) {
             }
             // Keep keyboard focus in the explorer (not the editor) so Del / shortcuts act on the selection.
             fileTreeEl.focus({ preventScroll: true });
-            if (window.innerWidth <= 600) {
+            if (window.innerWidth <= 768) {
                 toggleMobileSidebar(false);
             }
         });
@@ -13410,6 +13439,12 @@ btnSettingsToggle.addEventListener('click', (e) => {
     }
 });
 
+document.getElementById('settings-popover-close').addEventListener('click', (e) => {
+    e.stopPropagation();
+    settingsPopover.style.display = 'none';
+    btnSettingsToggle.classList.remove('active');
+});
+
 // Where the current mouse press started: 'backdrop' | 'panel' (popover or tool model dropdown) | 'other'.
 // A click event fires on the common ancestor of mousedown and mouseup, so a drag that starts in a
 // field (e.g. selecting text) and ends on the backdrop would otherwise look like an outside click.
@@ -13485,7 +13520,7 @@ if (sidebarOverlay) {
 }
 
 document.addEventListener('click', (e) => {
-    if (window.innerWidth <= 600 && sidebarEl.classList.contains('mobile-open')) {
+    if (window.innerWidth <= 768 && sidebarEl.classList.contains('mobile-open')) {
         const clickedInSidebar = e.composedPath().includes(sidebarEl);
         const clickedToggle = e.target === btnSidebarToggleMobile || btnSidebarToggleMobile?.contains(e.target);
         if (!clickedInSidebar && !clickedToggle) {
@@ -13495,7 +13530,7 @@ document.addEventListener('click', (e) => {
 });
 
 window.addEventListener('resize', () => {
-    if (window.innerWidth > 600) {
+    if (window.innerWidth > 768) {
         toggleMobileSidebar(false);
     }
 });
@@ -14593,7 +14628,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     applyConfigToUI();
 
     // Restore persisted sidebar width (only when not collapsed and not mobile).
-    if (!sidebarEl.classList.contains('collapsed') && window.innerWidth > 600) {
+    if (!sidebarEl.classList.contains('collapsed') && window.innerWidth > 768) {
         applySidebarWidth(Number(AppConfig.get('sidebar-width', 314)) || 314);
     }
 
@@ -16882,7 +16917,7 @@ async function setWorkspace(handle) {
     if (noFolderOverlay) noFolderOverlay.classList.add('hidden');
 
     // Restore the sidebar collapsed state we saved when leaving the previous workspace.
-    if (isSidebarCollapsed && window.innerWidth > 600) {
+    if (isSidebarCollapsed && window.innerWidth > 768) {
         setSidebarCollapsed(false);
         if (savedSidebarWidth) applySidebarWidth(savedSidebarWidth);
     }
@@ -16909,7 +16944,7 @@ function closeWorkspace() {
     updateWorkspaceTitle();
 
     // Auto-collapse the sidebar when leaving a workspace; restore it on the next open.
-    if (!window.innerWidth <= 600) setSidebarCollapsed(true);
+    if (!window.innerWidth <= 768) setSidebarCollapsed(true);
 
     registry.files = {};
     registry.originalFiles = {};
