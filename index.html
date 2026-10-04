@@ -17466,7 +17466,10 @@ async function runTool(runId, toolMeta, args) {
         },
         // Live-updates the tool box header while the tool is still running.
         // Pass null/empty to clear back to the host's default. Never sent to the model.
-        setHeaderMsg: (msg) => callApi(runId, 'setHeaderMsg', [msg == null ? '' : String(msg)])
+        setHeaderMsg: (msg) => callApi(runId, 'setHeaderMsg', [msg == null ? '' : String(msg)]),
+        // POST via the main page (the sandboxed tool frame has an opaque origin and cannot reach
+        // loopback/LAN). Returns { ok, status, text } or { error }.
+        httpPost: (url, opts) => callApi(runId, 'httpPost', [String(url), opts || {}])
     };
     try {
         const factory = new Function('args', 'api',
@@ -17498,6 +17501,36 @@ let toolWorkerRunId = 0;
 const toolWorkerPending = new Map();
 
 const TOOL_API_METHODS = {
+    // Main-thread HTTP POST bridge for tools. The tool sandbox (null origin) is blocked by Chrome's
+    // Local Network Access check; the page origin is not, so requests are made here instead.
+    httpPost: async (toolName, [url, opts]) => {
+        let u;
+        try { u = new URL(String(url)); } catch (e) { return { error: 'invalid URL' }; }
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') return { error: 'only http(s) URLs are allowed' };
+        opts = opts || {};
+        const ms = Number(opts.timeoutMs);
+        const timeoutMs = Number.isFinite(ms) && ms > 0 ? Math.min(ms, 120000) : 15000;
+        const headers = {};
+        if (opts.headers && typeof opts.headers === 'object') {
+            for (const [k, v] of Object.entries(opts.headers)) headers[String(k)] = String(v);
+        }
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+        try {
+            const res = await fetch(u.href, {
+                method: 'POST',
+                headers,
+                body: typeof opts.body === 'string' ? opts.body : undefined,
+                signal: ctrl.signal
+            });
+            const text = await res.text();
+            return { ok: res.ok, status: res.status, text: text.slice(0, 2000000) };
+        } catch (e) {
+            return { error: e.name === 'AbortError' ? 'timeout' : (e.message || String(e)) };
+        } finally {
+            clearTimeout(timer);
+        }
+    },
     readFile: async (toolName, [fp]) => {
         const res = await readFileContentForTool(fp);
         if (res.error) return res.error;
