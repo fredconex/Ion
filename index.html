@@ -6499,6 +6499,12 @@ function truncateFromMessage(sessionId, id, opts = {}) {
                 toRemove.remove();
             }
         }
+        // Resolve any pending choice card that lived in the removed DOM.
+        pendingUIQueue.filter(r => r.sessionId === sid && r.el && !r.el.isConnected)
+            .forEach(r => { try { r.finish(null, true); } catch (_) {} });
+        document.querySelectorAll('.tool-ui-wait').forEach(n => {
+            if (!pendingUIQueue.some(r => r.el === n)) n.remove();
+        });
     }
 
     saveSession(sid);
@@ -14584,6 +14590,8 @@ function commitEditFromModal(revert) {
     if (isSessionRunning(state.activeSessionId)) {
         abortGeneration({ showResumeUI: false });
     }
+    // Unconditional: a waiting show_options card must never outlive the edit.
+    cancelPendingUIForSession(state.activeSessionId);
 
     const editSid = state.activeSessionId;
     const rawForRevert = wrap.getAttribute('data-raw') || '';
@@ -17667,7 +17675,7 @@ const TOOL_API_METHODS = {
             document.body.appendChild(iframe);
         });
     },
-    showUI: async (toolName, [html, opts], sessionId) => {
+    showUI: async (toolName, [html, opts], sessionId, entry) => {
         const hasChoice = typeof html === 'string' && html.includes('data-choice');
         const isInteractive = (opts && opts.autoResolve === false) || (hasChoice && (!opts || !opts.autoResolve));
 
@@ -17717,8 +17725,11 @@ const TOOL_API_METHODS = {
                 });
                 req.el = el;
 
-                // Mount inside the tool box body.
-                const runningBox = document.querySelector('.running-tool-box');
+                // Mount inside THIS run's own tool box. document.querySelector('.running-tool-box')
+                // always returns the first box, so parallel calls piled their cards into box #1,
+                // where they were wiped when that box finished.
+                let runningBox = (entry && entry.box && entry.box.isConnected) ? entry.box : null;
+                if (!runningBox) runningBox = document.querySelector('.running-tool-box');
                 const boxBody = runningBox ? runningBox.querySelector('.tool-box-body') : null;
 
                 if (boxBody) {
@@ -17727,6 +17738,9 @@ const TOOL_API_METHODS = {
                     const target = (runningBox && runningBox.parentNode) ? runningBox.parentNode : term;
                     target.appendChild(el);
                 }
+                // A card that is waiting on the user must be visible: open any collapsed tool group.
+                const grp = el.closest('.tool-group');
+                if (grp) grp.classList.remove('collapsed');
                 smartScroll();
             };
 
@@ -18432,6 +18446,8 @@ async function runTask(task, msgId, imageUrls, sessionId) {
     const runCtx = sessionCtx(runSessionId);
     const runGen = getGenState(runSessionId);
     const isRunLive = () => runSessionId === state.activeSessionId;
+    const mySeq = runGen.runSeq = (runGen.runSeq || 0) + 1;
+    const isSuperseded = () => runGen.runSeq !== mySeq;
 
     const userContent = (imageUrls && imageUrls.length > 0)
         ? [{ type: "text", text: task }, ...imageUrls.map(url => ({ type: "image_url", image_url: { url } }))]
@@ -18482,6 +18498,7 @@ async function runTask(task, msgId, imageUrls, sessionId) {
     runGen.retryCancelled = false;
 
         let firstIteration = true;
+        let iterController = null;
         while (!isDone) {
             if (!firstIteration) {
                 try {
@@ -18501,7 +18518,8 @@ async function runTask(task, msgId, imageUrls, sessionId) {
             firstIteration = false;
 
             startSpinner(`Running (${runMode} mode...`, runSessionId);
-            runGen.activeController = new AbortController();
+            iterController = new AbortController();
+            runGen.activeController = iterController;
             if (runGen.thinkingTimerInterval) {
                 clearInterval(runGen.thinkingTimerInterval);
                 runGen.thinkingTimerInterval = null;
@@ -18979,9 +18997,18 @@ async function runTask(task, msgId, imageUrls, sessionId) {
                         ? renderRunningToolBox(call.function.name, args, toolGroupContainer, runSessionId)
                         : null;
 
+                    // Tools marked expanded (TOOL_META.expanded or the autoExpand setting) open their
+                    // group right away so live content isn't hidden while the tool is running.
+                    if (runningBox && toolGroupContainer) {
+                        const earlyAuto = getToolSettingValue(call.function.name, 'autoExpand');
+                        if (earlyAuto !== undefined ? !!earlyAuto : !!(matchingTool && matchingTool.expanded)) {
+                            toolGroupContainer.classList.remove('collapsed');
+                        }
+                    }
+
                     const resObj = await executeTool(call.function.name, args, runSessionId, runningBox);
 
-                    if (!runGen.activeController) {
+                    if (runGen.activeController !== iterController || isSuperseded()) {
                         stopRunningToolBox(runningBox);
                         if (runningBox) runningBox.remove();
                         return { call, args, resObj, resStr: String(resObj.output), aborted: true };
@@ -19045,7 +19072,7 @@ async function runTask(task, msgId, imageUrls, sessionId) {
                 // and the transcript sent back to the model always lists results in call order.
                 let ci = 0;
                 while (ci < toolCalls.length) {
-                    if (!runGen.activeController) break;
+                    if (runGen.activeController !== iterController || isSuperseded()) break;
 
                     let batch;
                     if (getToolIOKind(toolCalls[ci].function.name) === 'read') {
@@ -19064,11 +19091,14 @@ async function runTask(task, msgId, imageUrls, sessionId) {
                         ? await Promise.all(batch.map(processSingleCall))
                         : [await processSingleCall(batch[0])];
 
+                    // A superseded run (edit + resubmit) must not push orphan tool results
+                    // into the already-truncated history.
+                    if (isSuperseded()) { isDone = true; break; }
                     for (const outcome of outcomes) {
                         await commitCallResult(outcome);
                     }
 
-                    if (outcomes.some(o => o.aborted) || !runGen.activeController) {
+                    if (outcomes.some(o => o.aborted) || runGen.activeController !== iterController) {
                         isDone = true;
                         break;
                     }
@@ -19160,7 +19190,7 @@ async function runTask(task, msgId, imageUrls, sessionId) {
                     renderGenStats(runSessionId);
                     break;
                 }
-                runGen.activeController = null;
+                if (runGen.activeController === iterController) runGen.activeController = null;
                 continue;
             }
 
@@ -19171,9 +19201,13 @@ async function runTask(task, msgId, imageUrls, sessionId) {
             saveSession(runSessionId);
             break;
         }
-        runGen.activeController = null;
+        if (isSuperseded()) break;
+        if (runGen.activeController === iterController) runGen.activeController = null;
         runGen.retryAttempt = 0;
     }
+
+    // Superseded by a newer run on this session: leave shared state/UI to that run.
+    if (isSuperseded()) return;
 
     runGen.isRunning = false;
     if (isRunLive()) updatePromptSendButton();
