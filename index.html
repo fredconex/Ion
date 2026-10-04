@@ -1037,7 +1037,7 @@
             position: absolute; top: 44px; right: 14px;
             background: var(--bg-panel); border: 1px solid var(--border-highlight);
             border-radius: 8px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.8);
-            padding: 14px 16px; width: 380px; max-height: calc(100% - 52px);
+            padding: 14px 16px; width: 475px; max-height: calc(100% - 52px);
             overflow-y: auto; animation: fadeIn 0.12s ease-out;
         }
         .settings-panel-head {
@@ -1203,6 +1203,21 @@
             color: var(--fg); font-family: var(--font-mono); font-size: 11px;
             padding: 3px 6px;
         }
+        /* Stacked layout: caption on top, full-width control underneath. Switches stay inline. */
+        .ct-tool-setting-row { flex-direction: column; align-items: stretch; gap: 5px; }
+        .ct-tool-setting-row.inline { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
+        .ct-tool-setting-row:not(.inline) .ct-tool-setting-label { width: 100%; }
+        .ct-tool-setting-row .ct-tool-setting-label .desc { line-height: 1.4; }
+        .ct-tool-setting-row:not(.inline) input[type="number"],
+        .ct-tool-setting-row:not(.inline) input[type="text"],
+        .ct-tool-setting-row:not(.inline) select {
+            width: 100%; box-sizing: border-box; padding: 5px 8px; border-radius: 8px;
+        }
+        .ct-tool-setting-row:not(.inline) .ct-model-btn {
+            width: 100%; max-width: none; box-sizing: border-box; justify-content: flex-start; padding: 5px 10px;
+        }
+        .ct-tool-setting-row:not(.inline) .ct-model-btn .msb-name { flex: 0 1 auto; min-width: 0; }
+        .ct-tool-setting-row:not(.inline) .ct-model-btn .msb-caret { margin-left: auto; }
         .tri-switch {
             display: inline-flex; background: var(--bg-main);
             border: 1px solid var(--border); border-radius: 6px;
@@ -2222,6 +2237,41 @@
         .msd-item-name { font-size: 12px; font-weight: 600; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .msd-item-provider { font-size: 9px; color: var(--dim); flex-shrink: 0; white-space: nowrap; }
         .msd-empty { padding: 20px; text-align: center; color: var(--dim); font-size: 12px; }
+        .ct-model-btn {
+            display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+            background: var(--bg-input); border: 1px solid var(--border);
+            color: var(--fg); padding: 5px 12px; border-radius: 999px;
+            font-size: 11px; font-family: var(--font-mono);
+            cursor: pointer; max-width: 230px;
+        }
+        .ct-model-btn:hover, .ct-model-btn.open { border-color: rgba(var(--accent-rgb), 0.6); }
+        .ct-model-btn .msb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--fg); }
+        .ct-model-btn .msb-provider { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); font-size: 8px; flex-shrink: 1; min-width: 0; }
+        .ct-model-btn .msb-caret { color: var(--dim); font-size: 14px; flex-shrink: 0; margin-left: 2px; }
+        #tool-model-overlay { display: none; position: fixed; inset: 0; z-index: 100000; }
+        #tool-model-dropdown {
+            display: none; position: fixed; z-index: 100001; width: 360px; max-height: 360px;
+            background: rgba(21,21,23,.98); border: 1px solid var(--border-highlight);
+            border-radius: 16px; box-shadow: 0 20px 50px rgba(0,0,0,.7);
+            flex-direction: column; overflow: hidden;
+        }
+        #tool-model-search-wrap { display: flex; align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        #tool-model-search {
+            width: 100%; background: #0e0e10; border: 1px solid var(--border);
+            color: var(--fg); padding: 5px 8px; border-radius: 12px;
+            font-size: 11px; font-family: var(--font-mono); box-sizing: border-box;
+        }
+        #tool-model-search:focus { border-color: rgba(var(--accent-rgb), .7); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .12); outline: none; }
+        #tool-model-config-btn {
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+            width: 28px; height: 28px; background: var(--bg-input); border: 1px solid var(--border);
+            color: var(--dim); border-radius: 6px; cursor: pointer;
+        }
+        #tool-model-config-btn:hover { border-color: var(--primary); color: var(--primary); }
+        #tool-model-config-btn .icon { font-size: 16px; }
+        #tool-model-list { flex: 1; overflow-y: auto; padding: 4px; }
+        #tool-model-list::-webkit-scrollbar { width: 6px; }
+        #tool-model-list::-webkit-scrollbar-thumb { background: var(--border-highlight); border-radius: 4px; }
         #prompt-bar {
             background: var(--bg-secondary); border: none;
             padding: 8px 12px 12px 12px; display: flex;
@@ -2605,7 +2655,7 @@
             #prompt { font-size: 13px; min-height: 40px; max-height: 120px; }
             .prompt-chip { padding: 3px 8px; font-size: 10px; }
             #sessions-popover { width: 90vw; max-width: 320px; top: 48px; }
-            .settings-panel { width: 90vw; max-width: 340px; right: 4px; padding: 10px 12px; }
+            .settings-panel { width: 90vw; max-width: 425px; right: 4px; padding: 10px 12px; }
             .tree-node { padding: 4px 6px; font-size: 11px; }
             #file-tree, #changes-list, #search-results, #settings-content { font-size: 11px; }
             #toast-container { bottom: 80px; left: 8px; right: 8px; transform: none; }
@@ -5536,7 +5586,7 @@ function parseToolMeta(source) {
     }
 }
 
-const TOOL_SETTING_TYPES = ['number', 'text', 'boolean', 'select'];
+const TOOL_SETTING_TYPES = ['number', 'text', 'boolean', 'select', 'model'];
 
 // Validates/normalizes a TOOL_META.settings entry. Returns null if the entry is unusable
 // (missing key, bad type, select with no options) so it can be dropped rather than crash a tool.
@@ -13364,19 +13414,38 @@ btnSettingsToggle.addEventListener('click', (e) => {
     }
 });
 
+// Where the current mouse press started: 'backdrop' | 'panel' (popover or tool model dropdown) | 'other'.
+// A click event fires on the common ancestor of mousedown and mouseup, so a drag that starts in a
+// field (e.g. selecting text) and ends on the backdrop would otherwise look like an outside click.
+let _spPressOrigin = null;
+function _isInsideToolModelPicker(path) {
+    return !!(_toolModelPicker.el && (path.includes(_toolModelPicker.el) || path.includes(_toolModelPicker.overlay)));
+}
+document.addEventListener('mousedown', (e) => {
+    const path = e.composedPath();
+    if (e.target === settingsPopover) _spPressOrigin = 'backdrop';
+    else if (path.includes(settingsPopover) || _isInsideToolModelPicker(path)) _spPressOrigin = 'panel';
+    else _spPressOrigin = 'other';
+}, true);
+
 settingsPopover.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (e.target === settingsPopover) {
+    // Only a press AND release on the backdrop dismisses (not a drag that started in the panel).
+    if (e.target === settingsPopover && _spPressOrigin !== 'panel') {
         settingsPopover.style.display = 'none';
         btnSettingsToggle.classList.remove('active');
     }
+    _spPressOrigin = null;
 });
 
 document.addEventListener('click', (e) => {
-    if (!e.composedPath().includes(settingsPopover) && e.target !== btnSettingsToggle && !btnSettingsToggle.contains(e.target)) {
+    const path = e.composedPath();
+    const inside = path.includes(settingsPopover) || _isInsideToolModelPicker(path);
+    if (!inside && _spPressOrigin !== 'panel' && e.target !== btnSettingsToggle && !btnSettingsToggle.contains(e.target)) {
         settingsPopover.style.display = 'none';
         btnSettingsToggle.classList.remove('active');
     }
+    _spPressOrigin = null;
 });
 
 const sidebarOverlay = document.getElementById('sidebar-overlay');
@@ -13440,10 +13509,146 @@ const toolsListEl = document.getElementById('tools-list');
 const PERMISSION_LABELS = { never: 'never', ask: 'ask', always: 'always' };
 const MODE_LABELS = { plan: 'Plan', ask: 'Ask', code: 'Code' };
 
+// Shared dropdown for 'model' tool settings: same markup classes, filter box, list rows and
+// keyboard behaviour as the prompt's model picker, listing .agent/models.json.
+const _toolModelPicker = { el: null, overlay: null, search: null, list: null, anchor: null, current: '', onPick: null, filter: '', idx: 0, visible: false };
+
+function _tmpEnsure() {
+    if (_toolModelPicker.el) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'tool-model-overlay';
+    const dd = document.createElement('div');
+    dd.id = 'tool-model-dropdown';
+    dd.innerHTML = `<div id="tool-model-search-wrap">
+            <input type="text" id="tool-model-search" placeholder="Filter models..." autocomplete="off" />
+            <button type="button" id="tool-model-config-btn" title="Edit .agent/models.json"><span class="icon">settings</span></button>
+        </div>
+        <div id="tool-model-list"></div>`;
+    document.body.appendChild(overlay);
+    document.body.appendChild(dd);
+    const P = _toolModelPicker;
+    P.overlay = overlay; P.el = dd;
+    P.search = dd.querySelector('#tool-model-search');
+    P.list = dd.querySelector('#tool-model-list');
+    overlay.addEventListener('click', closeToolModelPicker);
+    dd.querySelector('#tool-model-config-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeToolModelPicker();
+        openModelsModal();
+    });
+    P.search.addEventListener('input', (e) => { P.filter = e.target.value; P.idx = 0; _tmpRender(); });
+    P.search.addEventListener('keydown', (e) => {
+        const entries = _tmpEntries();
+        if (e.key === 'ArrowDown') { e.preventDefault(); P.idx = Math.min(P.idx + 1, entries.length - 1); _tmpRender(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); P.idx = Math.max(P.idx - 1, 0); _tmpRender(); }
+        else if (e.key === 'Enter') { e.preventDefault(); const en = entries[P.idx]; if (en) _tmpPick(en); }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeToolModelPicker(); }
+    });
+}
+
+function _tmpEntries() {
+    const f = (_toolModelPicker.filter || '').toLowerCase();
+    return getAllModelEntries().filter(e => !f || (e.displayName || e.name).toLowerCase().includes(f) || e.providerName.toLowerCase().includes(f));
+}
+
+function _tmpRender() {
+    const P = _toolModelPicker;
+    const entries = _tmpEntries();
+    if (!entries.length) {
+        P.list.innerHTML = `<div class="msd-empty">No models found${P.filter ? ' for filter' : ''}</div>`;
+        return;
+    }
+    P.idx = Math.min(P.idx, entries.length - 1);
+    P.list.innerHTML = entries.map((e, i) => {
+        const isCurrent = `${e.providerName}::${e.name}` === P.current;
+        const classes = ['msd-item'];
+        if (i === P.idx) classes.push('highlighted');
+        if (isCurrent) classes.push('current');
+        return `<div class="${classes.join(' ')}" data-idx="${i}" title="${escapeHTML(e.name)} — ${escapeHTML(e.providerName)}">
+            <span class="msd-item-name">${escapeHTML(e.displayName || e.name)}${isCurrent ? ' ✓' : ''}${e.vision ? ' <span class="icon msd-vision-icon" title="Supports vision (image input)">visibility</span>' : ''}</span>
+            <span class="msd-item-provider">${escapeHTML(e.providerName)}</span>
+        </div>`;
+    }).join('');
+    P.list.querySelectorAll('.msd-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const en = entries[Number(el.getAttribute('data-idx'))];
+            if (en) _tmpPick(en);
+        });
+    });
+}
+
+function _tmpPick(entry) {
+    const P = _toolModelPicker;
+    const id = `${entry.providerName}::${entry.name}`;
+    const cb = P.onPick;
+    closeToolModelPicker();
+    if (cb) cb(id, entry);
+}
+
+function closeToolModelPicker() {
+    const P = _toolModelPicker;
+    if (!P.el) return;
+    P.visible = false;
+    if (P.anchor) P.anchor.classList.remove('open');
+    P.anchor = null;
+    P.el.style.display = 'none';
+    P.overlay.style.display = 'none';
+}
+
+function openToolModelPicker(anchor, currentId, onPick) {
+    _tmpEnsure();
+    const P = _toolModelPicker;
+    if (P.visible) closeToolModelPicker();
+    P.visible = true; P.anchor = anchor; P.current = currentId || ''; P.onPick = onPick; P.filter = '';
+    const entries = getAllModelEntries();
+    const ci = entries.findIndex(e => `${e.providerName}::${e.name}` === P.current);
+    P.idx = ci >= 0 ? ci : 0;
+    anchor.classList.add('open');
+    P.overlay.style.display = 'block';
+    P.el.style.display = 'flex';
+    P.search.value = '';
+    _tmpRender();
+    // Position under the button (or above if there is more room there), kept inside the viewport.
+    const r = anchor.getBoundingClientRect();
+    const w = Math.min(360, window.innerWidth - 16);
+    P.el.style.width = w + 'px';
+    P.el.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
+    const below = window.innerHeight - r.bottom, above = r.top;
+    if (below >= 260 || below >= above) {
+        P.el.style.top = (r.bottom + 6) + 'px'; P.el.style.bottom = 'auto';
+        P.el.style.maxHeight = Math.max(160, Math.min(360, below - 14)) + 'px';
+    } else {
+        P.el.style.bottom = (window.innerHeight - r.top + 6) + 'px'; P.el.style.top = 'auto';
+        P.el.style.maxHeight = Math.max(160, Math.min(360, above - 14)) + 'px';
+    }
+    setTimeout(() => P.search.focus(), 0);
+}
+
+// Button label: model name + provider, like the prompt bar's picker.
+function setToolModelBtnLabel(btn, id) {
+    const nameEl = btn.querySelector('.msb-name'), provEl = btn.querySelector('.msb-provider');
+    const str = String(id || '');
+    const i = str.indexOf('::');
+    const entry = i === -1 ? null : findModelEntry(str.slice(0, i), str.slice(i + 2));
+    if (entry) {
+        nameEl.textContent = entry.displayName || entry.name;
+        provEl.textContent = entry.providerName;
+        btn.title = `${entry.name} — ${entry.providerName}`;
+    } else if (str) {
+        nameEl.textContent = i === -1 ? str : str.slice(i + 2);
+        provEl.textContent = '(not in models.json)';
+        btn.title = str;
+    } else {
+        nameEl.textContent = 'Select model';
+        provEl.textContent = '';
+        btn.title = 'Pick a model from .agent/models.json';
+    }
+}
+
 // Renders one input row for a tool-declared setting.
 function buildToolSettingRow(tool, def) {
     const row = document.createElement('div');
-    row.className = 'ct-tool-setting-row';
+    row.className = 'ct-tool-setting-row' + (def.type === 'boolean' ? ' inline' : '');
     const value = getToolSettingValue(tool.name, def.key);
 
     let controlHTML;
@@ -13456,6 +13661,9 @@ function buildToolSettingRow(tool, def) {
         controlHTML = `<select data-setting-input="${escapeHTML(def.key)}">
             ${def.options.map(o => `<option value="${escapeHTML(o)}" ${o === value ? 'selected' : ''}>${escapeHTML(o)}</option>`).join('')}
         </select>`;
+    } else if (def.type === 'model') {
+        // Same look as the prompt's model picker; opens the shared dropdown (see openToolModelPicker).
+        controlHTML = `<button type="button" class="ct-model-btn" data-setting-model="${escapeHTML(def.key)}"><span class="msb-name"></span><span class="msb-provider"></span><span class="icon msb-caret">expand_more</span></button>`;
     } else if (def.type === 'number') {
         const minAttr = def.min !== undefined ? ` min="${def.min}"` : '';
         const maxAttr = def.max !== undefined ? ` max="${def.max}"` : '';
@@ -13472,6 +13680,20 @@ function buildToolSettingRow(tool, def) {
         ${controlHTML}
     `;
 
+    const modelBtn = row.querySelector('[data-setting-model]');
+    if (modelBtn) {
+        let cur = String(value || '');
+        setToolModelBtnLabel(modelBtn, cur);
+        modelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (_toolModelPicker.visible && _toolModelPicker.anchor === modelBtn) { closeToolModelPicker(); return; }
+            openToolModelPicker(modelBtn, cur, (id) => {
+                cur = id;
+                setToolSettingValue(tool.name, def.key, id);
+                setToolModelBtnLabel(modelBtn, id);
+            });
+        });
+    }
     const boolSwitch = row.querySelector('[data-setting-bool]');
     if (boolSwitch) {
         boolSwitch.querySelectorAll('.tri-btn').forEach(btn => {
@@ -15798,6 +16020,10 @@ document.addEventListener('keydown', (e) => {
             hideSessionPopover();
             return;
         }
+        if (_toolModelPicker.visible) {
+            closeToolModelPicker();
+            return;
+        }
         if (settingsPopover.style.display === 'block') {
             settingsPopover.style.display = 'none';
             btnSettingsToggle.classList.remove('active');
@@ -17469,7 +17695,9 @@ async function runTool(runId, toolMeta, args) {
         setHeaderMsg: (msg) => callApi(runId, 'setHeaderMsg', [msg == null ? '' : String(msg)]),
         // POST via the main page (the sandboxed tool frame has an opaque origin and cannot reach
         // loopback/LAN). Returns { ok, status, text } or { error }.
-        httpPost: (url, opts) => callApi(runId, 'httpPost', [String(url), opts || {}])
+        httpPost: (url, opts) => callApi(runId, 'httpPost', [String(url), opts || {}]),
+        listModels: () => callApi(runId, 'listModels', []),
+        getModelInfo: (id) => callApi(runId, 'getModelInfo', [String(id || '')])
     };
     try {
         const factory = new Function('args', 'api',
@@ -17501,6 +17729,16 @@ let toolWorkerRunId = 0;
 const toolWorkerPending = new Map();
 
 const TOOL_API_METHODS = {
+    // Lists models from models.json: [{ id: 'Provider::model', provider, name, url }] (keys are not exposed).
+    listModels: async () => getAllModelEntries().map(e => ({ id: `${e.providerName}::${e.name}`, provider: e.providerName, name: e.name, url: e.url })),
+    // Resolves a 'Provider::model' id (from a 'model' setting) to { url, model, key, provider } or null.
+    getModelInfo: async (toolName, [id]) => {
+        const str = String(id || '');
+        const i = str.indexOf('::');
+        if (i === -1) return null;
+        const e = findModelEntry(str.slice(0, i), str.slice(i + 2));
+        return e ? { url: e.url, model: e.name, key: e.key, provider: e.providerName } : null;
+    },
     // Main-thread HTTP POST bridge for tools. The tool sandbox (null origin) is blocked by Chrome's
     // Local Network Access check; the page origin is not, so requests are made here instead.
     httpPost: async (toolName, [url, opts]) => {
