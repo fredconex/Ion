@@ -1234,6 +1234,12 @@
         .tri-btn.active.always { background: rgba(152, 195, 121, 0.2); color: var(--green); font-weight: 700; }
         .tri-btn.active.off { background: rgba(224, 108, 117, 0.2); color: var(--red); font-weight: 700; }
         .tri-btn.active.on { background: rgba(152, 195, 121, 0.2); color: var(--green); font-weight: 700; }
+        /* Ctrl held over a permission: preview applying it to every tool in the group */
+        /* No font-weight/padding/border changes here: they would shift the text. inset box-shadow takes no layout space. */
+        .tri-btn.group-preview { box-shadow: inset 0 0 0 1px currentColor; }
+        .tri-btn.group-preview.never { background: rgba(224, 108, 117, 0.32); color: var(--red); }
+        .tri-btn.group-preview.ask { background: rgba(229, 192, 123, 0.32); color: var(--yellow); }
+        .tri-btn.group-preview.always { background: rgba(152, 195, 121, 0.32); color: var(--green); }
         .duo-switch-row {
             display: flex; align-items: center; justify-content: space-between;
             gap: 8px;
@@ -13957,6 +13963,7 @@ function renderToolsList() {
 
         const builtinLabel = document.createElement('div');
         builtinLabel.className = 'tool-section-label';
+        builtinLabel.title = 'Hold Ctrl over a permission to preview it for the whole group, Ctrl+click to apply it to all';
         builtinLabel.innerHTML = `Built-in <span class="count">${builtinTools.length}</span>`;
         builtinPanel.appendChild(builtinLabel);
 
@@ -13973,6 +13980,7 @@ function renderToolsList() {
 
     const customLabel = document.createElement('div');
     customLabel.className = 'tool-section-label';
+    customLabel.title = 'Hold Ctrl over a permission to preview it for the whole group, Ctrl+click to apply it to all';
     customLabel.innerHTML = `Custom <span class="count">${customTools.length}</span>`;
     customLabelRow.appendChild(customLabel);
 
@@ -14009,6 +14017,71 @@ function renderToolsList() {
         toolsListEl.appendChild(note);
     }
 }
+
+// ---- Group permissions: hold Ctrl over a never/ask/always button to preview it on every tool in
+// that group (Built-in / Custom); Ctrl+click applies it to all of them. ----
+let _permCtrlDown = false;
+let _permHoverBtn = null;
+
+function _permSwitchBtn(target) {
+    const btn = target && target.closest ? target.closest('.tri-btn') : null;
+    return (btn && btn.closest('.tri-switch[data-tool]') && toolsListEl.contains(btn)) ? btn : null;
+}
+
+function refreshGroupPermPreview() {
+    toolsListEl.querySelectorAll('.tri-btn.group-preview').forEach(b => b.classList.remove('group-preview'));
+    if (!_permCtrlDown || !_permHoverBtn || !_permHoverBtn.isConnected) return;
+    const panel = _permHoverBtn.closest('.tool-section-panel');
+    if (!panel) return;
+    const val = _permHoverBtn.getAttribute('data-val');
+    panel.querySelectorAll('.tri-switch[data-tool] .tri-btn[data-val="' + val + '"]').forEach(b => b.classList.add('group-preview'));
+}
+
+function applyGroupPermission(panel, val) {
+    const switches = Array.from(panel.querySelectorAll('.tri-switch[data-tool]'));
+    switches.forEach(sw => {
+        setToolPermission(sw.getAttribute('data-tool'), val);
+        sw.querySelectorAll('.tri-btn').forEach(b => {
+            const bVal = b.getAttribute('data-val');
+            b.className = `tri-btn ${bVal} ${bVal === val ? 'active ' + bVal : ''}`;
+        });
+    });
+    const labelEl = panel.querySelector('.tool-section-label');
+    const groupName = labelEl && labelEl.firstChild ? labelEl.firstChild.textContent.trim() : 'group';
+    showToast(`Set ${switches.length} ${groupName} tool${switches.length === 1 ? '' : 's'} to "${val}"`, 'success');
+}
+
+toolsListEl.addEventListener('mouseover', (e) => {
+    _permCtrlDown = e.ctrlKey || e.metaKey;
+    const btn = _permSwitchBtn(e.target);
+    if (btn !== _permHoverBtn) _permHoverBtn = btn;
+    refreshGroupPermPreview();
+});
+toolsListEl.addEventListener('mouseleave', () => {
+    _permHoverBtn = null;
+    refreshGroupPermPreview();
+});
+// Capture phase so the per-row handler (single tool) doesn't also run.
+toolsListEl.addEventListener('click', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const btn = _permSwitchBtn(e.target);
+    if (!btn) return;
+    const panel = btn.closest('.tool-section-panel');
+    if (!panel) return;
+    e.stopPropagation();
+    e.preventDefault();
+    applyGroupPermission(panel, btn.getAttribute('data-val'));
+    _permHoverBtn = btn;
+    _permCtrlDown = true;
+    refreshGroupPermPreview();
+}, true);
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Control' || e.key === 'Meta') { _permCtrlDown = true; refreshGroupPermPreview(); }
+});
+document.addEventListener('keyup', (e) => {
+    if (e.key === 'Control' || e.key === 'Meta') { _permCtrlDown = e.ctrlKey || e.metaKey; refreshGroupPermPreview(); }
+});
+window.addEventListener('blur', () => { _permCtrlDown = false; refreshGroupPermPreview(); });
 
 const permBanner = document.getElementById('perm-banner');
 const permMsg = document.getElementById('perm-message');
