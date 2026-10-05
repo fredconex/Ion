@@ -185,7 +185,6 @@
             border: 1px solid var(--border-highlight);
             box-shadow: 0 20px 70px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.04);
             display: flex; flex-direction: column; overflow: hidden; position: relative;
-            transition: width 0.15s ease, height 0.15s ease, border-radius 0.15s ease, max-width 0.15s ease;
         }
         #window.window-maximized {
             width: 100vw; max-width: none; height: 100dvh;
@@ -3190,9 +3189,25 @@
 <div id="sidebar-overlay"></div>
 
 <div id="window" class="initializing">
+<script>
+// Apply the persisted window mode as early as possible so the window renders at
+// its final size on first paint (no flash/resize animation on reload).
+(function () {
+    try {
+        const stored = JSON.parse(localStorage.getItem('app_config_json') || 'null');
+        const mode = (stored && typeof stored === 'object' && !Array.isArray(stored))
+            ? (stored['window-mode'] || 'floating')
+            : 'floating';
+        if (mode === 'maximized') {
+            const w = document.getElementById('window');
+            if (w) w.classList.add('window-maximized');
+        }
+    } catch (e) {}
+})();
+</script>
 <div id="app-initializer">
         <div class="init-spinner"></div>
-        <div class="init-text">Loading Code Agent...</div>
+        <div class="init-text">Loading Ion...</div>
     </div>
     <div id="titlebar">
         <div class="window-dots">
@@ -3580,7 +3595,7 @@
     </div>
 
     <div id="window-body">
-        <div id="sidebar">
+        <div id="sidebar" class="collapsed">
             <div id="sidebar-body">
             <div id="sidebar-tabs">
                 <button id="btn-sidebar-collapse" class="icon-btn" title="Collapse sidebar"><span class="icon" style="font-size:15px;">chevron_left</span></button>
@@ -16981,8 +16996,10 @@ async function setWorkspace(handle) {
     const noFolderOverlay = document.getElementById('no-folder-overlay');
     if (noFolderOverlay) noFolderOverlay.classList.add('hidden');
 
-    // Restore the sidebar collapsed state we saved when leaving the previous workspace.
-    if (isSidebarCollapsed && window.innerWidth > 768) {
+    // Open a workspace with the sidebar expanded. If it is currently collapsed
+    // (e.g. freshly loaded, or left collapsed after closing a previous workspace),
+    // expand it and restore its saved width.
+    if (sidebarEl.classList.contains('collapsed') && window.innerWidth > 768) {
         setSidebarCollapsed(false);
         if (savedSidebarWidth) applySidebarWidth(savedSidebarWidth);
     }
