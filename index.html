@@ -697,6 +697,7 @@
         }
         .newtool-browse-row-install:hover:not(:disabled) { border-color: var(--border-highlight); background: rgba(0, 0, 0, 0.12); }
         .newtool-browse-row-install:disabled { opacity: 0.45; cursor: default; color: rgba(255, 255, 255, 0.3); }
+        .newtool-browse-row-install.update { border-color: var(--border-highlight); }
         #newtool-browse-status {
             display: flex; align-items: center; justify-content: center;
             gap: 8px; padding: 20px 10px; color: var(--dim); font-size: 11.5px;
@@ -5813,6 +5814,42 @@ function forgetPersistedToolFile(name) {
     delete filesMap[name];
     saveToolFilesState(filesMap);
 }
+// Tracks which installed tools came from the GitHub tools repo: { [fileKey]: { file } }
+//   file  = file name in the repo (e.g. "my_tool.js")
+// No hashes are stored: the local file is hashed on demand when the list is displayed and compared
+// against the `sha` GitHub returns in its listing (see refreshGithubLocalHashes / getGithubEntryStatus).
+function loadGithubToolState() {
+    try {
+        const stored = JSON.parse(localStorage.getItem('tool_github_state') || '{}');
+        return (stored && typeof stored === 'object' && !Array.isArray(stored)) ? stored : {};
+    } catch(e) { return {}; }
+}
+function saveGithubToolState(state) {
+    localStorage.setItem('tool_github_state', JSON.stringify(state));
+}
+function rememberGithubTool(fileKey, file) {
+    const state = loadGithubToolState();
+    state[fileKey] = { file };
+    saveGithubToolState(state);
+}
+function forgetGithubTool(fileKey) {
+    const state = loadGithubToolState();
+    if (!(fileKey in state)) return;
+    delete state[fileKey];
+    saveGithubToolState(state);
+}
+// Git blob SHA-1 ("blob <len>\0<bytes>"), the same hash GitHub returns as `sha` in its contents API.
+async function gitBlobSha(data) {
+    try {
+        const body = typeof data === 'string' ? new TextEncoder().encode(data) : new Uint8Array(data);
+        const header = new TextEncoder().encode(`blob ${body.length}\0`);
+        const all = new Uint8Array(header.length + body.length);
+        all.set(header, 0);
+        all.set(body, header.length);
+        const digest = await crypto.subtle.digest('SHA-1', all);
+        return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) { return null; }
+}
 
 function toolMetaError(name, msg) {
     return { name, description: '', parameters: { type: "object", properties: {} }, modes: [], permission: 'never', toolBox: 1, code: '', locked: true, builtin: false, error: msg, settings: [], settingsValues: {}, require_vision: false };
@@ -6045,6 +6082,8 @@ async function deleteToolFile(name, fileName) {
     delete permState[toolName];
     saveToolPermState(permState);
     forgetPersistedToolFile(toolName);
+    forgetGithubTool(toolName);
+    forgetGithubTool(tool.fileName || toolName);
     markToolDeleted(toolName);
     // fileKey can differ from toolName (e.g. TOOL_META.name mismatched the
     // on-disk file name) - clear both so the file can't resurrect via either key.
@@ -19707,6 +19746,7 @@ const newToolBrowseRefresh = document.getElementById('newtool-browse-refresh');
 
 let newToolBrowseFiles = null;      // cached listing: [{name, download_url, html_url, size}]
 let newToolBrowseSelected = null;   // currently selected entry
+let newToolBrowseFetchedAt = 0;     // when the listing was last fetched (ms)
 
 function newToolBrowseSetStatus(html) {
     newToolBrowseList.innerHTML = `<div id="newtool-browse-status">${html}</div>`;
@@ -19736,6 +19776,8 @@ async function loadGithubToolsList(forceRefresh) {
         newToolBrowseFiles = (Array.isArray(data) ? data : [])
             .filter(entry => entry.type === 'file' && /\.js$/i.test(entry.name))
             .sort((a, b) => a.name.localeCompare(b.name));
+        newToolBrowseFetchedAt = Date.now();
+        await refreshGithubLocalHashes();
         renderGithubToolsList();
     } catch (e) {
         newToolBrowseFiles = null;
@@ -19745,14 +19787,51 @@ async function loadGithubToolsList(forceRefresh) {
     }
 }
 
-function isGithubEntryInstalled(entry) {
-    // Prefer the parsed TOOL_META.name; otherwise match by file name.
+function findInstalledToolForEntry(entry) {
+    // 1) Tools we installed from this repo file (recorded by file name).
+    const state = loadGithubToolState();
+    for (const [key, rec] of Object.entries(state)) {
+        if (rec && rec.file === entry.name) {
+            const t = Object.values(toolRegistry).find(t => (t.fileName || t.name) === key);
+            if (t) return t;
+        }
+    }
+    // 2) Prefer the parsed TOOL_META.name; otherwise match by file name.
     if (entry._source) {
         const name = deriveToolNameFromFile(entry.name, entry._source);
-        return !!toolRegistry[name];
+        if (toolRegistry[name]) return toolRegistry[name];
     }
     const fileKey = entry.name.replace(/\.js$/i, '');
-    return Object.values(toolRegistry).some(t => (t.fileName || t.name) === fileKey);
+    return Object.values(toolRegistry).find(t => (t.fileName || t.name) === fileKey) || null;
+}
+function isGithubEntryInstalled(entry) {
+    return !!findInstalledToolForEntry(entry);
+}
+
+// Git blob hash of each installed tool's local file, computed fresh every time the list is shown.
+// Keyed by the file's source text, so unchanged files are never re-hashed between renders.
+let githubLocalShaCache = new Map();
+async function refreshGithubLocalHashes() {
+    if (!newToolBrowseFiles) return;
+    const next = new Map();
+    for (const entry of newToolBrowseFiles) {
+        const tool = findInstalledToolForEntry(entry);
+        if (!tool || tool.builtin) continue;
+        const local = registry.files[toolFilePath(tool.fileName || tool.name)];
+        if (typeof local !== 'string' || next.has(local)) continue;
+        next.set(local, githubLocalShaCache.get(local) || await gitBlobSha(local));
+    }
+    githubLocalShaCache = next;
+}
+
+// 'none' (not installed) | 'current' (local file's hash equals GitHub's) | 'update' (differs, or couldn't be hashed)
+function getGithubEntryStatus(entry) {
+    const tool = findInstalledToolForEntry(entry);
+    if (!tool) return 'none';
+    if (tool.builtin) return 'current';
+    const local = registry.files[toolFilePath(tool.fileName || tool.name)];
+    const localSha = typeof local === 'string' ? githubLocalShaCache.get(local) : null;
+    return (localSha && entry.sha && localSha === entry.sha) ? 'current' : 'update';
 }
 
 function renderGithubToolsList() {
@@ -19773,16 +19852,18 @@ function renderGithubToolsList() {
     files.forEach(entry => {
         const item = document.createElement('div');
         item.className = 'newtool-browse-item';
-        const installed = isGithubEntryInstalled(entry);
+        const status = getGithubEntryStatus(entry);
         if (newToolBrowseSelected && newToolBrowseSelected.name === entry.name) item.classList.add('selected');
-        if (installed) item.classList.add('installed');
+        if (status === 'current') item.classList.add('installed');
         item.innerHTML = `
             <div class="newtool-browse-item-row">
                 <span class="icon icon-chevron">expand_more</span>
                 <span class="newtool-browse-row-name">${entry.name}</span>
-                ${installed
+                ${status === 'current'
                     ? '<button type="button" class="newtool-browse-row-install" disabled>Installed</button>'
-                    : '<button type="button" class="newtool-browse-row-install">Install</button>'}
+                    : status === 'update'
+                        ? '<button type="button" class="newtool-browse-row-install update" title="The repo version differs from the installed one">Update</button>'
+                        : '<button type="button" class="newtool-browse-row-install">Install</button>'}
             </div>
             <div class="newtool-browse-item-desc dim-placeholder"></div>
         `;
@@ -19841,27 +19922,52 @@ newToolBrowseSearch.addEventListener('input', () => renderGithubToolsList());
 newToolBrowseRefresh.addEventListener('click', () => loadGithubToolsList(true));
 
 async function installGithubEntry(entry) {
-    let source = entry._source;
-    if (typeof source !== 'string') {
-        try {
-            const resp = await fetch(entry.download_url);
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            source = await resp.text();
-            entry._source = source;
-        } catch (e) {
-            newToolShowError(`Could not download that tool: ${(e && e.message) ? e.message : 'network error'}`);
-            return false;
-        }
+    // Always download fresh so we install (and compare against) what GitHub serves right now.
+    let source;
+    try {
+        const resp = await fetch(entry.download_url, { cache: 'no-store' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const bytes = await resp.arrayBuffer();
+        source = new TextDecoder('utf-8').decode(bytes);
+        const remoteSha = await gitBlobSha(bytes);
+        if (remoteSha) entry.sha = remoteSha;   // the repo may have moved on since the listing was fetched
+    } catch (e) {
+        newToolShowError(`Could not download that tool: ${(e && e.message) ? e.message : 'network error'}`);
+        return false;
     }
+    entry._source = source;
+
+    const existing = findInstalledToolForEntry(entry);
+    if (existing && !existing.builtin) {
+        // Update in place: keeps the file name plus the tool's lock/permission/settings state.
+        const key = existing.fileName || existing.name;
+        const fp = toolFilePath(key);
+        registry.files[fp] = source;
+        registry.meta[fp] = { kind: 'file', size: source.length, isBinary: false, virtual: true };
+        persistToolFile(key, source);
+        unmarkToolDeleted(key);
+        rememberGithubTool(key, entry.name);
+        rebuildToolRegistryFromFiles();
+        refreshAgentFileTab(fp, source);
+        renderExplorerTree();
+        renderToolsList();
+        showToast(`Updated ${entry.name}`, 'success');
+        await refreshGithubLocalHashes();
+        renderGithubToolsList();
+        return true;
+    }
+
     const name = deriveToolNameFromFile(entry.name, source);
     const result = createToolFile(name, source);
     if (!result.ok) {
         newToolShowError(result.error);
         return false;
     }
+    rememberGithubTool(name, entry.name);
     renderExplorerTree();
     renderToolsList();
     showToast(`Installed ${entry.name} as ${result.path}`, 'success');
+    await refreshGithubLocalHashes();
     renderGithubToolsList();
     return true;
 }
