@@ -361,6 +361,18 @@
             font-family: var(--font-mono); white-space: nowrap;
             overflow: hidden; text-overflow: ellipsis;
         }
+/* Running session: shimmering gradient sweeps across the caption text (same cadence as running tools). */
+        .session-item-row.running .session-item-title {
+            background: linear-gradient(90deg, var(--fg) 0%, var(--fg) 35%, var(--primary) 50%, var(--fg) 65%, var(--fg) 100%);
+            background-size: 250% 100%;
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent; color: transparent;
+            animation: running-tool-shimmer 1.6s linear infinite;
+        }
+        .session-item-row.running .session-item-title .green { -webkit-text-fill-color: var(--green); }
+        @media (prefers-reduced-motion: reduce) {
+            .session-item-row.running .session-item-title { animation: none; background-position: 50% 0; }
+        }
         .session-item-meta-row {
             display: flex; align-items: center; gap: 6px;
             font-size: 10px; color: var(--dim); white-space: nowrap;
@@ -3132,9 +3144,14 @@
     #sessions-popover { width: min(420px, calc(100vw - 16px)); padding: 8px; box-sizing: border-box; }
     #sessions-popover .popover-header { gap: 8px; }
     #sessions-popover .popover-header-title { flex-shrink: 0; }
+    #sessions-popover .popover-breadcrumb { flex: 1 1 0; min-width: 0; gap: 4px; }
+    .popover-breadcrumb .crumb { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+    .popover-breadcrumb .crumb-current { flex-shrink: 0; color: var(--primary); }
+    .popover-breadcrumb .crumb-current .icon { font-size: 14px; }
+    .popover-breadcrumb .crumb-sep { font-size: 14px; color: var(--dim); flex-shrink: 0; }
     #sessions-list { padding-right: 0; scrollbar-gutter: auto; }
-    #ws-popover-row { display: flex; align-items: center; gap: 5px; flex: 1 1 0; min-width: 0; padding: 3px 8px; background: var(--bg-hover); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; }
-    #ws-popover-row .icon { font-size: 14px; color: var(--primary); flex-shrink: 0; }
+    #ws-popover-row { flex: 0 1 auto; text-transform: none; letter-spacing: 0; font-size: 11px; }
+    #ws-popover-row .icon { font-size: 14px; color: var(--dim); flex-shrink: 0; }
     #ws-popover-name { color: var(--fg); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     @media (max-width: 768px) { #sessions-popover { width: calc(100vw - 16px); max-width: none; } }
     #explorer-io-menu { display: none; position: fixed; background: var(--bg-panel); border: 1px solid var(--border-highlight); border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.85); padding: 5px; min-width: 190px; max-width: 240px; z-index: 200; }
@@ -3220,14 +3237,17 @@
     <div id="sessions-popover-overlay">
         <div id="sessions-popover">
             <div class="popover-header">
-                <div class="popover-header-title">
-                    <span class="icon" style="font-size: 14px;">view_list</span>
-                    <span>Sessions</span>
-                </div>
-                <div id="ws-popover-row" title="">
+                <nav class="popover-header-title popover-breadcrumb" aria-label="Breadcrumb">
+                    <span id="ws-popover-row" class="crumb crumb-folder" title="">
                     <span id="ws-popover-icon" class="icon">folder</span>
                     <span id="ws-popover-name"></span>
-                </div>
+                    </span>
+                    <span id="ws-popover-sep" class="icon crumb-sep" aria-hidden="true">chevron_right</span>
+                    <span class="crumb crumb-current" aria-current="page">
+                        <span class="icon">view_list</span>
+                        <span>Sessions</span>
+                    </span>
+                </nav>
                 <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                     <button id="btn-clear-all-sessions" class="icon-btn" title="Clear all sessions (including local history)">
                         <span class="icon" style="font-size: 15px;">delete_sweep</span>
@@ -9869,24 +9889,28 @@ function renderSessionPopoverList() {
 
         // Only toggle the active class when it actually changes, so the
         // CSS transition fires at most once per state change.
-        const wantClass = `session-item-row ${isActive ? 'active' : ''}`;
+        const wantClass = `session-item-row ${isActive ? 'active' : ''} ${isGeneratingNow ? 'running' : ''}`.replace(/\s+/g, ' ').trim();
         if (row.className !== wantClass) row.className = wantClass;
 
+        // Update the title, run meta and id rows independently and only when their HTML changes.
+        // The title node must persist across the 1s run-time tick, otherwise its shimmer animation restarts every second.
         const info = row.querySelector('.session-item-info');
-        info.innerHTML = `
-            <div class="session-item-title">
-                ${escapeHTML(displayTitle)}
-                ${isActive ? '<span class="green" style="font-size:11px; margin-left:4px;">●</span>' : ''}
-            </div>
-            <div class="session-item-meta-row">
-                <span class="meta-field">${msgCount} msgs</span>
-                <span class="meta-field">· run ${runStr}</span>
-            </div>
-            <div class="session-item-meta-row">
-                <span class="meta-id">${escapeHTML(s.id)}</span>
-                <span class="meta-field">· ${dateStr}</span>
-            </div>
-        `;
+        if (!info.children.length) {
+            for (let i = 0; i < 3; i++) {
+                const d = document.createElement('div');
+                d.className = i === 0 ? 'session-item-title' : 'session-item-meta-row';
+                info.appendChild(d);
+            }
+        }
+        const parts = [
+            `${escapeHTML(displayTitle)}${isActive ? '<span class="green" style="font-size:11px; margin-left:4px;">●</span>' : ''}`,
+            `<span class="meta-field">${msgCount} msgs</span><span class="meta-field">· run ${runStr}</span>`,
+            `<span class="meta-id">${escapeHTML(s.id)}</span><span class="meta-field">· ${dateStr}</span>`
+        ];
+        parts.forEach((html, i) => {
+            const el = info.children[i];
+            if (el._html !== html) { el.innerHTML = html; el._html = html; }
+        });
         const delBtn = row.querySelector('.btn-del-session');
         if (delBtn) delBtn.title = keys.length > 1 ? 'Delete session' : 'Clear session';
     });
@@ -16178,7 +16202,9 @@ function updateWorkspaceTitle() {
     nm.textContent = name;
     if (ic) ic.textContent = rootHandle && rootHandle.isVirtual ? 'cloud_queue' : 'folder';
     row.title = rootHandle ? (rootHandle.isVirtual ? 'Virtual workspace: ' : 'Workspace: ') + name : '';
-    row.style.display = name ? 'flex' : 'none';
+    row.style.display = name ? 'inline-flex' : 'none';
+    const sep = document.getElementById('ws-popover-sep');
+    if (sep) sep.style.display = name ? '' : 'none';
 }
 let HAS_FS_API = typeof window.showDirectoryPicker === 'function' && window.isSecureContext !== false;
 function markNoFsApi() {   // called when the picker turns out to be unusable at runtime
