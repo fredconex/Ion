@@ -2941,7 +2941,9 @@
  #sidebar,#main-pane{border-radius:22px;border:1px solid var(--border);
   background:linear-gradient(180deg,#131315,#0e0e10);
   box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 12px 32px rgba(0,0,0,.4)}
- #sidebar{margin-right:4px}
+ /* Gap between the panels belongs to the resizer (10px) so its line is centered in it. */
+ #sidebar{margin-right:0}
+ #sidebar-resizer{flex-basis:10px}
  #chat-view,#chat-container,#chat,#tabs-bar{background:transparent}
  .icon-btn{width:30px;height:30px;border-radius:10px}
  .icon-btn:hover{background:var(--bg-hover);border-color:transparent}
