@@ -7007,7 +7007,35 @@ function registerModelsVirtualFile() {
     registry.meta[MODELS_FILE] = { kind: 'file', size: text.length, isBinary: false, virtual: true };
 }
 
+// Every model gets a stable UUID, stored in its models.json entry. Tools only ever see this id:
+// the URL, API key and real model name never leave the main page (see callModel in TOOL_API_METHODS).
+const MODEL_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function newModelUuid() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    const b = crypto.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+// Assigns a UUID to every model that lacks a valid, unique one. Returns true if anything changed.
+function ensureModelUuids() {
+    if (!Array.isArray(MODEL_PROVIDERS)) return false;
+    const seen = new Set();
+    let changed = false;
+    MODEL_PROVIDERS.forEach(p => (p.models || []).forEach(m => {
+        let id = (typeof m.uuid === 'string' && MODEL_UUID_RE.test(m.uuid)) ? m.uuid.toLowerCase() : '';
+        if (!id || seen.has(id)) id = newModelUuid();
+        if (m.uuid !== id) { m.uuid = id; changed = true; }
+        seen.add(id);
+    }));
+    return changed;
+}
+
 function saveModels() {
+    ensureModelUuids();
     localStorage.setItem('models_json', JSON.stringify(MODEL_PROVIDERS));
     registerModelsVirtualFile();
 }
@@ -7037,6 +7065,7 @@ function getAllModelEntries() {
         (p.models || []).forEach(m => {
             const rawName = m.name || '';
             out.push({
+                uuid: (typeof m.uuid === 'string' ? m.uuid.toLowerCase() : ''),
                 providerName: p.provider || 'Unknown provider',
                 name: rawName,
                 displayName: shortenModelName(rawName),
@@ -7052,6 +7081,19 @@ function getAllModelEntries() {
 
 function findModelEntry(providerName, modelName) {
     return getAllModelEntries().find(e => e.providerName === providerName && e.name === modelName) || null;
+}
+
+// Resolves a model UUID to its entry. Also accepts the legacy 'Provider::model' id so tool settings
+// saved before UUIDs existed keep working.
+function findModelEntryById(id) {
+    const s = String(id || '').trim();
+    if (!s) return null;
+    const all = getAllModelEntries();
+    const byUuid = all.find(e => e.uuid && e.uuid === s.toLowerCase());
+    if (byUuid) return byUuid;
+    const i = s.indexOf('::');
+    if (i === -1) return null;
+    return all.find(e => e.providerName === s.slice(0, i) && e.name === s.slice(i + 2)) || null;
 }
 
 function getSelectedModelKey() {
@@ -13689,8 +13731,9 @@ function _tmpRender() {
         return;
     }
     P.idx = Math.min(P.idx, entries.length - 1);
+    const curEntry = findModelEntryById(P.current);
     P.list.innerHTML = entries.map((e, i) => {
-        const isCurrent = `${e.providerName}::${e.name}` === P.current;
+        const isCurrent = !!curEntry && curEntry.uuid === e.uuid;
         const classes = ['msd-item'];
         if (i === P.idx) classes.push('highlighted');
         if (isCurrent) classes.push('current');
@@ -13709,7 +13752,7 @@ function _tmpRender() {
 
 function _tmpPick(entry) {
     const P = _toolModelPicker;
-    const id = `${entry.providerName}::${entry.name}`;
+    const id = entry.uuid;
     const cb = P.onPick;
     closeToolModelPicker();
     if (cb) cb(id, entry);
@@ -13731,7 +13774,8 @@ function openToolModelPicker(anchor, currentId, onPick) {
     if (P.visible) closeToolModelPicker();
     P.visible = true; P.anchor = anchor; P.current = currentId || ''; P.onPick = onPick; P.filter = '';
     const entries = getAllModelEntries();
-    const ci = entries.findIndex(e => `${e.providerName}::${e.name}` === P.current);
+    const curEntry = findModelEntryById(P.current);
+    const ci = curEntry ? entries.findIndex(e => e.uuid === curEntry.uuid) : -1;
     P.idx = ci >= 0 ? ci : 0;
     anchor.classList.add('open');
     P.overlay.style.display = 'block';
@@ -13758,16 +13802,15 @@ function openToolModelPicker(anchor, currentId, onPick) {
 function setToolModelBtnLabel(btn, id) {
     const nameEl = btn.querySelector('.msb-name'), provEl = btn.querySelector('.msb-provider');
     const str = String(id || '');
-    const i = str.indexOf('::');
-    const entry = i === -1 ? null : findModelEntry(str.slice(0, i), str.slice(i + 2));
+    const entry = findModelEntryById(str);
     if (entry) {
         nameEl.textContent = entry.displayName || entry.name;
         provEl.textContent = entry.providerName;
         btn.title = `${entry.name} — ${entry.providerName}`;
     } else if (str) {
-        nameEl.textContent = i === -1 ? str : str.slice(i + 2);
+        nameEl.textContent = 'Missing model';
         provEl.textContent = '(not in models.json)';
-        btn.title = str;
+        btn.title = 'The selected model no longer exists in models.json. Pick another one.';
     } else {
         nameEl.textContent = 'Select model';
         provEl.textContent = '';
@@ -14707,6 +14750,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         MODEL_PROVIDERS = seedDefaultModels();
         localStorage.setItem('models_json', JSON.stringify(MODEL_PROVIDERS));
     }
+    if (ensureModelUuids()) localStorage.setItem('models_json', JSON.stringify(MODEL_PROVIDERS));
     renderModelDropdown();
     registerModelsVirtualFile();
 
@@ -17898,8 +17942,11 @@ async function runTool(runId, toolMeta, args) {
         // POST via the main page (the sandboxed tool frame has an opaque origin and cannot reach
         // loopback/LAN). Returns { ok, status, text } or { error }.
         httpPost: (url, opts) => callApi(runId, 'httpPost', [String(url), opts || {}]),
+        // Lists models as [{ id: <uuid>, provider, name }]. No URL, key or connection details.
         listModels: () => callApi(runId, 'listModels', []),
-        getModelInfo: (id) => callApi(runId, 'getModelInfo', [String(id || '')])
+        // Ion makes the request: it resolves the UUID to the model's URL/key, adds auth and the model
+        // name, and returns { ok, status, text } or { error }. opts: { path, body, timeoutMs }.
+        callModel: (id, opts) => callApi(runId, 'callModel', [String(id || ''), opts || {}])
     };
     try {
         const factory = new Function('args', 'api',
@@ -17930,16 +17977,79 @@ let toolWorker = null;
 let toolWorkerRunId = 0;
 const toolWorkerPending = new Map();
 
+// A tool may use a model only if the user picked it in one of that tool's own 'model' settings.
+function toolMayUseModel(toolName, entry) {
+    const tool = toolRegistry[toolName];
+    if (!tool || !entry) return false;
+    return (tool.settings || []).some(def => {
+        if (def.type !== 'model') return false;
+        const e = findModelEntryById(getToolSettingValue(toolName, def.key));
+        return !!e && e.uuid === entry.uuid;
+    });
+}
+
 const TOOL_API_METHODS = {
-    // Lists models from models.json: [{ id: 'Provider::model', provider, name, url }] (keys are not exposed).
-    listModels: async () => getAllModelEntries().map(e => ({ id: `${e.providerName}::${e.name}`, provider: e.providerName, name: e.name, url: e.url })),
-    // Resolves a 'Provider::model' id (from a 'model' setting) to { url, model, key, provider } or null.
-    getModelInfo: async (toolName, [id]) => {
-        const str = String(id || '');
-        const i = str.indexOf('::');
-        if (i === -1) return null;
-        const e = findModelEntry(str.slice(0, i), str.slice(i + 2));
-        return e ? { url: e.url, model: e.name, key: e.key, provider: e.providerName } : null;
+    // Lists models as [{ id: <uuid>, provider, name }]. URLs and keys are never exposed to tools.
+    listModels: async () => getAllModelEntries().map(e => ({ id: e.uuid, provider: e.providerName, name: e.name })),
+    // Calls a model on behalf of a tool. The tool passes only a UUID; the URL, API key and real model
+    // name are resolved and applied here, so a tool can never read or exfiltrate them. A tool may only
+    // call models the user assigned to it through one of its own 'model' settings.
+    callModel: async (toolName, [id, opts]) => {
+        const entry = findModelEntryById(id);
+        if (!entry || !toolMayUseModel(toolName, entry)) {
+            return { error: 'model not found or not assigned to this tool' };
+        }
+        opts = opts || {};
+
+        // Only a plain relative path is accepted, so the request can never leave the model's own host.
+        const path = String(opts.path || '');
+        if (!/^\/[A-Za-z0-9._~\-]+(\/[A-Za-z0-9._~\-]+)*$/.test(path) || path.split('/').includes('..')) {
+            return { error: 'invalid path' };
+        }
+        const base = String(entry.url || '').trim().replace(/\/+$/, '');
+        let baseUrl;
+        try { baseUrl = new URL(base); } catch (e) { return { error: 'model endpoint is not configured' }; }
+        if (baseUrl.protocol !== 'http:' && baseUrl.protocol !== 'https:') return { error: 'model endpoint is not configured' };
+        let p = path;
+        if (/\/v1$/i.test(base) && /^\/v1(\/|$)/i.test(p)) p = p.slice(3);   // provider URL already ends in /v1
+        if (base.toLowerCase().endsWith(p.toLowerCase())) p = '';               // provider URL already is the endpoint
+        let target;
+        try { target = new URL(base + p); } catch (e) { return { error: 'invalid path' }; }
+        if (target.origin !== baseUrl.origin) return { error: 'invalid path' };
+
+        // Body: forced to this model's real name. Auth header is added here; tools cannot set headers.
+        let bodyStr = typeof opts.body === 'string' ? opts.body : (opts.body != null ? JSON.stringify(opts.body) : undefined);
+        if (bodyStr) {
+            try {
+                const o = JSON.parse(bodyStr);
+                if (o && typeof o === 'object' && !Array.isArray(o)) { o.model = entry.name; bodyStr = JSON.stringify(o); }
+            } catch (e) { /* not JSON: send as-is */ }
+        }
+        const headers = { 'Content-Type': 'application/json' };
+        if (entry.key) headers['Authorization'] = `Bearer ${entry.key}`;
+
+        const ms = Number(opts.timeoutMs);
+        const timeoutMs = Number.isFinite(ms) && ms > 0 ? Math.min(ms, 120000) : 15000;
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+        try {
+            const res = await fetch(target.href, {
+                method: 'POST',
+                headers,
+                body: bodyStr,
+                signal: ctrl.signal,
+                redirect: 'error',
+                credentials: 'omit'
+            });
+            let text = (await res.text()).slice(0, 2000000);
+            if (entry.key) text = text.split(entry.key).join('[redacted]');   // in case a server echoes it back
+            return { ok: res.ok, status: res.status, text };
+        } catch (e) {
+            // Generic errors only: fetch messages can contain the URL.
+            return { error: e.name === 'AbortError' ? 'timeout' : 'unreachable' };
+        } finally {
+            clearTimeout(timer);
+        }
     },
     // Main-thread HTTP POST bridge for tools. The tool sandbox (null origin) is blocked by Chrome's
     // Local Network Access check; the page origin is not, so requests are made here instead.
@@ -18087,7 +18197,15 @@ const TOOL_API_METHODS = {
     isSensitiveFile: async (toolName, [fp]) => isSensitiveUserFile(fp),
     // Generic per-tool settings lookup: reads TOOL_META.settings-declared values, configured
     // per tool in Settings > Tools, falling back to that setting's declared default.
-    getSetting: async (toolName, [key]) => getToolSettingValue(toolName, key),
+    getSetting: async (toolName, [key]) => {
+        const v = getToolSettingValue(toolName, key);
+        const def = ((toolRegistry[toolName] && toolRegistry[toolName].settings) || []).find(s => s.key === key);
+        if (def && def.type === 'model' && v) {
+            const e = findModelEntryById(v);   // normalizes legacy 'Provider::model' values to a UUID
+            return e ? e.uuid : v;
+        }
+        return v;
+    },
     validateDisplayHtml: async (toolName, [html, opts]) => {
         if (typeof html !== 'string' || !html.trim()) {
             return { ok: false, error: 'Empty displayHtml' };
@@ -18915,7 +19033,7 @@ async function submitPrompt() {
 
 async function runTask(task, msgId, imageUrls, sessionId) {
     const runSessionId = sessionId || state.activeSessionId;
-    const { url: apiUrl, model, key: apiKey, vision: runModelVision } = getCurrentModelInfo();
+    let { url: apiUrl, model, key: apiKey, vision: runModelVision } = getCurrentModelInfo();
     const runCtx = sessionCtx(runSessionId);
     const runGen = getGenState(runSessionId);
     const isRunLive = () => runSessionId === state.activeSessionId;
@@ -18958,7 +19076,7 @@ async function runTask(task, msgId, imageUrls, sessionId) {
     let isDone = false;
 
     const runMode = state.mode;
-    const activeTools = getToolsForMode(runMode, !!runModelVision);
+    let activeTools = getToolsForMode(runMode, !!runModelVision);
     const runModeSession = state.sessions[runSessionId];
 
     // The system prompt depends only on the mode, so rebuild it each run.
