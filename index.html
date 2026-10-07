@@ -14262,6 +14262,13 @@ function remountPendingUIForSession(sid) {
     pendingUIQueue.filter(r => r.sessionId === sid).forEach(r => { try { r.mount(); } catch (_) {} });
 }
 
+// A waiting card whose tool run is gone (aborted, timed out, crashed, finished) can never be answered: drop it.
+function reapDeadPendingUI() {
+    const live = new Set(toolWorkerPending.values());
+    pendingUIQueue.filter(r => !r.entry || !live.has(r.entry))
+        .forEach(r => { try { r.finish(null, true); } catch (_) {} });
+}
+
 function cancelPendingUIForSession(sid) {
     const mine = pendingUIQueue.filter(r => r.sessionId === sid);
     mine.forEach(r => { try { r.finish(null, true); } catch (_) {} });
@@ -15307,7 +15314,7 @@ function showToast(message, kind = 'info', durationMs = 2600) {
 // chatHTML: the live spinner, retry status and the "Preparing tool call" line.
 // Persisting them left frozen copies behind that piled up (next to the fresh
 // spinner) every time you switched away from and back to a running session.
-const TRANSIENT_LIVE_SELECTOR = '[data-live-spinner], .retry-status, [data-pending-tool]';
+const TRANSIENT_LIVE_SELECTOR = '[data-live-spinner], .retry-status, [data-pending-tool], .tool-ui-wait';
 
 function stripTransientLiveUI(root) {
     root.querySelectorAll(TRANSIENT_LIVE_SELECTOR).forEach(el => el.remove());
@@ -18287,7 +18294,8 @@ const TOOL_API_METHODS = {
         // Interactive choice (e.g. show_options): mount buttons and wait for user selection
         return await new Promise((resolve) => {
             const sid = sessionId || state.activeSessionId;
-            const req = { sessionId: sid, toolName, html, resolve, el: null, done: false };
+            reapDeadPendingUI();
+            const req = { sessionId: sid, toolName, html, resolve, el: null, done: false, entry: entry || null };
 
             const finish = (choice, cancelled) => {
                 if (req.done) return;
@@ -18327,6 +18335,7 @@ const TOOL_API_METHODS = {
                 const boxBody = runningBox ? runningBox.querySelector('.tool-box-body') : null;
 
                 if (boxBody) {
+                    boxBody.querySelectorAll(':scope > .tool-ui-wait').forEach(n => { if (!pendingUIQueue.some(r => r.el === n)) n.remove(); });
                     boxBody.appendChild(el);
                 } else {
                     const target = (runningBox && runningBox.parentNode) ? runningBox.parentNode : term;
@@ -18415,7 +18424,8 @@ function getToolWorker() {
 
     // 2. Route everything from the iframe into the existing message handler.
     window.addEventListener('message', (e) => {
-        if (!e.data || !e.data.tool) return;
+        // Each worker spawn adds its own window listener and old ones are never removed: only accept messages from THIS worker's iframe, or every message is handled once per past spawn.
+        if (e.source !== iframe.contentWindow || !e.data || !e.data.tool) return;
         if (e.data.tool === 'ready') {
             toolWorkerReady = true;
             for (const d of toolWorkerOutbox) iframe.contentWindow.postMessage({ type: 'tool-post', data: d }, '*');
@@ -18428,6 +18438,7 @@ function getToolWorker() {
                 entry.reject(new Error(`Tool worker crashed: ${e.data.message || 'unknown error'}`));
             }
             toolWorkerPending.clear();
+            reapDeadPendingUI();
             if (iframe.parentNode) iframe.remove();
             toolWorker = toolWorkerIframe = null;
             toolWorkerReady = false;
@@ -18480,6 +18491,7 @@ function handleToolWorkerMessage(msg) {
         const entry = toolWorkerPending.get(msg.runId);
         if (!entry) return;
         toolWorkerPending.delete(msg.runId);
+        reapDeadPendingUI();
         clearTimeout(entry.timeoutId);
         if (msg.error) entry.reject(new Error(msg.error));
         else {
@@ -18508,6 +18520,7 @@ function runToolInWorker(toolName, toolMeta, args, sessionId, runningBox) {
             toolWorkerPending.delete(runId);
             reject(new Error(`Tool "${toolName}" timed out after ${timeoutMs / 1000}s.`));
             if (toolWorker) { toolWorker.terminate(); toolWorker = null; }
+            reapDeadPendingUI();
         }, timeoutMs);
         toolWorkerPending.set(runId, {
             resolve, reject, timeoutId, toolName,
@@ -18547,6 +18560,7 @@ function abortToolRunsForSession(sid, reason = 'Aborted by user') {
 
     toolWorkerOutbox.length = 0;                // don't replay queued runs into the next worker
     if (toolWorker) toolWorker.terminate();     // kills JS, Pyodide, everything
+    reapDeadPendingUI();
 }
 
 function describeToolAction(name, args) {
