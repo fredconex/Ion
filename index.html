@@ -16127,6 +16127,7 @@ function abortGeneration({ toast = null, showResumeUI = true, sessionId } = {}) 
     const wasCompressing = !!gen.compressionInFlight;
 
     cancelPendingUIForSession(sid);
+    abortToolRunsForSession(sid);
 
     const queuedForThisSession = permQueue.find(r => r.sessionId === sid);
     if (queuedForThisSession && sid === state.activeSessionId && permBanner.style.display === 'flex') {
@@ -17994,7 +17995,7 @@ const TOOL_API_METHODS = {
     // Calls a model on behalf of a tool. The tool passes only a UUID; the URL, API key and real model
     // name are resolved and applied here, so a tool can never read or exfiltrate them. A tool may only
     // call models the user assigned to it through one of its own 'model' settings.
-    callModel: async (toolName, [id, opts]) => {
+    callModel: async (toolName, [id, opts], sessionId, runEntry) => {
         const entry = findModelEntryById(id);
         if (!entry || !toolMayUseModel(toolName, entry)) {
             return { error: 'model not found or not assigned to this tool' };
@@ -18031,6 +18032,7 @@ const TOOL_API_METHODS = {
         const ms = Number(opts.timeoutMs);
         const timeoutMs = Number.isFinite(ms) && ms > 0 ? Math.min(ms, 120000) : 15000;
         const ctrl = new AbortController();
+        runEntry?.abortCtrl?.signal.addEventListener('abort', () => ctrl.abort(), { once: true });
         const timer = setTimeout(() => ctrl.abort(), timeoutMs);
         try {
             const res = await fetch(target.href, {
@@ -18053,7 +18055,7 @@ const TOOL_API_METHODS = {
     },
     // Main-thread HTTP POST bridge for tools. The tool sandbox (null origin) is blocked by Chrome's
     // Local Network Access check; the page origin is not, so requests are made here instead.
-    httpPost: async (toolName, [url, opts]) => {
+    httpPost: async (toolName, [url, opts], sessionId, runEntry) => {
         let u;
         try { u = new URL(String(url)); } catch (e) { return { error: 'invalid URL' }; }
         if (u.protocol !== 'http:' && u.protocol !== 'https:') return { error: 'only http(s) URLs are allowed' };
@@ -18065,6 +18067,7 @@ const TOOL_API_METHODS = {
             for (const [k, v] of Object.entries(opts.headers)) headers[String(k)] = String(v);
         }
         const ctrl = new AbortController();
+        runEntry?.abortCtrl?.signal.addEventListener('abort', () => ctrl.abort(), { once: true });
         const timer = setTimeout(() => ctrl.abort(), timeoutMs);
         try {
             const res = await fetch(u.href, {
@@ -18462,15 +18465,15 @@ function handleToolWorkerMessage(msg) {
         const entry = toolWorkerPending.get(msg.runId);
         const impl = TOOL_API_METHODS[msg.method];
         if (!impl || !entry) {
-            toolWorker.postMessage({ type: 'api-result', id: msg.id, error: `Unknown api method: ${msg.method}` });
+            toolWorker?.postMessage({ type: 'api-result', id: msg.id, error: `Unknown api method: ${msg.method}` });
             return;
         }
         (async () => {
             try {
                 const value = await impl(entry.toolName, msg.args || [], entry.sessionId, entry);
-                toolWorker.postMessage({ type: 'api-result', id: msg.id, value });
+                toolWorker?.postMessage({ type: 'api-result', id: msg.id, value });
             } catch (err) {
-                toolWorker.postMessage({ type: 'api-result', id: msg.id, error: err.message || String(err) });
+                toolWorker?.postMessage({ type: 'api-result', id: msg.id, error: err.message || String(err) });
             }
         })();
     } else if (msg.type === 'done') {
@@ -18509,7 +18512,8 @@ function runToolInWorker(toolName, toolMeta, args, sessionId, runningBox) {
         toolWorkerPending.set(runId, {
             resolve, reject, timeoutId, toolName,
             sessionId: sessionId || state.activeSessionId,
-            box: runningBox || null
+            box: runningBox || null,
+            abortCtrl: new AbortController()
         });
         worker.postMessage({
             type: 'run',
@@ -18518,6 +18522,31 @@ function runToolInWorker(toolName, toolMeta, args, sessionId, runningBox) {
             args
         });
     });
+}
+
+function abortToolRunsForSession(sid, reason = 'Aborted by user') {
+    const mine = [...toolWorkerPending].filter(([, e]) => e.sessionId === sid);
+    if (!mine.length) return;
+
+    for (const [runId, e] of mine) {
+        toolWorkerPending.delete(runId);        // later api calls from the dead run get refused
+        clearTimeout(e.timeoutId);
+        try { e.abortCtrl && e.abortCtrl.abort(); } catch (_) {}   // cancels host-side fetches
+        if (e.box) e.box.dataset.aborted = 'true';
+        e.reject(Object.assign(new Error(reason), { aborted: true }));
+    }
+
+    // One shared worker: other sessions' runs die with it, so fail them cleanly instead of hanging.
+    for (const [runId, e] of [...toolWorkerPending]) {
+        toolWorkerPending.delete(runId);
+        clearTimeout(e.timeoutId);
+        try { e.abortCtrl && e.abortCtrl.abort(); } catch (_) {}
+        if (e.box) e.box.dataset.aborted = 'true';
+        e.reject(new Error('Tool worker was restarted because another session was stopped. Please retry.'));
+    }
+
+    toolWorkerOutbox.length = 0;                // don't replay queued runs into the next worker
+    if (toolWorker) toolWorker.terminate();     // kills JS, Pyodide, everything
 }
 
 function describeToolAction(name, args) {
@@ -19602,8 +19631,17 @@ async function runTask(task, msgId, imageUrls, sessionId) {
                     const resObj = await executeTool(call.function.name, args, runSessionId, runningBox);
 
                     if (runGen.activeController !== iterController || isSuperseded()) {
-                        stopRunningToolBox(runningBox);
-                        if (runningBox) runningBox.remove();
+                        if (runningBox) {
+                            if (runningBox.dataset.aborted === 'true') {
+                                stopRunningToolBox(runningBox);
+                                safeRenderToolCallBox(call.function.name, args, String(resObj.output), true, true, toolGroupContainer, runningBox, runSessionId);
+                                runGen.hasNewContent = true;
+                                saveSession(runSessionId);
+                            } else {
+                                stopRunningToolBox(runningBox);
+                                runningBox.remove();
+                            }
+                        }
                         return { call, args, resObj, resStr: String(resObj.output), aborted: true };
                     }
 
