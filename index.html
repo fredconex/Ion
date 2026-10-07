@@ -9764,7 +9764,7 @@ async function deleteSession(sessionId, e) {
         graphBreadcrumb.classList.remove('visible');
         graphPanelLabel.style.display = '';
         renderAllPromptGroups();
-        await saveActiveSession();
+        await saveActiveSession(true);
         renderSessionPopoverList();
         hideSessionPopover();
         focusPrompt();
@@ -9874,7 +9874,7 @@ async function clearAllSessions() {
 
     await restoreActiveSessionContent();
     await persistCheckpoint();
-    await saveActiveSession();
+    await saveActiveSession(true);
 
     renderChangesPanel();
     renderExplorerTree();
@@ -18908,7 +18908,7 @@ async function submitPrompt() {
                 graphPanelLabel.style.display = '';
                 renderAllPromptGroups();
                 await persistCheckpoint();
-                saveActiveSession();
+                await saveActiveSession(true);
                 showToast('Session cleared and checkpoint re-baselined', 'success');
                 focusPrompt();
                 updateWelcomeVisibility();
