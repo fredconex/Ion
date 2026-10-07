@@ -3613,7 +3613,7 @@
                 <button id="btn-sidebar-collapse" class="icon-btn" title="Collapse sidebar"><span class="icon" style="font-size:15px;">chevron_left</span></button>
                 <button id="btn-sidebar-close-mobile" class="icon-btn" title="Close sidebar" style="display:none;"><span class="icon" style="font-size:16px;">close</span></button>
                 <div class="sidebar-nav-tab active" id="tab-nav-explorer" data-view="explorer" title="Files">
-                    <span class="icon" style="font-size: 18px;">folder</span>
+                    <span class="icon" id="sidebar-files-icon" style="font-size: 18px;">folder</span>
                     <span class="tab-label">Files</span>
                     <span class="sidebar-badge" id="file-count">0</span>
                 </div>
@@ -16295,6 +16295,8 @@ function updateWorkspaceTitle() {
     const name = rootHandle ? rootHandle.name : '';
     nm.textContent = name;
     if (ic) ic.textContent = rootHandle && rootHandle.isVirtual ? 'cloud_queue' : 'folder';
+    const sideIc = document.getElementById('sidebar-files-icon');
+    if (sideIc) sideIc.textContent = rootHandle && rootHandle.isVirtual ? 'cloud_queue' : 'folder';
     row.title = rootHandle ? (rootHandle.isVirtual ? 'Virtual workspace: ' : 'Workspace: ') + name : '';
     row.style.display = name ? 'inline-flex' : 'none';
     const sep = document.getElementById('ws-popover-sep');
