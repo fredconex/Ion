@@ -1709,7 +1709,17 @@
             margin-top: 0; margin-bottom: 0; white-space: pre-wrap;
             word-break: break-word; overflow-wrap: anywhere; line-height: 1.55;
         }
-        .retry-status { font-size: 12px; font-style: italic; }
+        .retry-status { font-size: 12px; font-style: italic; display: flex; align-items: center; gap: 8px; }
+        .btn-force-reconnect {
+            margin-left: auto;
+            background: rgba(229, 192, 123, 0.12);
+            border: 1px solid rgba(229, 192, 123, 0.35);
+            color: var(--yellow); padding: 1px 7px; border-radius: 4px;
+            font-family: inherit; font-size: 10.5px; font-weight: 600; font-style: normal;
+            cursor: pointer; display: inline-flex; align-items: center;
+            gap: 4px; transition: all 0.12s ease;
+        }
+        .btn-force-reconnect:hover { background: rgba(229, 192, 123, 0.25); border-color: var(--yellow); color: #fff; }
         .md-content { white-space: normal; min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
         .md-content p { margin: 0 0 8px 0; }
         .md-content p:last-child { margin-bottom: 0; }
@@ -12619,6 +12629,15 @@ term.addEventListener('click', (e) => {
         return;
     }
 
+    const reconnectBtn = e.target.closest('.btn-force-reconnect');
+    if (reconnectBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const g = getGenState(state.activeSessionId);
+        if (g.forceReconnect) g.forceReconnect();
+        return;
+    }
+
     const copyBtn = e.target.closest('.btn-copy-code');
     if (copyBtn) {
         const codeBlock = copyBtn.closest('.code-box').querySelector('pre code');
@@ -15950,13 +15969,16 @@ function stopSpinner(sessionId) {
     }
 }
 
-function showRetryStatus(text, sessionId) {
+function showRetryStatus(text, sessionId, opts = {}) {
     const sid = sessionId || state.activeSessionId;
     const gen = getGenState(sid);
     if (sid === state.activeSessionId) {
         if (!gen.retryStatusEl) {
             gen.retryStatusEl = document.createElement('div');
             gen.retryStatusEl.className = 'log-entry dim retry-status';
+            gen.retryStatusEl.innerHTML = '<span class="retry-status-text"></span>' +
+                '<button class="btn-force-reconnect icon-btn" title="Reconnect now">' +
+                '<span class="icon" style="font-size:12px;">sync</span></button>';
             if (gen.spinEl && gen.spinEl.parentNode === term) {
                 term.insertBefore(gen.retryStatusEl, gen.spinEl);
             } else {
@@ -15964,7 +15986,10 @@ function showRetryStatus(text, sessionId) {
             }
             smartScroll();
         }
-        gen.retryStatusEl.innerText = text;
+        const txt = gen.retryStatusEl.querySelector('.retry-status-text');
+        if (txt) txt.textContent = text;
+        const btn = gen.retryStatusEl.querySelector('.btn-force-reconnect');
+        if (btn) btn.style.display = opts.reconnecting ? 'none' : '';
     }
     if (!gen.retryStatusActive) {
         gen.retryStatusActive = true;
@@ -15990,23 +16015,36 @@ function waitForRetry(ms, attemptNum, reason = '', sessionId) {
         const totalSec = Math.ceil(ms / 1000);
         const startedAt = Date.now();
         const reasonSuffix = reason ? ` - ${reason.length > 120 ? reason.slice(0, 117) + '...' : reason}` : '';
+        // The status line stays visible while the new attempt is in flight and is
+        // only stripped once the reconnection succeeds (see clearRetryStatus calls
+        // after a good response) or the run is cancelled / gives up.
+        gen.forceReconnect = () => {
+            clearTimeout(gen.retryTimeout);
+            gen.retryTimeout = null;
+            gen.forceReconnect = null;
+            gen.retryAttempt = 0;   // reset the backoff timer
+            showRetryStatus('Reconnecting...', sid, { reconnecting: true });
+            resolve();
+        };
         const tick = () => {
             if (gen.retryCancelled || !gen.activeController) {
                 clearTimeout(gen.retryTimeout);
                 gen.retryTimeout = null;
+                gen.forceReconnect = null;
                 clearRetryStatus(sid);
                 resolve();
                 return;
             }
             const remaining = ms - (Date.now() - startedAt);
             const remainingSec = Math.max(0, Math.ceil(remaining / 1000));
-            showRetryStatus(`Connection error${reasonSuffix} - retrying in ${remainingSec}s (attempt ${attemptNum})...`, sid);
             if (remaining <= 0) {
                 gen.retryTimeout = null;
-                clearRetryStatus(sid);
+                gen.forceReconnect = null;
+                showRetryStatus('Reconnecting...', sid, { reconnecting: true });
                 resolve();
                 return;
             }
+            showRetryStatus(`Connection error${reasonSuffix} - retrying in ${remainingSec}s (attempt ${attemptNum})...`, sid);
             gen.retryTimeout = setTimeout(tick, 1000);
         };
         tick();
@@ -19013,6 +19051,8 @@ async function runTask(task, msgId, imageUrls, sessionId) {
                 throw new Error(errJson.error?.message || `HTTP ${resp.status}`);
             }
 
+            // Reconnected: strip the retry/reconnect message.
+            clearRetryStatus(runSessionId);
             const reader = resp.body.getReader();
             const decoder = new TextDecoder();
             stopSpinner(runSessionId);
@@ -19622,6 +19662,15 @@ async function runTask(task, msgId, imageUrls, sessionId) {
                     runGen.genFinishReason = 'abort';
                     renderGenStats(runSessionId);
                     break;
+                }
+                // Reconnect with whatever model is selected now, in case the user
+                // switched models while we were waiting.
+                {
+                    const cur = getCurrentModelInfo();
+                    if (cur.url && cur.model) {
+                        apiUrl = cur.url; model = cur.model; apiKey = cur.key; runModelVision = cur.vision;
+                        activeTools = getToolsForMode(runMode, !!runModelVision);
+                    }
                 }
                 if (runGen.activeController === iterController) runGen.activeController = null;
                 continue;
