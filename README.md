@@ -3,88 +3,118 @@
 [![Live Demo](https://img.shields.io/badge/%E2%96%B6%20Launch-Ion%20Live-brightgreen?style=for-the-badge)](https://fredconex.github.io/Ion/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/fredconex/ion?filter=*&color=brightgreen)](https://github.com/fredconex/ion/releases)
-[![Browser: Chromium](https://img.shields.io/badge/browser-Chromium%20Required-brightgreen.svg)](#requirements)
-[![Architecture: Pure Client--Side](https://img.shields.io/badge/architecture-Client--Side%20Web-orange.svg)](#security-and-isolation)
 
-Ion is a zero-install, browser-native autonomous coding agent. It connects to any OpenAI-compatible LLM endpoint (local or remote) and provides an integrated development environment featuring multi-file edits, integrated Monaco diff inspection, checkpoint versioning, and tool execution directly inside the browser.
+Ion is a zero-install, browser-native coding agent. It runs as a single HTML file, connects to any OpenAI-compatible endpoint (local or cloud), and gives the model tools to read, search and edit your project, with an integrated editor, diff viewer and checkpoint history.
 
-# 
-<img width="2554" height="1259" alt="image" src="https://github.com/user-attachments/assets/36368b02-6380-4b89-8281-aea2c6ab516a" />
-<img width="1657" height="1232" alt="image" src="https://github.com/user-attachments/assets/092ab433-728a-4bc4-a518-40f23ae14721" />
-
-
-
-## Security and Isolation
-
-Ion operates entirely within the client-side browser sandbox:
-
-- **Strict Directory Sandboxing:** Ion utilizes the standard Web File System Access API. It can only read, write, or enumerate files within the specific directory explicitly granted by the user via the browser's directory picker. It has no access to the rest of the file system or system binaries.
-- **No Background Daemon or Native Binary:** There is no local Node.js server, Python backend, or native daemon executing system commands. All file modifications and workspace state persist locally via browser IndexedDB.
-- **Configurable Tool Permissions:** Every tool provides granular permission levels (`always`, `ask`, `never`), plus a per-tool **lock** (prevents the model from modifying that tool's file) and per-tool **settings** declared in `TOOL_META.settings`.
-- **Sensitive Shielding:** Private settings and API keys (`.agent/models.json`, `.agent/config.json`) and paths matched by `PROTECTED_PATTERNS` (`.env`, `*.pem`, `.ssh/`, `*.sqlite`, etc.) or by `.gitignore` rules are blocked from model tools, preventing key leakage in prompts.
-- **Web Worker Execution:** Custom and built-in tools execute inside isolated Web Workers with a 30-second timeout, preventing execution hangs from blocking the primary UI thread.
-
----
-
-## Requirements
-
-- **Chromium-based Browser:** Google Chrome, Microsoft Edge, Brave, Opera, Arc, or Chromium (version 86+) is required for File System Access API directory handle support.
-- **Model Provider:** An OpenAI-compatible API endpoint (e.g., local endpoints such as `llama.cpp`, `LM Studio`, `Ollama`, or cloud APIs such as OpenRouter, OpenAI, Groq, DeepSeek, or Mistral).
-
----
-
-## Operational Modes
-
-| Mode | Purpose | Capabilities & Restrictions |
-|---|---|---|
-| **ASK** | Read-only analysis | Queries codebase, explains architecture, and runs read-only search tools. All file modifications are blocked. |
-| **PLAN** | Task preparation | Formulates architecture and step-by-step implementation plans. Restricted strictly to writing `.agent_plan.md`. |
-| **CODE** | Autonomous implementation | Full editing capability. Performs targeted search-and-replace edits or file creations with automatic checkpointing. |
-
-Mode prompts are editable as virtual files under `.agent/prompts/` (`plan.md`, `ask.md`, `code.md`, `llm_gen.md`).
-
----
-
-## Tool Matrix
-
-| Category | Tool | Description | Default Permission |
-|---|---|---|---|
-| **File I/O** | `read` | Reads target ranges or evenly samples long files | Always |
-| | `edit` | Applies surgical block replacements | Ask |
-| | `write` | Creates or overwrites files (`.agent_plan.md` only in Plan mode) | Ask |
-| | `rename` | Renames files within the permitted directory | Ask |
-| **Search** | `find` | Matches files by name pattern or file extension | Always |
-| | `grep` | Regular expression and plain-text search across files | Always |
-| **Vision** | `preview_image` | Renders an image (or crop region) back to the model as vision input | Always |
-
-Custom tools can be authored blank, imported as a `.js` file, or installed from the community repo `fredconex/Ion-tools` directly from **Settings → Tools → +**.
-
----
-
-## Core Capabilities
-
-- **Integrated Monaco Editor & Diff Viewer:** Syntax-highlighted editor with live HTML preview (`Edit` / `Preview` toggle), side-by-side/inline diff inspection, hunk navigation, and gutter markers against the session baseline.
-- **Automatic Checkpoint Engine (Git-graph style):** Every prompt and tool operation is recorded in an op log. The **Changes** panel shows a commit-style timeline with per-file drill-down, checkpoint diffs, and revert-to-before-prompt or revert-to-checkpoint actions.
-- **Multi-Session Workspaces:** Run isolated conversation sessions against the same workspace with independent baselines, message history, attachments, and running-time tracking. Includes LLM-generated session titles and prompt queuing.
-- **Context Compression:** Auto-compression when the context window crosses a configurable threshold (default 75%), preserving the last N messages. Manual `/compact` renders a metrics card with pre/post token savings.
-- **Context Attachment System:** Attach files, line ranges, images, or large text snippets to prompts using `@` syntax, `Ctrl+R` snippet capture, or clipboard paste. Attachments materialize into the read-only virtual `.agent/attachments/` directory so tools can reference them by path.
-- **Thinking Control:** Configurable thinking timeout, per-turn **Skip Thinking** button (optionally preserving partial reasoning), and collapsible thought boxes with live timers.
-- **Multi-Provider Model Settings:** Provider/model config stored in `.agent/models.json` with a friendly two-pane editor or raw JSON. Each model carries its own `context_window`. Built-in "browse models from API" picker queries the provider's `/models` endpoint.
-- **Prompt Rail:** Right-edge scroll gutter with a tick per prompt — click to jump and highlight.
-- **Slash Commands:** `/plan`, `/ask`, `/code`, `/execute-plan`, `/continue`, `/compact`, `/new`, `/session`, `/clear`, `/restore`, `/help`.
-- **Selective Data Clearing:** Settings → Danger Zone clears checkpoints, sessions, model settings, custom tools, and app settings independently.
-- **Extensible Tool Registry:** Define, test, lock, customize, and delete new tools directly within `.agent/tools/` using JavaScript.
-
----
+<img width="2554" height="1259" alt="Ion main view" src="https://github.com/user-attachments/assets/36368b02-6380-4b89-8281-aea2c6ab516a" />
+<img width="1657" height="1232" alt="Ion diff and changes view" src="https://github.com/user-attachments/assets/092ab433-728a-4bc4-a518-40f23ae14721" />
 
 ## Quick Start
 
-1. Open `agent.html` in any supported Chromium browser.
-2. Click **Open Folder** (or pick from **Recent Workspaces**) to grant access to your target project directory.
-3. Configure your endpoint via **Settings → Models** (or the model dropdown above the prompt).
-4. Select an operation mode (**Ask**, **Plan**, or **Code**) and submit your task.
+1. Open the [live demo](https://fredconex.github.io/Ion/) or `index.html` in your browser.
+2. Open a workspace: **Open Folder** (Chromium) or **New Virtual Workspace** (any browser).
+3. Add a provider and model under **Settings → Models**.
+4. Pick a mode (**Ask**, **Plan**, **Code**) and send a task.
 
----
+## Requirements
+
+- **Model provider:** any OpenAI-compatible API, such as llama.cpp, LM Studio, Ollama, OpenRouter, OpenAI, Groq, DeepSeek or Mistral.
+- **Browser:** Chromium-based (Chrome, Edge, Brave, Opera, Arc; v86+) to work directly on a local folder through the File System Access API. Other browsers (Firefox, Safari) can use virtual workspaces.
+
+## Workspaces
+
+| Type | How it works |
+|---|---|
+| **Folder** | Reads and writes a directory you grant through the browser picker. Chromium only. |
+| **Virtual** | Files are imported (drag and drop or file picker) and stored in the browser. Works in any modern browser and is never evicted from the recent list. Export anytime with **Download all as .zip**. |
+
+Recent workspaces are listed on the start screen.
+
+## Modes
+
+| Mode | Purpose | Restrictions |
+|---|---|---|
+| **ASK** | Read-only analysis and Q&A | No file modifications |
+| **PLAN** | Architecture and step-by-step plans | Can only write `.agent_plan.md` |
+| **CODE** | Autonomous implementation | Full editing with automatic checkpoints |
+
+Mode prompts are editable virtual files in `.agent/prompts/` (`plan.md`, `ask.md`, `code.md`, `llm_gen.md` for session titles).
+
+## Built-in Tools
+
+| Tool | Description | Modes | Default |
+|---|---|---|---|
+| `read` | Reads a line range; long ranges are evenly sampled instead of truncated | all | Always |
+| `find` | Finds files by name pattern or extension | all | Always |
+| `grep` | Regex or plain-text search with line numbers | all | Always |
+| `preview_image` | Returns an image, or a cropped region, as vision input (vision models only) | all | Always |
+| `edit` | Exact search-and-replace block edits | Code | Ask |
+| `write` | Creates or overwrites files | Plan, Code | Ask |
+| `rename` | Renames a file | Code | Ask |
+
+Permissions are `always`, `ask` or `never` per tool. Hold **Ctrl** over a permission to preview it for a whole group (Built-in or Custom), and **Ctrl+click** to apply it to all. Each tool can also be locked so the model cannot modify its file, and exposes its own settings (read limits, preview sizes, and so on).
+
+### Custom Tools
+
+Create a tool from scratch, import a `.js` file, or install one from the community repo [`fredconex/Ion-tools`](https://github.com/fredconex/Ion-tools) via **Settings → Tools → +**. Tools live in `.agent/tools/` and describe themselves with a `TOOL_META` object:
+
+- `settings`: user-configurable values of type `number`, `boolean`, `select`, `text` or `model` (a model picker, so a tool can call a different model).
+- `interactive`: lets the tool render UI cards and wait for the user (5 minute timeout instead of 30 seconds).
+- `require_vision`: tool is only available when the selected model supports images.
+- `expanded`: open the tool's output box by default.
+
+Tool handlers receive an `api` object with file access (`readFile`, `writeFile`, `renameFile`, `listFiles`, `fileExists`, `isBinary`, `readImage`), `getSetting`, `showUI`, `setHeaderMsg`, `httpPost`, and model lookup (`listModels`, `getModelInfo`).
+
+## Features
+
+**Editing and review**
+- Monaco editor with syntax highlighting, Save / Save As (`Ctrl+S` / `Ctrl+Shift+S`) and a live HTML preview toggle.
+- Side-by-side or inline diffs with hunk navigation and gutter markers against the session baseline.
+- Workspace-wide **Search** panel and a file explorer with drag and drop, new file/folder, per-file download, per-folder zip, restore to default and attach-to-prompt.
+
+**History and sessions**
+- **Checkpoints:** every prompt and tool call is logged. The Changes panel shows a commit-style timeline with per-file drill-down, checkpoint diffs, and revert to before a prompt or to any checkpoint.
+- **Message actions:** edit or delete any message, optionally reverting the file changes it caused.
+- **Multi-session:** isolated conversations per workspace with their own baselines, history, attachments and timers, LLM-generated titles, and prompt queuing.
+
+**Context management**
+- **Auto-compression** at a configurable threshold (default 75%), keeping the last N messages. `/compact` runs it manually and reports token savings.
+- **Attachments:** add files, line ranges, images or large pasted text with `@`, `Ctrl+R` snippet capture or clipboard paste. They appear under the read-only `.agent/attachments/` path so tools can read them.
+- **Vision:** mark models with `vision: true` to send attached images directly; non-vision models are told the image was not sent.
+- **Thinking control:** configurable timeout, a per-turn **Skip Thinking** button (optionally keeping partial reasoning), and collapsible thought boxes with live timers.
+
+**Models**
+- Providers and models are stored in `.agent/models.json`, editable through a two-pane editor or raw JSON.
+- Per-model `context_window` and `vision` flags, plus a picker that queries the provider's `/models` endpoint.
+
+**Interface**
+- Status bar with mode, model and context usage, plus a prompt rail with one tick per prompt for quick navigation.
+- Accent color and status glow options, and a responsive layout for small screens.
+
+## Commands and Shortcuts
+
+| Command | Action |
+|---|---|
+| `/plan`, `/ask`, `/code` | Switch mode |
+| `/execute-plan` | Run `.agent_plan.md` in Code mode |
+| `/continue` | Resume a paused run |
+| `/compact` | Compress conversation history |
+| `/new`, `/session` | New session, open session list |
+| `/clear` | Reset the session (messages, chat, modified files) |
+| `/restore` | Discard all modified files back to the original |
+| `/help` | Show commands and shortcuts |
+
+`Esc` cancels generation. `Ctrl+S` saves, `Ctrl+Shift+S` saves as, `Ctrl+R` captures a snippet, and `@` attaches files.
+
+## Security and Isolation
+
+Ion is entirely client-side. There is no server, daemon or native binary.
+
+- **Directory sandbox:** access is limited to the folder (or virtual workspace) you provide. Nothing else on the system is reachable.
+- **Local storage only:** workspace state, sessions and checkpoints persist in browser IndexedDB. The only network traffic is to the model endpoint you configure.
+- **Tool isolation:** tools run in Web Workers with a 30 second timeout (5 minutes for interactive tools), so a hung tool cannot block the UI.
+- **Protected paths:** `.agent/models.json`, `.agent/config.json`, anything matching your `.gitignore` rules, and built-in patterns (`.git`, `.env*`, `*.key`, `*.pem`, `id_*`, `.ssh/`, `.aws/`, `.gnupg/`, `*credentials*`, `*secret*`, `*.sqlite`, `*.db`, and more) are blocked from model tools, so keys never reach prompts.
+- **Data control:** Settings → Danger Zone clears checkpoints, sessions, model settings, custom tools and app settings independently.
 
 ## License
 
