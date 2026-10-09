@@ -3487,6 +3487,7 @@
                 <div id="newtool-modal-error"></div>
             </div>
             <div id="newtool-modal-footer">
+                <button id="newtool-update-all" class="btn-confirm" title="Update every installed tool that has a newer repo version" style="display:none;">Update all</button>
                 <button id="newtool-cancel" class="btn-confirm">Done</button>
                 <button id="newtool-create" class="btn-confirm primary newtool-create-btn">Create</button>
                 <button id="newtool-install" class="btn-confirm primary" title="Install this tool" style="display:none;">Install</button>
@@ -20038,6 +20039,7 @@ const newToolErrorEl = document.getElementById('newtool-modal-error');
 const newToolInstallBtn = document.getElementById('newtool-install');
 const newToolSourceEditor = document.getElementById('newtool-source-editor');
 const newToolCreateBtn = document.getElementById('newtool-create');
+const newToolUpdateAllBtn = document.getElementById('newtool-update-all');
 
 // Default source shown when the modal opens; the tool name is inferred from TOOL_META.name.
 const newToolDefaultSource = `const TOOL_META = {
@@ -20194,6 +20196,25 @@ function getGithubEntryStatus(entry) {
     return (localSha && entry.sha && localSha === entry.sha) ? 'current' : 'update';
 }
 
+function countGithubUpdates() {
+    if (!newToolBrowseFiles) return 0;
+    return newToolBrowseFiles.filter(e => getGithubEntryStatus(e) === 'update').length;
+}
+
+function updateAllGithubTools() {
+    const updates = newToolBrowseFiles ? newToolBrowseFiles.filter(e => getGithubEntryStatus(e) === 'update') : [];
+    if (!updates.length) return;
+    newToolUpdateAllBtn.disabled = true;
+    (async () => {
+        let ok = 0;
+        for (const entry of updates) {
+            if (await installGithubEntry(entry)) ok++;
+        }
+        newToolUpdateAllBtn.disabled = false;
+        if (ok) showToast(`Updated ${ok} tool${ok > 1 ? 's' : ''}`, 'success');
+    })();
+}
+
 function renderGithubToolsList() {
     if (!newToolBrowseFiles) return;
     const filter = (newToolBrowseSearch.value || '').trim().toLowerCase();
@@ -20247,6 +20268,14 @@ function renderGithubToolsList() {
         }
         newToolBrowseList.appendChild(item);
     });
+    const n = countGithubUpdates();
+    if (n > 0) {
+        newToolUpdateAllBtn.style.display = '';
+        newToolUpdateAllBtn.title = `Update all ${n} installed tool${n > 1 ? 's' : ''} that have a newer repo version`;
+        newToolUpdateAllBtn.textContent = n > 1 ? `Update all (${n})` : 'Update all';
+    } else {
+        newToolUpdateAllBtn.style.display = 'none';
+    }
 }
 
 async function selectGithubTool(entry) {
@@ -20280,6 +20309,7 @@ async function selectGithubTool(entry) {
 
 newToolBrowseSearch.addEventListener('input', () => renderGithubToolsList());
 newToolBrowseRefresh.addEventListener('click', () => loadGithubToolsList(true));
+newToolUpdateAllBtn.addEventListener('click', updateAllGithubTools);
 
 async function installGithubEntry(entry) {
     // Always download fresh so we install (and compare against) what GitHub serves right now.
