@@ -9579,6 +9579,19 @@ async function saveSession(sessionId, force) {
     if (isLive) updateSessionPillLabel();
 }
 
+// Persist only the open-tab layout. saveSession() bails out when there is no new chat
+// content, so tab opens/closes/switches were never written and closed tabs came back.
+function persistTabState() {
+    const id = state.activeSessionId;
+    if (!id || deletedSessionIds.has(id) || !state.sessions[id]) return Promise.resolve(null);
+    state.sessions[id].openTabs = state.openTabs.slice();
+    state.sessions[id].activeTab = state.activeTab;
+    return patchSessionRecordInDB(getWorkspaceSessionKey(), id, {
+        openTabs: state.sessions[id].openTabs,
+        activeTab: state.sessions[id].activeTab
+    });
+}
+
 async function saveActiveSession(force) {
     return saveSession(state.activeSessionId, force);
 }
@@ -10470,7 +10483,7 @@ async function closeTab(tabId) {
         switchTab(state.openTabs[state.openTabs.length - 1] || 'chat');
     } else {
         renderTabs();
-        saveActiveSession();
+        persistTabState();
     }
 }
 
@@ -10543,7 +10556,7 @@ async function switchTab(tabId, opts = {}) {
     if (!opts.keepFocus) { explorerSelection.clear(); explorerAnchor = null; explorerSelectionCleared = false; }
     renderTabs();
     updateExplorerSelection();
-    saveActiveSession();
+    persistTabState();
 
     if (tabId === 'chat') {
         editorView.style.display = 'none';
@@ -17224,6 +17237,8 @@ function closeTabNoConfirm(tabId) {
     if (state.activeTab === tabId) {
         const prevTab = state.openTabs[state.openTabs.length - 1] || 'chat';
         switchTab(prevTab);
+    } else {
+        persistTabState();
     }
     if (tabId !== 'chat' && !tabId.startsWith('attachment:')) {
         const model = monacoModels.get(tabId);
