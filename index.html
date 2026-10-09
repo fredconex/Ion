@@ -6440,9 +6440,44 @@ const fs = (() => {
         if (ctx.isLive) { renderChangesPanel(); renderExplorerTree(); updateStatusInfo(); refreshChangesGraph(); }
     }
 
+    // Ensure every ancestor directory of a file path exists on disk and in the registry.
+    // Creates and records each missing directory. Skips recording when track === false.
+    async function ensureParentDirs(path, opts = {}) {
+        const sid = opts.sessionId || state.activeSessionId;
+        const parts = path.split('/').filter(Boolean);
+        if (parts.length <= 1) return []; // Always return an array
+
+        const created = [];
+        let built = '';
+
+        for (let i = 0; i < parts.length - 1; i++) {
+            built = built ? `${built}/${parts[i]}` : parts[i];
+            
+            // Preserve leading slash if your system uses absolute paths:
+            // const normalized = path.startsWith('/') ? `/${built}` : built;
+
+            if (registry.meta[built] !== undefined) continue;
+
+            if (rootHandle) {
+                await rawMkdir(built);
+            }
+            registry.meta[built] = { kind: 'directory' }; // Ensure registry is always updated
+            created.push(built);
+        }
+
+        if (opts.track !== false) {
+            for (const dir of created) {
+                await record({ kind: 'mkdir', path: dir, mode: opts.mode || 'ui' }, sid);
+            }
+        }
+
+        return created;
+    }
+
     async function create(path, content, opts = {}) {
         const sid = opts.sessionId || state.activeSessionId;
         if (isSecurityProtectedPath(path)) return { error: `ERROR: ${path} is a protected path.` };
+        await ensureParentDirs(path, opts);
         try { await rawWrite(path, content); }
         catch (e) { if (e && e.encodingError) return { error: `ERROR: ${e.message}` }; throw e; }
         // track=false: disk-only mutation that must not be recorded (discard/reset paths).
@@ -6455,6 +6490,7 @@ const fs = (() => {
     async function write(path, content, opts = {}) {
         const sid = opts.sessionId || state.activeSessionId;
         if (isSecurityProtectedPath(path)) return { error: `ERROR: ${path} is a protected path.` };
+        await ensureParentDirs(path, opts);
         const onDisk = await fileExistsOnDisk(path);
         const existed = onDisk || registry.files[path] !== undefined;
         // Capture pre-write content before rawWrite overwrites registry.files.
