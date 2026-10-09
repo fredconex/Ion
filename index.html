@@ -12494,15 +12494,33 @@ function ensureJumpBtn() {
 }
 
 let programmaticScroll = false;
+let _lastTermScrollTop = 0;
+let _settleRaf = 0;
+
+// Content often keeps growing after the DOM insert (tool output, images, fonts, late
+// layout), so re-pin once more on the next frame, after layout has settled.
+function scheduleSettleScroll() {
+    if (_settleRaf) return;
+    _settleRaf = requestAnimationFrame(() => {
+        _settleRaf = 0;
+        if (state.userScrolledUp) return;
+        programmaticScroll = true;
+        term.scrollTop = term.scrollHeight;
+        _lastTermScrollTop = term.scrollTop;
+        requestAnimationFrame(() => { programmaticScroll = false; });
+    });
+}
 
 function smartScroll() {
     if (state.userScrolledUp) return;
     programmaticScroll = true;
     term.scrollTop = term.scrollHeight;
+    _lastTermScrollTop = term.scrollTop;
     document.querySelectorAll('.code-box-content').forEach(el => {
         el.scrollTop = el.scrollHeight;
     });
     requestAnimationFrame(() => { programmaticScroll = false; });
+    scheduleSettleScroll();
 }
 
 function forceScrollToBottomOnLoad() {
@@ -12529,16 +12547,37 @@ function resetScrollState() {
 }
 
 term.addEventListener('scroll', () => {
+    const prevTop = _lastTermScrollTop;
+    _lastTermScrollTop = term.scrollTop;
     if (programmaticScroll) return;
     const atBottom = term.scrollHeight - term.scrollTop - term.clientHeight < 20;
     if (atBottom || !hasScrollableOverflow()) {
         state.userScrolledUp = false;
         if (jumpBtn) jumpBtn.style.display = 'none';
-    } else {
+    } else if (term.scrollTop < prevTop - 1) {
+        // Only an upward move counts as the user scrolling away. If content simply grew
+        // below us (tool output printing), the position didn't move up, so keep following.
         state.userScrolledUp = true;
         ensureJumpBtn().style.display = 'flex';
+    } else if (!state.userScrolledUp) {
+        scheduleSettleScroll();
     }
 });
+
+// Keep following the bottom when content grows without anyone calling smartScroll()
+// (live tool frames, streamed text, late-rendered output).
+new MutationObserver((records) => {
+    if (state.userScrolledUp) return;
+    for (const r of records) {
+        const n = r.target.nodeType === 1 ? r.target : r.target.parentElement;
+        if (n && n.closest && n.closest('[data-live-spinner], .running-tool-spinner')) continue;
+        scheduleSettleScroll();
+        return;
+    }
+}).observe(term, { childList: true, subtree: true, characterData: true });
+
+// Images / media inside tool output change height when they finish loading.
+term.addEventListener('load', () => smartScroll(), true);
 
 term.addEventListener('wheel', (e) => {
     if (e.deltaY < 0 && hasScrollableOverflow()) {
@@ -15934,6 +15973,7 @@ function renderToolCallBox(toolName, args, resultOutput, isDone = false, isError
     } else {
         target.appendChild(box);
     }
+    box.querySelectorAll('.tool-output-text').forEach(el => { el.scrollTop = el.scrollHeight; });
     reorderSpinnerToBottom(sid);
     smartScroll();
     return box;
@@ -17961,7 +18001,7 @@ async function runTool(runId, toolMeta, args) {
         getSetting: (key) => callApi(runId, 'getSetting', [key]),
         validateDisplayHtml: (html, opts) => callApi(runId, 'validateDisplayHtml', [html, opts || {}]),
         showUI: (html, opts) => {
-            __lastDisplayHtml = String(html);
+            if (!(opts && opts.live)) __lastDisplayHtml = String(html); // live frames are transient
             return callApi(runId, 'showUI', [String(html), opts || {}]);
         },
         // Live-updates the tool box header while the tool is still running.
@@ -18014,6 +18054,26 @@ function toolMayUseModel(toolName, entry) {
         const e = findModelEntryById(getToolSettingValue(toolName, def.key));
         return !!e && e.uuid === entry.uuid;
     });
+}
+
+// Streams a transient HTML frame into a RUNNING tool box (api.showUI(html, {live:true})).
+// The frame is never stored: the tool's final displayHtml replaces it when the run ends.
+// Elements marked data-live-scroll keep their scroll position, or stay pinned to the bottom if they were there.
+function liveRenderToolBody(entry, html) {
+    const box = entry && entry.box;
+    if (!box || !box.isConnected || !box.classList.contains('running-tool-box')) return;
+    const body = box.querySelector('.tool-box-body');
+    if (!body) return;
+    const prev = [...body.querySelectorAll('[data-live-scroll]')].map(el => ({
+        top: el.scrollTop,
+        pinned: el.scrollHeight - el.scrollTop - el.clientHeight < 24
+    }));
+    body.innerHTML = normalizeBlockHTML(String(html));
+    body.querySelectorAll('[data-live-scroll]').forEach((el, i) => {
+        const st = prev[i];
+        el.scrollTop = (!st || st.pinned) ? el.scrollHeight : st.top;
+    });
+    smartScroll();
 }
 
 const TOOL_API_METHODS = {
@@ -18302,6 +18362,10 @@ const TOOL_API_METHODS = {
 
         // Display-only: attach to the tool run without blocking or mounting extra elements.
         if (!isInteractive) {
+            if (opts && opts.live) {
+                liveRenderToolBody(entry, html);
+                return { choice: null, autoResolved: true, live: true };
+            }
             for (const [runId, entry] of toolWorkerPending) {
                 if (entry.toolName === toolName && entry.sessionId === (sessionId || state.activeSessionId)) {
                     entry.displayHtml = html;
