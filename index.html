@@ -18527,7 +18527,7 @@ function handleToolWorkerMessage(msg) {
     }
 }
 
-const TOOL_TIMEOUT_MS = 30000;
+const TOOL_TIMEOUT_MS = 120000;
 // Tools that wait on a human (TOOL_META.interactive) get a generous ceiling instead.
 const INTERACTIVE_TOOL_TIMEOUT_MS = 5 * 60 * 1000;
 
