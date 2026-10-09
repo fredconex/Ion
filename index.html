@@ -3682,6 +3682,10 @@
                                         </div>
                                     </div>
                                 </div>
+                                <div class="settings-field-row">
+                                    <label>Tool Timeout (seconds, 5-3600):</label>
+                                    <input type="number" id="settings-tool-timeout" value="120" min="5" max="3600">
+                                </div>
                             </div>
                         </div>
 
@@ -5464,6 +5468,7 @@ const PROMPT_FILE_MODES = Object.entries(MODE_PROMPT_FILES).reduce((acc, [mode, 
 const CONFIG_DEFAULTS = {
     'read-lines': '250',
     'thinking-timeout': '-1',
+    'tool-timeout': '120',
     'keep-skipped-thinking': 'false',
     'glow-enabled': 'true',
     'accent-color': '#ff7a50',
@@ -14404,6 +14409,7 @@ function applyWindowMode(mode) {
 
 function applyConfigToUI() {
     document.getElementById('settings-thinking-timeout').value = AppConfig.get('thinking-timeout', '-1');
+    document.getElementById('settings-tool-timeout').value = AppConfig.get('tool-timeout', '120');
     setDuoSwitch(document.getElementById('settings-keep-skipped-thinking'), AppConfig.get('keep-skipped-thinking') === "true");
     setDuoSwitch(document.getElementById('settings-glow-enabled'), AppConfig.get('glow-enabled', 'true') !== 'false');
     applyWindowMode(AppConfig.get('window-mode', 'floating') === 'maximized' ? 'maximized' : 'floating');
@@ -14843,6 +14849,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (hist) { try { state.promptHistory = JSON.parse(hist); } catch(e) {} }
 
     document.getElementById('settings-thinking-timeout').addEventListener('input', e => AppConfig.set('thinking-timeout', e.target.value));
+    document.getElementById('settings-tool-timeout').addEventListener('input', e => AppConfig.set('tool-timeout', e.target.value));
     initDuoSwitch('settings-keep-skipped-thinking', isOn => AppConfig.set('keep-skipped-thinking', isOn ? "true" : "false"));
     initDuoSwitch('settings-glow-enabled', isOn => {
         AppConfig.set('glow-enabled', isOn ? "true" : "false");
@@ -18571,14 +18578,19 @@ function handleToolWorkerMessage(msg) {
     }
 }
 
-const TOOL_TIMEOUT_MS = 120000;
+const TOOL_TIMEOUT_DEFAULT_MS = 120000;
+function getToolTimeoutMs() {
+    const sec = parseInt(AppConfig.get('tool-timeout', '120'), 10);
+    if (!Number.isFinite(sec) || sec <= 0) return TOOL_TIMEOUT_DEFAULT_MS;
+    return Math.min(Math.max(sec, 5), 3600) * 1000;
+}
 // Tools that wait on a human (TOOL_META.interactive) get a generous ceiling instead.
 const INTERACTIVE_TOOL_TIMEOUT_MS = 5 * 60 * 1000;
 
 function runToolInWorker(toolName, toolMeta, args, sessionId, runningBox) {
     const worker = getToolWorker();
     const runId = ++toolWorkerRunId;
-    const timeoutMs = toolMeta.interactive ? INTERACTIVE_TOOL_TIMEOUT_MS : TOOL_TIMEOUT_MS;
+    const timeoutMs = toolMeta.interactive ? Math.max(INTERACTIVE_TOOL_TIMEOUT_MS, getToolTimeoutMs()) : getToolTimeoutMs();
     return new Promise((resolve, reject) => {
         const timeoutId = setTimeout(() => {
             toolWorkerPending.delete(runId);
