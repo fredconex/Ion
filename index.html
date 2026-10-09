@@ -7206,7 +7206,6 @@ function applyVisionCapabilityToUI() {
         const dropped = before - state.attachedReferences.length;
         if (dropped > 0) {
             renderAttachmentChips();
-            showToast(`Removed ${dropped} image attachment${dropped === 1 ? '' : 's'}: the selected model does not support vision`, 'info');
         }
     }
 
@@ -8324,7 +8323,6 @@ window.revertFileToCheckpoint = async (filepath, timelineIndex) => {
             refreshChangesGraph();
             if (state.currentDiffFilepath === filepath) renderFileDiffView(filepath);
         }
-        showToast(`Reverted ${filepath.split('/').pop()} to ${label}`, 'success');
     } catch(e) {
         showToast(`Revert error: ${e.message}`, 'error');
     }
@@ -8381,10 +8379,7 @@ window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
             }
         }
     }
-    if (!cutFound) {
-        showToast('No file changes are attributed to that prompt', 'info');
-        return;
-    }
+    if (!cutFound) return;
 
     // Forget every prompt at or after the cut, not just the named one.
     const forgetIds = new Set();
@@ -8436,19 +8431,13 @@ window.revertToBeforePrompt = async (promptId, promptLabel, opts) => {
     rest.sort((a, b) => (a.kind === 'restore' ? 0 : 1) - (b.kind === 'restore' ? 0 : 1));
     const finalActions = [...renamed, ...rest];
 
-    if (actions.length === 0) {
-        showToast('No file changes are attributed to that prompt', 'info');
-        return;
-    }
+    if (actions.length === 0) return;
 
     const summary = actions.map(p => p.kind === 'delete' ? 'delete' : p.kind === 'rename' ? `rename ${p.filepath} → ${p.targetPath}` : `restore ${p.filepath}`).join(', ');
     const shortLabel = (promptLabel || 'this prompt').slice(0, 120) + (promptLabel && promptLabel.length > 120 ? '…' : '');
     if (!(opts && opts.skipConfirm) && !await confirmDialog(`Revert to right before "${shortLabel}"?\n\nThis will ${summary}. Later changes will be discarded.`, { confirmLabel: 'Revert', danger: true })) return;
 
-    const ok = await executeRevertPlan(finalActions, { forgetPromptIds: Array.from(forgetIds) });
-    if (ok > 0) {
-        showToast(`Reverted to right before "${shortLabel}"`, 'success');
-    }
+    await executeRevertPlan(finalActions, { forgetPromptIds: Array.from(forgetIds) });
 };
 
 const checkpointTimelineList = document.getElementById('checkpoint-timeline-list');
@@ -8811,14 +8800,10 @@ window.discardFile = async (filepath) => {
     await executeRevertPlan(actions, { clearOpsFor: [filepath] });
 
     if (state.activeTab === `filediff:${filepath}`) closeTab(`filediff:${filepath}`);
-    showToast(`Discarded changes in ${filepath.split('/').pop()}`, 'success');
 };
 
 window.restoreAllModifiedFiles = async () => {
-    if (!state.modifiedFiles.size) {
-        showToast('No modified files to discard', 'info');
-        return;
-    }
+    if (!state.modifiedFiles.size) return;
     if (!await confirmDialog(`Discard all changes across ${state.modifiedFiles.size} file(s)?`, { confirmLabel: 'Discard all', danger: true })) return;
 
     const files = Array.from(state.modifiedFiles);
@@ -8829,8 +8814,7 @@ window.restoreAllModifiedFiles = async () => {
             : { kind: 'restore', filepath: fp, content: original };
     });
 
-    const applied = await executeRevertPlan(actions, { clearOpsFor: files });
-    showToast(`Restored ${applied} file(s) to session checkpoint`, 'success');
+    await executeRevertPlan(actions, { clearOpsFor: files });
 };
 
 document.getElementById('btn-discard-all').addEventListener('click', () => window.restoreAllModifiedFiles());
@@ -9176,7 +9160,6 @@ window.executePlan = async () => {
     }
     setMode('code');
     const promptText = `Execute the approved implementation plan from ${PLAN_FILE}:\n\n${planText}\n\nExecute all steps and finish implementation.`;
-    showToast(`Executing ${PLAN_FILE} in Code mode`, 'info');
     await runTask(promptText);
 };
 
@@ -9292,10 +9275,7 @@ async function saveDiffModifiedFile() {
     try {
         const modEditor = monacoDiffEditor.getModifiedEditor();
         const content = modEditor.getValue();
-        const res = await writeDisk(state.currentDiffFilepath, content);
-        if (!(res && res.handled)) {
-            showToast(`Updated ${state.currentDiffFilepath} from diff view`, 'success');
-        }
+        await writeDisk(state.currentDiffFilepath, content);
     } catch(e) {
         showToast(`Diff save error: ${e.message}`, 'error');
     } finally {
@@ -9712,7 +9692,6 @@ async function switchSession(sessionId) {
         if (state.sessionMeta) delete state.sessionMeta[sessionId];
         await saveActiveSession(true);
         renderSessionPopoverList();
-        showToast('That session no longer exists and was removed from the list', 'info');
         return;
     }
     await restoreActiveSessionContent();
@@ -9779,7 +9758,6 @@ async function createNewSession(title) {
     await saveActiveSession(true);
     renderSessionPopoverList();
     hideSessionPopover();
-    showToast(`Created session ${id}`, 'success');
     focusPrompt();
 }
 
@@ -10815,9 +10793,6 @@ async function saveEditorFile() {
             }, 1200);
         }
 
-        if (!(res && res.handled)) {
-            showToast(`Saved ${state.currentEditorPath.split('/').pop()}`, 'success');
-        }
     } catch(err) {
         showToast(`Save error: ${err.message}. Your changes are preserved.`, 'error');
     } finally {
@@ -10917,7 +10892,6 @@ async function saveFileAs() {
 
         await openFileTab(target);
         await syncWorkspace(false);
-        showToast(`Saved as ${target}`, 'success');
     } catch (err) {
         showToast(`Save As failed: ${err.message}`, 'error');
     } finally {
@@ -11126,9 +11100,7 @@ async function handleAttachFile(file) {
                 return;
             }
             const text = sniffed.text;
-            if (file.size > 1024 * 1024) {
-                showToast(`${file.name || 'File'} is ${formatFileSize(file.size)}; large attachments may not fit in the model's context`, 'info');
-            }
+
             pastedTextCounter++;
             attachReference({
                 type: 'paste',
@@ -11930,10 +11902,6 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
             const already = new Set(state.attachedReferences.filter(r => r.type === 'file').map(r => r.filepath));
             const toAttach = filePaths.filter(pth => !already.has(pth) || !inMulti);
             toAttach.forEach(pth => attachReference({ type: 'file', filepath: pth }));
-            if (inMulti) {
-                const dupes = filePaths.length - toAttach.length;
-                showToast(`Attached ${toAttach.length} file${toAttach.length === 1 ? '' : 's'}${dupes ? ` (${dupes} already attached)` : ''}`, 'success');
-            }
         } else if (action === 'rename') {
             const newName = (await promptDialog(`Rename "${node.name}" to:`, node.name, { confirmLabel: 'Rename', validate: (v) => validateEntryName(v, { allowSlash: false }) }))?.trim();
             if (!newName || newName === node.name) return;
@@ -11965,8 +11933,6 @@ contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
             const res = restoreAgentFile(node.path);
             if (res.error) {
                 showToast(res.error, 'error');
-            } else {
-                showToast(`Restored ${node.name} to its built-in default`, 'success');
             }
         }
     });
@@ -12025,8 +11991,6 @@ async function deleteExplorerNodes(nodes) {
             if (failed) bits.push(`${failed} failed`);
             if (skipped) bits.push(`${skipped} protected`);
             showToast(targets.length === 1 && lastError ? lastError : bits.join(', '), deletedCount ? 'success' : 'error');
-        } else if (targets.length > 1) {
-            showToast(`Deleted ${deletedCount} items`, 'success');
         }
 
         // Leave nothing selected: closing tabs may have activated another file, and the highlight (and a
@@ -12278,9 +12242,6 @@ async function runSyncWorkspace(silent = true) {
             }
         }
 
-        if (!silent) {
-            showToast(`Workspace updated: ${Object.keys(registry.meta).length} items`, 'success');
-        }
     } catch(e) {
     }
 }
@@ -14083,7 +14044,6 @@ function buildToolRow(tool) {
         resetBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             restoreAgentFile(toolFilePath(tool.fileName || tool.name));
-            showToast(`Reset "${tool.name}" to its built-in default`, 'success');
         });
     }
 
@@ -14098,7 +14058,6 @@ function buildToolRow(tool) {
             await deleteToolFile(tool.name);
             renderExplorerTree();
             renderToolsList();
-            showToast(`Deleted "${tool.name}"`, 'success');
         });
     }
 
@@ -14309,9 +14268,6 @@ function applyGroupPermission(panel, val) {
             b.className = `tri-btn ${bVal} ${bVal === val ? 'active ' + bVal : ''}`;
         });
     });
-    const labelEl = panel.querySelector('.tool-section-label');
-    const groupName = labelEl && labelEl.firstChild ? labelEl.firstChild.textContent.trim() : 'group';
-    showToast(`Set ${switches.length} ${groupName} tool${switches.length === 1 ? '' : 's'} to "${val}"`, 'success');
 }
 
 toolsListEl.addEventListener('mouseover', (e) => {
@@ -14582,7 +14538,7 @@ async function compressContext(sessionId, { silent = false, manual = false } = {
     }
 
     if (splitIdx <= 0) {
-        if (!silent) showToast('Nothing to compress yet', 'info');
+        if (!silent) return;
         return { ok: false, error: 'Nothing to compress' };
     }
 
@@ -14692,9 +14648,6 @@ async function compressContext(sessionId, { silent = false, manual = false } = {
 
     gen.postCompressTokenOverride = estimateMessagesTokens(ctx.messages);
 
-    if (!silent) {
-        showToast(`Compressed ${older.length} message${older.length === 1 ? '' : 's'} into a summary`, 'success');
-    }
     return { ok: true, entry };
 }
 
@@ -14955,7 +14908,6 @@ window.addEventListener('DOMContentLoaded', async () => {
         }
         closeClearDataModal();
         await clearSelectedData(opts);
-        showToast('Selected data cleared. Reloading…', 'info', 2000);
         setTimeout(() => location.reload(), 900);
     });
 
@@ -15282,7 +15234,6 @@ async function commitMsgDelete(msgId, revert) {
     updateTokenStatus(state.lastTokenUsage);
     state.sessions[state.activeSessionId].chatHTML = serializeTermHTML();
     updateWelcomeVisibility();
-    showToast(`Message deleted${revert ? ' and file changes reverted' : ''}`, 'success');
 }
 
 window.deletePrompt = function(msgId) {
@@ -16702,9 +16653,8 @@ async function downloadZip(prefix = '') {
         if (!b) continue;
         entries.push({ path: rel, data: new Uint8Array(await b.arrayBuffer()) }); files++;
     }
-    if (!entries.length) { showToast('Nothing to download', 'info'); return; }
+    if (!entries.length) return;
     triggerDownload(buildZip(entries), (prefix ? prefix.split('/').pop() : (rootHandle.name || 'workspace')) + '.zip');
-    showToast(`Zipped ${files} file${files === 1 ? '' : 's'}`, 'success');
 }
 
 // ---- Dropped / picked files ----
@@ -16788,7 +16738,7 @@ async function collectDropped(dt) {
 }
 
 async function addFilesToWorkspace(list, baseDir = '') {
-    if (!rootHandle) { showToast('Open a workspace first', 'info'); return; }
+    if (!rootHandle) return;
     let skipped = 0;
     let items = list.map(it => ({ ...it, path: (baseDir ? baseDir + '/' : '') + it.path.replace(/^\/+/, '') })).filter(it => {
         const ok = it.path && !isAgentPath(it.path) && it.path.split('/')[0] !== '.agent' && !isSecurityProtectedPath(it.path);
@@ -16827,8 +16777,7 @@ async function addFilesToWorkspace(list, baseDir = '') {
     }
     await syncWorkspace(true);
     renderExplorerTree(); renderChangesPanel(); updateStatusInfo();
-    if (added) showToast(`Added ${added} file${added === 1 ? '' : 's'}${skipped ? ` (${skipped} skipped)` : ''}`, 'success');
-    else if (skipped) showToast(`${skipped} file${skipped === 1 ? '' : 's'} skipped (protected path)`, 'error');
+    if (skipped) showToast(`${skipped} file${skipped === 1 ? '' : 's'} skipped (protected path)`, 'error');
 }
 
 ['dragover', 'drop'].forEach(evt => window.addEventListener(evt, (e) => {
@@ -17016,7 +16965,6 @@ let wsUploadTargetDir = '';
                 saveRecentFolders(folders);
                 await setWorkspace(handle);
                 renderRecentFoldersList();
-                showToast(`Virtual workspace "${name}" created`, 'success');
             } catch (err) { showToast('Could not create workspace: ' + err.message, 'error'); }
         });
         render();
@@ -17541,8 +17489,6 @@ async function writeDisk(filePath, content, opts) {
         const parsedTool = toolRegistry[toolName];
         if (parsedTool && parsedTool.error) {
             print(`<span class="yellow">[tools] Saved ${escapeHTML(filePath)}, but: ${escapeHTML(parsedTool.error)}</span>`);
-        } else {
-            showToast(`Saved ${filePath.split('/').pop()}`, 'success');
         }
         return { handled: true };
     }
@@ -17592,8 +17538,6 @@ async function writeDisk(filePath, content, opts) {
         registerModelsVirtualFile();
         renderModelDropdown();
         renderExplorerTree();
-        const totalModels = MODEL_PROVIDERS.reduce((n, p) => n + (p.models ? p.models.length : 0), 0);
-        showToast(`Saved ${MODELS_FILE} (${MODEL_PROVIDERS.length} provider${MODEL_PROVIDERS.length === 1 ? '' : 's'}, ${totalModels} model${totalModels === 1 ? '' : 's'})`, 'success');
         return { handled: true };
     }
 
@@ -17618,7 +17562,6 @@ async function writeDisk(filePath, content, opts) {
         registerConfigVirtualFile();
         applyConfigToUI();
         updateGenGlow();
-        showToast(`Saved ${CONFIG_FILE}`, 'success');
         return { handled: true };
     }
 
@@ -17629,8 +17572,6 @@ async function writeDisk(filePath, content, opts) {
         renderExplorerTree();
         if (res.error) {
             print(`<span class="yellow">[prompts] ${escapeHTML(res.error)}</span>`);
-        } else {
-            showToast(`Saved ${filePath.split('/').pop()} (${mode} prompt)`, 'success');
         }
         return { handled: true };
     }
@@ -18961,7 +18902,6 @@ async function submitPrompt() {
             resizePrompt();
             state.attachedReferences = [];
             renderAttachmentChips();
-            showToast('Prompt queued — it will send once the current task finishes', 'info');
             return;
         }
 
@@ -19073,7 +19013,6 @@ async function submitPrompt() {
                 renderAllPromptGroups();
                 await persistCheckpoint();
                 await saveActiveSession(true);
-                showToast('Session cleared and checkpoint re-baselined', 'success');
                 focusPrompt();
                 updateWelcomeVisibility();
                 return;
@@ -20211,7 +20150,6 @@ function updateAllGithubTools() {
             if (await installGithubEntry(entry)) ok++;
         }
         newToolUpdateAllBtn.disabled = false;
-        if (ok) showToast(`Updated ${ok} tool${ok > 1 ? 's' : ''}`, 'success');
     })();
 }
 
@@ -20341,7 +20279,6 @@ async function installGithubEntry(entry) {
         refreshAgentFileTab(fp, source);
         renderExplorerTree();
         renderToolsList();
-        showToast(`Updated ${entry.name}`, 'success');
         await refreshGithubLocalHashes();
         renderGithubToolsList();
         return true;
@@ -20356,7 +20293,6 @@ async function installGithubEntry(entry) {
     rememberGithubTool(name, entry.name);
     renderExplorerTree();
     renderToolsList();
-    showToast(`Installed ${entry.name} as ${result.path}`, 'success');
     await refreshGithubLocalHashes();
     renderGithubToolsList();
     return true;
@@ -20528,7 +20464,6 @@ document.getElementById('newtool-install').addEventListener('click', async () =>
     closeNewToolModal();
     renderExplorerTree();
     renderToolsList();
-    showToast(`Installed ${result.path}`, 'success');
 });
 
 newToolNameInput.addEventListener('input', () => {
@@ -20558,7 +20493,6 @@ newToolCreateBtn.addEventListener('click', () => {
     closeNewToolModal();
     renderExplorerTree();
     renderToolsList();
-    showToast(`Created ${result.path}`, 'success');
 });
 
 newToolSourceEditor.addEventListener('keydown', (e) => {
@@ -20584,7 +20518,6 @@ newToolInstallBtn.addEventListener('click', async () => {
     closeNewToolModal();
     renderExplorerTree();
     renderToolsList();
-    showToast(`Installed ${result.path}`, 'success');
 });
 
 newToolNameInput.addEventListener('keydown', (e) => {
