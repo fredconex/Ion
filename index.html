@@ -11659,7 +11659,11 @@ function renderExplorerTree() {
     const fileCount = Object.keys(registry.meta).filter(k => registry.meta[k]?.kind === 'file' && !isAgentPath(k)).length;
     fileCountEl.innerText = fileCount;
 
-    if (!rootHandle && fileCount === 0) {
+    // `.agent/*` are always registered as virtual files, so gate the
+    // placeholder on the registry being truly empty rather than on the
+    // non-agent file count. That keeps the .agent folder visible even
+    // before a real workspace has been chosen.
+    if (Object.keys(registry.meta).length === 0) {
         fileTreeEl.innerHTML = `<div class="tree-node dim" style="padding: 8px 12px;">(no folder open)</div>`;
         return;
     }
