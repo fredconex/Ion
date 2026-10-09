@@ -2667,7 +2667,8 @@
                 transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
             }
             #sidebar.mobile-open { transform: translateX(0); }
-            #sidebar.collapsed { width: 85vw; min-width: 200px; }
+            #sidebar.collapsed { width: 85vw; min-width: 200px; margin-right: 0; }
+            #sidebar.collapsed #sidebar-content { opacity: 1; }
             #sidebar-overlay {
                 display: none; position: fixed; inset: 0;
                 background: rgba(0, 0, 0, 0.5); z-index: 140;
@@ -8846,7 +8847,7 @@ let isSidebarCollapsed = false;
 let savedSidebarWidth = null;
 function setSidebarCollapsed(collapsed) {
     const isMobile = window.innerWidth <= 768;
-    if (isMobile) { toggleMobileSidebar(!collapsed); return; }
+    if (isMobile) { sidebarEl.classList.remove('collapsed'); toggleMobileSidebar(!collapsed); return; }
     if (collapsed) {
         savedSidebarWidth = parseInt(sidebarEl.style.width, 10) || Number(AppConfig.get('sidebar-width', 314)) || 314;
         isSidebarCollapsed = true;
@@ -13685,6 +13686,7 @@ function toggleMobileSidebar(show) {
     if (show === undefined) {
         show = !sidebarEl.classList.contains('mobile-open');
     }
+    if (show && window.innerWidth <= 768) sidebarEl.classList.remove('collapsed'); // desktop 'collapsed' hides #sidebar-content
     sidebarEl.classList.toggle('mobile-open', show);
     sidebarOverlay.classList.toggle('visible', show);
 }
