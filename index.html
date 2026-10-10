@@ -9684,9 +9684,8 @@ async function restoreActiveSessionContent() {
 
     const savedTabs = Array.isArray(current.openTabs) && current.openTabs.length ? current.openTabs : ['chat'];
     state.openTabs = savedTabs.slice();
-    const savedActiveTab = current.activeTab && savedTabs.includes(current.activeTab) ? current.activeTab : 'chat';
     try {
-        await switchTab(savedActiveTab);
+        await switchTab('chat');
     } catch(e) {
         state.openTabs = ['chat'];
         await switchTab('chat');
