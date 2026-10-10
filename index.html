@@ -98,6 +98,11 @@
         }
         .icon-btn:hover { background: var(--bg-input); border-color: var(--border); color: var(--fg); }
         .icon-btn.active { color: var(--primary); border-color: rgba(var(--primary-rgb), 0.4); background: rgba(var(--primary-rgb), 0.12); }
+        .recent-folder-name-input {
+            background: var(--bg-input); border: 1px solid var(--primary); border-radius: 4px;
+            color: var(--fg); font-family: inherit; font-size: 12px; padding: 2px 5px; outline: none;
+            display: block; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%;
+        }
         *::-webkit-scrollbar { width: 6px; height: 6px; }
         *::-webkit-scrollbar-track { background: transparent; }
         *::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -160,20 +165,23 @@
         }
         .recent-folder-item:hover { border-color: var(--primary); background: rgba(var(--primary-rgb), 0.12); }
         .recent-folder-item .folder-icon { font-size: 18px; color: var(--magenta); flex-shrink: 0; }
+        .recent-folder-item .folder-icon.filled { font-variation-settings: 'FILL' 1; }
         .recent-folder-item:hover .folder-icon { color: var(--primary); }
         .recent-folder-info { flex: 1; min-width: 0; overflow: hidden; }
+        .recent-folder-name:has(> .recent-folder-name-input) { overflow: visible; text-overflow: clip; }
         .recent-folder-name {
             font-size: 11.5px; font-weight: 600; color: var(--fg);
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
         }
-        .recent-folder-remove {
+        .recent-folder-remove, .recent-folder-edit {
             background: transparent; border: none; color: var(--dim);
             cursor: pointer; padding: 2px; border-radius: 4px;
             display: flex; align-items: center; justify-content: center;
             opacity: 0; transition: opacity 0.15s ease; flex-shrink: 0;
         }
-        .recent-folder-item:hover .recent-folder-remove { opacity: 1; }
+        .recent-folder-item:hover .recent-folder-remove, .recent-folder-item:hover .recent-folder-edit { opacity: 1; }
         .recent-folder-remove:hover { color: var(--red); background: rgba(224, 108, 117, 0.15); }
+        .recent-folder-edit:hover { color: var(--primary); background: rgba(var(--primary-rgb), 0.15); }
         #window.initializing #window-body, #window.initializing #titlebar { opacity: 0; }
         #window-body, #titlebar { transition: opacity 0.15s ease; }
         .thought-body, .code-box-content,
@@ -3184,7 +3192,6 @@
     #explorer-io-menu.open { display: block; }
     #explorer-io-menu .explorer-io-hint { margin: 4px 2px 1px; padding: 6px 8px 2px; border-top: 1px solid var(--border); font-size: 10px; line-height: 1.4; color: var(--dim); }
     #btn-explorer-io.active { color: var(--primary); border-color: rgba(var(--primary-rgb), 0.4); background: rgba(var(--primary-rgb), 0.12); }
-    .recent-folder-item .vws-tag { font-size: 9px; color: var(--primary); border: 1px solid rgba(var(--primary-rgb), 0.4); border-radius: 4px; padding: 0 4px; margin-left: 6px; text-transform: uppercase; }
     .vws-backdrop { position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; padding: 16px; }
     .vws-card { width: 100%; max-width: 480px; max-height: 90vh; display: flex; flex-direction: column; gap: 12px; background: var(--bg-panel); border: 1px solid var(--border-highlight); border-radius: 14px; padding: 18px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
     .vws-title { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--fg); font-size: 14px; }
@@ -16429,7 +16436,7 @@ window.continueTask = async () => {
 function updateWorkspaceTitle() {
     const row = document.getElementById('ws-popover-row'), nm = document.getElementById('ws-popover-name'), ic = document.getElementById('ws-popover-icon');
     if (!row || !nm) return;
-    const name = rootHandle ? rootHandle.name : '';
+    const name = rootHandle ? (rootHandle.displayName || rootHandle.name) : '';
     nm.textContent = name;
     if (ic) ic.textContent = rootHandle && rootHandle.isVirtual ? 'cloud_queue' : 'folder';
     const sideIc = document.getElementById('sidebar-files-icon');
@@ -16439,6 +16446,7 @@ function updateWorkspaceTitle() {
     const sep = document.getElementById('ws-popover-sep');
     if (sep) sep.style.display = name ? '' : 'none';
 }
+
 let HAS_FS_API = typeof window.showDirectoryPicker === 'function' && window.isSecureContext !== false;
 function markNoFsApi() {   // called when the picker turns out to be unusable at runtime
     HAS_FS_API = false;
@@ -17094,22 +17102,28 @@ function renderRecentFoldersList() {
         return;
     }
     recentFoldersSection.style.display = 'block';
-    recentFoldersList.innerHTML = folders.map(folder => `
+    recentFoldersList.innerHTML = folders.map(folder => {
+        const editBtn = folder.virtual
+            ? `<button class="recent-folder-edit icon-btn" data-edit-vid="${escapeHTML(folder.vid)}" data-edit-name="${escapeHTML(folder.name)}" title="Rename virtual workspace"><span class="icon" style="font-size:14px;">edit</span></button>`
+            : '';
+        return `
         <div class="recent-folder-item" data-folder-name="${escapeHTML(folder.name)}" ${folder.virtual ? `data-vid="${escapeHTML(folder.vid)}"` : ''} title="${escapeHTML(folder.name)}">
-            <span class="icon folder-icon">${folder.virtual ? 'cloud_queue' : 'folder'}</span>
+            <span class="icon folder-icon ${folder.virtual ? 'filled' : ''}">${folder.virtual ? 'cloud_queue' : 'folder'}</span>
             <div class="recent-folder-info">
-                <div class="recent-folder-name">${escapeHTML(folder.name)}${folder.virtual ? '<span class="vws-tag">virtual</span>' : ''}</div>
+                <div class="recent-folder-name">${escapeHTML(folder.name)}</div>
             </div>
+            ${editBtn}
             <button class="recent-folder-remove icon-btn" data-remove-name="${escapeHTML(folder.name)}" ${folder.virtual ? `data-remove-vid="${escapeHTML(folder.vid)}"` : ''} title="${folder.virtual ? 'Delete virtual workspace' : 'Remove from list'}">
                 <span class="icon" style="font-size:14px;">close</span>
             </button>
         </div>
-    `).join('');
+    `; }).join('');
 
     recentFoldersList.querySelectorAll('.recent-folder-item').forEach(item => {
         item.addEventListener('click', async (e) => {
             if (isNoFolderOverlayHidden()) return;
             if (e.target.closest('.recent-folder-remove')) return;
+            if (e.target.closest('.recent-folder-edit')) return;
 
             const folderName = item.dataset.folderName;
             if (rootHandle) await closeWorkspaceNoConfirm();
@@ -17142,6 +17156,74 @@ function renderRecentFoldersList() {
             if (isNoFolderOverlayHidden()) return;
             if (btn.dataset.removeVid) { removeVirtualWorkspace(btn.dataset.removeVid, btn.dataset.removeName); return; }
             removeFromRecentFolders(btn.dataset.removeName);
+        });
+    });
+
+    recentFoldersList.querySelectorAll('.recent-folder-edit').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isNoFolderOverlayHidden()) return;
+            if (!btn.dataset.editVid) return;   // only virtual workspaces are editable
+            const vid = btn.dataset.editVid;
+            const origName = btn.dataset.editName;
+            const nameEl = btn.closest('.recent-folder-item')?.querySelector('.recent-folder-name');
+            if (!nameEl) return;
+
+            // Guard: if already editing, focus the existing input and return.
+            if (nameEl.querySelector('input.recent-folder-name-input')) {
+                nameEl.querySelector('input.recent-folder-name-input').focus();
+                return;
+            }
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'recent-folder-name-input';
+            input.value = origName;
+            input.maxLength = 60;
+            input.spellcheck = false;
+            input.autocomplete = 'off';
+            input.setAttribute('data-editing-vid', vid);
+
+            function commit() {
+                const newName = input.value.replace(/[\/\\]/g, '-').trim();
+                if (!newName) { showToast('Name cannot be empty', 'error'); return; }
+                if (newName === origName) { renderRecentFoldersList(); return; }
+
+                // Update recent-folders entry in localStorage (by vid, not name).
+                const folders = getRecentFolders();
+                const f = folders.find(x => x.vid === vid);
+                if (f) { f.name = newName; saveRecentFolders(folders); }
+
+                // If the workspace is currently open, rename the live VFS root and
+                // persist to IndexedDB via the debounced flush.
+                if (rootHandle && rootHandle.isVirtual && rootHandle._n && rootHandle._n._ws && rootHandle._n._ws.vid === vid) {
+                    rootHandle._n.name = newName;
+                    vfsChanged(rootHandle._n);
+                    updateWorkspaceTitle();
+                    updateSessionPillLabel();
+                }
+                renderRecentFoldersList();
+            }
+
+            function cancel() {
+                nameEl.textContent = '';
+                renderRecentFoldersList();
+            }
+
+            input.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+                else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+            });
+            input.addEventListener('blur', () => {
+                // Only commit if this input is still the active editor for this row
+                // (i.e. renderRecentFoldersList() hasn't rebuilt the list yet).
+                if (nameEl.querySelector('input.recent-folder-name-input') === input) commit();
+            });
+
+            nameEl.textContent = '';
+            nameEl.appendChild(input);
+            input.focus();
+            input.select();
         });
     });
 }
@@ -20156,9 +20238,6 @@ function findInstalledToolForEntry(entry) {
     }
     const fileKey = entry.name.replace(/\.js$/i, '');
     return Object.values(toolRegistry).find(t => (t.fileName || t.name) === fileKey) || null;
-}
-function isGithubEntryInstalled(entry) {
-    return !!findInstalledToolForEntry(entry);
 }
 
 // Git blob hash of each installed tool's local file, computed fresh every time the list is shown.
