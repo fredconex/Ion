@@ -1191,8 +1191,10 @@
         .ct-icon-btn.lock-btn.locked { color: var(--yellow, #e0af68); }
         .ct-icon-btn.lock-btn.locked:hover { color: var(--yellow, #e0af68); background: rgba(224,175,104,0.15); }
         .ct-item-badge.builtin { background: rgba(158,206,106,0.15); color: var(--green, #9ece6a); }
-        .ct-item-badge.vision { background: rgba(152,195,121,0.15); color: var(--green, #98c379); }
-        .ct-item-badge.vision.inactive { background: rgba(115,119,145,0.15); color: var(--dim); }
+        /* Vision marker: just the eye, no pill background, so it stays discreet */
+        .ct-item-badge.vision { background: none; padding: 0; margin-left: 5px; color: var(--green, #98c379); opacity: 0.8; }
+        .ct-item-badge.vision.inactive { background: none; color: var(--dim); opacity: 0.6; }
+        .ct-item-badge.vision .icon { font-size: 13px; vertical-align: -2px; margin-right: 0; }
         .ct-item-badge .icon { font-size: 10px; vertical-align: -1px; margin-right: 2px; }
         .ct-item-badge.broken { background: rgba(224,108,117,0.15); color: var(--red, #e06c75); }
         .ct-empty-note { font-size: 10.5px; color: var(--dim); padding: 4px 0 8px; }
@@ -2997,6 +2999,9 @@
  /* Gap between the panels belongs to the resizer (10px) so its line is centered in it. */
  #sidebar{margin-right:0}
  #sidebar-resizer{flex-basis:10px}
+ /* Shadows: sidebar and chat sit on the same layer. #main-pane comes later in the DOM, so its
+    shadow used to paint over the sidebar's edge; clipping its left side (and leaving the other
+    sides open for the shadow) keeps every shadow behind the panels instead of on top of them. */
  #main-pane{clip-path:inset(-60px -60px -60px 0)}
  #chat-view,#chat-container,#chat,#tabs-bar{background:transparent}
  .icon-btn{width:30px;height:30px;border-radius:10px}
@@ -14031,7 +14036,7 @@ function buildToolRow(tool) {
         badge = `<span class="ct-item-badge broken" title="${escapeHTML(tool.error)}">broken</span>`;
     } else if (tool.require_vision) {
         const visionOk = currentModelHasVision();
-        badge = `<span class="ct-item-badge vision${visionOk ? '' : ' inactive'}" title="${visionOk ? 'Requires a vision-capable model (the selected model supports vision)' : 'Requires a vision-capable model - unavailable while the selected model has no vision'}"><span class="icon">${visionOk ? 'visibility' : 'visibility_off'}</span>vision</span>`;
+        badge = `<span class="ct-item-badge vision${visionOk ? '' : ' inactive'}" title="${visionOk ? 'Requires a vision-capable model (the selected model supports vision)' : 'Requires a vision-capable model - unavailable while the selected model has no vision'}"><span class="icon">${visionOk ? 'visibility' : 'visibility_off'}</span></span>`;
     }
 
     const modesLabel = (tool.modes || []).map(m => MODE_LABELS[m] || m).join(', ') || 'no modes';
