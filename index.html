@@ -425,7 +425,7 @@
         }
         #yesno-modal-overlay {
             display: none; position: absolute; inset: 0;
-            background: rgba(0,0,0,0.55); z-index: 400;
+            background: rgba(0,0,0,0.55); z-index: 450;
             align-items: center; justify-content: center;
         }
         #yesno-modal {
@@ -1251,17 +1251,18 @@
             cursor: pointer; border-radius: 4px; transition: all 0.12s ease;
         }
         .tri-btn:hover { color: var(--fg); }
-        .tri-btn.active.never { background: rgba(224, 108, 117, 0.2); color: var(--red); font-weight: 700; }
-        .tri-btn.active.ask { background: rgba(229, 192, 123, 0.2); color: var(--yellow); font-weight: 700; }
-        .tri-btn.active.always { background: rgba(152, 195, 121, 0.2); color: var(--green); font-weight: 700; }
-        .tri-btn.active.off { background: rgba(224, 108, 117, 0.2); color: var(--red); font-weight: 700; }
-        .tri-btn.active.on { background: rgba(152, 195, 121, 0.2); color: var(--green); font-weight: 700; }
+        .tri-btn.active { background: rgba(var(--primary-rgb), 0.2); color: var(--primary); }
+        /* Single theme color; brightness ramps from dim (never) to bright (always) */
+        .tri-btn.active.never { filter: brightness(0.6); }
+        .tri-btn.active.ask { filter: brightness(0.85); }
+        .tri-btn.active.always { filter: brightness(1.2); }
         /* Ctrl held over a permission: preview applying it to every tool in the group */
         /* No font-weight/padding/border changes here: they would shift the text. inset box-shadow takes no layout space. */
         .tri-btn.group-preview { box-shadow: inset 0 0 0 1px currentColor; }
-        .tri-btn.group-preview.never { background: rgba(224, 108, 117, 0.32); color: var(--red); }
-        .tri-btn.group-preview.ask { background: rgba(229, 192, 123, 0.32); color: var(--yellow); }
-        .tri-btn.group-preview.always { background: rgba(152, 195, 121, 0.32); color: var(--green); }
+        .tri-btn.group-preview { background: rgba(var(--primary-rgb), 0.32); color: var(--primary); }
+        .tri-btn.group-preview.never { filter: brightness(0.6); }
+        .tri-btn.group-preview.ask { filter: brightness(0.85); }
+        .tri-btn.group-preview.always { filter: brightness(1.2); }
         .duo-switch-row {
             display: flex; align-items: center; justify-content: space-between;
             gap: 8px;
@@ -2179,33 +2180,33 @@
         #model-picker-error { padding: 20px; text-align: center; color: var(--red); font-size: 12px; }
         #perm-banner {
             display: none; background: #121212;
-            border-top: 1px solid var(--pink);
-            border-bottom: 1px solid rgba(224, 108, 117, 0.35);
+            border-top: 1px solid var(--primary);
+            border-bottom: 1px solid rgba(var(--primary-rgb), 0.35);
             padding: 8px 16px; align-items: center;
             justify-content: space-between; font-size: 12px;
-            color: var(--pink); flex-shrink: 0;
+            color: var(--primary); flex-shrink: 0;
         }
         #perm-reject-reason {
             flex: 1; min-width: 120px; margin: 0 12px;
             padding: 4px 10px; border-radius: 6px;
-            border: 1px solid rgba(224, 108, 117, 0.4);
+            border: 1px solid rgba(var(--primary-rgb), 0.4);
             background: rgba(0, 0, 0, 0.25); color: var(--fg);
             font-size: 11px; font-family: inherit; outline: none;
         }
-        #perm-reject-reason:focus { border-color: var(--pink); }
-        #perm-reject-reason::placeholder { color: rgba(224, 108, 117, 0.55); }
+        #perm-reject-reason:focus { border-color: var(--primary); }
+        #perm-reject-reason::placeholder { color: rgba(var(--primary-rgb), 0.55); }
         .perm-btns { display: flex; gap: 8px; }
         .btn-perm {
             padding: 4px 12px; border-radius: 6px; font-size: 11px;
             font-family: inherit; cursor: pointer;
-            border: 1px solid var(--pink); background: transparent;
-            color: var(--pink); transition: all 0.15s ease;
+            border: 1px solid var(--primary); background: transparent;
+            color: var(--primary); transition: all 0.15s ease;
         }
-        .btn-perm:hover { background: rgba(224, 108, 117, 0.15); }
-        .btn-perm.allow { background: var(--pink); color: #fff; }
-        .btn-perm.allow:hover { background: #d05b64; }
-        .btn-perm.always { border-color: var(--yellow); color: var(--yellow); }
-        .btn-perm.always:hover { background: rgba(229, 192, 123, 0.15); }
+        .btn-perm:hover { background: rgba(var(--primary-rgb), 0.15); }
+        .btn-perm.allow { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .btn-perm.allow:hover { filter: brightness(1.1); }
+        .btn-perm.always { border-color: var(--primary); color: var(--primary); }
+        .btn-perm.always:hover { background: rgba(var(--primary-rgb), 0.15); }
         #bottom-dock-area {
             position: relative;
             background: var(--bg-dock); border: 1px solid var(--border);
@@ -3056,7 +3057,7 @@
  .mode-tab-btn.active[data-mode="code"]{background:rgba(167,139,250,.18);color:var(--magenta)}
  #model-select-btn{border-radius:999px;padding:5px 12px}
  #model-select-btn:hover,#model-select-btn.open{border-color:rgba(var(--accent-rgb),.6)}
- #perm-banner{background:rgba(255,107,122,.08);border:1px solid rgba(255,107,122,.4);border-radius:16px;margin:0 14px 8px}
+ #perm-banner{background:rgba(var(--primary-rgb),.08);border:1px solid rgba(var(--primary-rgb),.4);border-radius:16px;margin:0 14px 8px}
  .btn-perm{border-radius:999px;padding:5px 14px}
  #queued-prompt-banner{border-radius:14px}
 
