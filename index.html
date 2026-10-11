@@ -16590,6 +16590,15 @@ function vfsFlushIfDirty() {
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') vfsFlushIfDirty(); });
 window.addEventListener('pagehide', vfsFlushIfDirty);
 
+/* Warn before closing/reloading the tab while any session is still generating
+   (or compacting context), so an in-flight run isn't lost by accident. */
+window.addEventListener('beforeunload', (e) => {
+    const busy = Object.values(state.sessions).some(s => s._gen && (s._gen.isRunning || s._gen.compressionInFlight));
+    if (!busy) return;
+    e.preventDefault();
+    e.returnValue = ''; // required by Chrome; the browser shows its own generic message
+});
+
 async function createVirtualWorkspace(name, list) {
     const vid = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const root = new VFSNode('directory', name, null);
