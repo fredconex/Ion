@@ -1243,15 +1243,27 @@
         .tri-switch {
             display: inline-flex; background: var(--bg-main);
             border: 1px solid var(--border); border-radius: 6px;
-            padding: 1px; gap: 1px;
+            padding: 1px; gap: 1px; position: relative;
         }
         .tri-btn {
             background: transparent; border: none; color: var(--dim);
             font-size: 10px; font-family: inherit; padding: 2px 6px;
-            cursor: pointer; border-radius: 4px; transition: all 0.12s ease;
+            cursor: pointer; border-radius: 4px; position: relative; z-index: 1;
+            transition: color 0.28s ease, filter 0.28s ease, background 0.2s ease, box-shadow 0.12s ease;
         }
         .tri-btn:hover { color: var(--fg); }
-        .tri-btn.active { background: rgba(var(--primary-rgb), 0.2); color: var(--primary); }
+        .tri-btn.active { color: var(--primary); }
+        /* The highlighted pill is a separate .tri-thumb that slides under the active button
+           (see initTriSwitchThumbs). Until a thumb exists, fall back to a plain background. */
+        .tri-switch:not(.has-thumb) .tri-btn.active { background: rgba(var(--primary-rgb), 0.2); }
+        .tri-thumb {
+            position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 0;
+            border-radius: 4px; background: rgba(var(--primary-rgb), 0.2);
+            pointer-events: none; opacity: 0; will-change: transform;
+            transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), width 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+                        height 0.28s cubic-bezier(0.4, 0, 0.2, 1), filter 0.28s ease, opacity 0.15s ease;
+        }
+        .tri-thumb.no-anim { transition: none; }
         /* Single theme color; brightness ramps from dim (never) to bright (always) */
         .tri-btn.active.never { filter: brightness(0.5); }
         .tri-btn.active.ask { filter: brightness(0.75); }
@@ -1259,6 +1271,11 @@
         /* Settings switches: darker "off" position, brighter "on" position (mirrors the tri-switch ramp) */
         .tri-btn.active.off { filter: brightness(0.5); }
         .tri-btn.active.on { filter: brightness(1.2); }
+        /* Same ramp on the sliding pill, so its color eases between positions as it moves */
+        .tri-thumb[data-level="never"], .tri-thumb[data-level="off"] { filter: brightness(0.5); }
+        .tri-thumb[data-level="ask"] { filter: brightness(0.75); }
+        .tri-thumb[data-level="always"], .tri-thumb[data-level="on"] { filter: brightness(1.2); }
+        @media (prefers-reduced-motion: reduce) { .tri-thumb, .tri-btn { transition: none; } }
         /* Ctrl held over a permission: preview applying it to every tool in the group */
         /* No font-weight/padding/border changes here: they would shift the text. inset box-shadow takes no layout space. */
         .tri-btn.group-preview { box-shadow: inset 0 0 0 1px currentColor; }
@@ -3096,7 +3113,7 @@
  #yesno-modal .btn-confirm,#cleardata-modal .btn-confirm,#about-modal .btn-confirm,
  #newtool-modal .btn-confirm,#models-modal .btn-confirm,#msg-delete-modal .btn-confirm,#msg-edit-modal .btn-confirm{box-shadow:none}
  .btn-confirm.primary:hover{filter:brightness(1.1);background:linear-gradient(135deg,var(--accent),var(--accent-2))}
- .tri-switch,.tri-btn{border-radius:999px}.tri-btn{padding:3px 12px}
+ .tri-switch,.tri-btn,.tri-thumb{border-radius:999px}.tri-btn{padding:3px 12px}
  .settings-field-row input[type="text"],.settings-field-row input[type="number"],.settings-field-row input[type="password"],
  .settings-field-row select,.mm-row input,#search-input,#newtool-browse-search,#model-select-search,#model-picker-filter input{
   border-radius:12px;background:#0e0e10;transition:border-color .15s,box-shadow .15s}
@@ -16599,6 +16616,87 @@ window.addEventListener('beforeunload', (e) => {
     e.preventDefault();
     e.returnValue = ''; // required by Chrome; the browser shows its own generic message
 });
+
+/* Tri/duo switches: one pill (.tri-thumb) slides under whichever button is active, and its
+   brightness eases between levels as it moves. The app flips switches by rewriting button
+   classNames in many places, so instead of touching each one an observer re-syncs the pill. */
+(function initTriSwitchThumbs() {
+    const pending = new Set();
+    let raf = 0;
+    const LEVELS = ['never', 'ask', 'always', 'off', 'on'];
+
+    function syncThumb(sw) {
+        if (!sw.isConnected) return;
+        let thumb = sw._triThumb;
+        if (!thumb || thumb.parentNode !== sw) {
+            thumb = document.createElement('span');
+            thumb.className = 'tri-thumb no-anim';   // first placement must not animate
+            thumb.setAttribute('aria-hidden', 'true');
+            sw.insertBefore(thumb, sw.firstChild);
+            sw._triThumb = thumb;
+            sw.classList.add('has-thumb');
+            if (sizeObserver) sizeObserver.observe(sw);
+        }
+        const btn = sw.querySelector('.tri-btn.active');
+        const br = btn && btn.getBoundingClientRect();
+        if (!btn || !br.width) {                      // nothing active, or switch is hidden right now
+            thumb.classList.add('no-anim');
+            thumb.style.opacity = '0';
+            return;
+        }
+        const sr = sw.getBoundingClientRect();
+        const x = br.left - sr.left - sw.clientLeft;
+        const y = br.top - sr.top - sw.clientTop;
+        const wasFirst = thumb.classList.contains('no-anim');
+        thumb.style.width = br.width + 'px';
+        thumb.style.height = br.height + 'px';
+        thumb.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+        thumb.style.opacity = '1';
+        thumb.dataset.level = LEVELS.find(l => btn.classList.contains(l)) || '';
+        if (wasFirst) {                               // commit position without a transition, then enable it
+            void thumb.offsetWidth;
+            thumb.classList.remove('no-anim');
+        }
+    }
+
+    function queue(sw) {
+        pending.add(sw);
+        if (!raf) raf = requestAnimationFrame(() => {
+            raf = 0;
+            const list = Array.from(pending);
+            pending.clear();
+            list.forEach(syncThumb);
+        });
+    }
+
+    // Re-sync when a switch changes size or becomes visible (e.g. inside a collapsed panel).
+    const sizeObserver = ('ResizeObserver' in window)
+        ? new ResizeObserver(entries => entries.forEach(en => queue(en.target)))
+        : null;
+
+    new MutationObserver(muts => {
+        for (const m of muts) {
+            if (m.type === 'attributes') {
+                const t = m.target;
+                if (!t.classList || !t.classList.contains('tri-btn')) continue;
+                const sw = t.closest('.tri-switch');
+                if (sw) queue(sw);
+            } else {
+                if (m.target.closest && m.target.closest('#chat')) continue;   // skip streaming chat output
+                m.addedNodes.forEach(n => {
+                    if (n.nodeType !== 1) return;
+                    if (n.matches('.tri-switch')) queue(n);
+                    n.querySelectorAll('.tri-switch').forEach(queue);
+                });
+            }
+        }
+    }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+
+    document.querySelectorAll('.tri-switch').forEach(queue);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {
+        document.querySelectorAll('.tri-switch').forEach(queue);
+    });
+})();
 
 async function createVirtualWorkspace(name, list) {
     const vid = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
