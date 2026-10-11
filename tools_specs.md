@@ -36,7 +36,7 @@ Key Execution Characteristics
     opaque-origin sandbox iframe.
   - Worker Environment: There is no DOM access inside the tool handler (document
     and window are undefined). Visual interfaces must be emitted via
-    string-based HTML (displayHtml or api.showUI).
+    string-based HTML passed to api.showUI.
   - Timeout: Configurable per user settings (default: 120s, bounds: 5s–3600s).
     Tools with interactive: true receive an extended 5-minute timeout window.
 
@@ -203,13 +203,22 @@ Dynamic UI & Status
 
   - api.setHeaderMsg(msg) -> Promise<null> Updates the tool execution status
     line in real-time in the UI header.
-  - api.showUI(html, opts?) -> Promise<Object> Interacts with the chat UI:
-      - Static UI: Sets the current display HTML.
+  - api.showUI(html, opts?) -> Promise<Object> The single way to render UI in
+    the tool box (never sent to the model). State is tracked per run, so
+    parallel calls of the same tool do not overwrite each other:
+      - Static UI (default): Sets the final card for this run. The last static
+        call wins and is what remains in the chat once the tool finishes.
       - Live Stream: If opts.live: true, streams a transient HTML frame into the
-        active running box.
-      - Interactive Wait: If html contains elements with data-choice="value",
-        halts execution until the user clicks a button, resolving to { choice:
-        "value", cancelled: boolean }.
+        active running box. Live frames are never stored; the final static
+        showUI call replaces them. If the tool never makes a static call, no
+        card is left behind.
+      - Interactive Wait: If html contains an element with a data-choice="value"
+        attribute, halts execution until the user clicks it, resolving to {
+        choice: "value", cancelled: boolean }. Only a real attribute counts;
+        the text "data-choice" in content or CSS does not.
+      - opts.autoResolve: true forces display-only even if the html contains
+        data-choice attributes (use it for a "completed" card that keeps the
+        same markup). opts.autoResolve: false forces an interactive wait.
   - api.validateDisplayHtml(html, opts?) -> Promise<{ ok: boolean, error?:
     string }> Pre-flights HTML in an offscreen sandbox to test for uncaught
     exceptions or rendering failures before showing it to the user.
@@ -239,16 +248,20 @@ return "Task completed successfully.";
 
 2. Structured Output Object (Recommended)
 
+await api.showUI("<div style='color: var(--green);'>Rich visual card for user UI</div>");
+
 return {
     output: "Clean text data sent to the LLM context window.",
-    displayHtml: "<div style='color: var(--green);'>Rich visual card for user UI</div>",
     summary: "Optional label overriding the tool card header",
     image: "data:image/png;base64,..." // Optional visual input for vision models
 };
 
-  - Separation of Concerns: output is returned to the model context. displayHtml
-    is only shown in the frontend UI. Always keep large HTML/SVG trees in
-    displayHtml to prevent context pollution.
+  - Separation of Concerns: output is returned to the model context. UI passed
+    to api.showUI is only shown in the frontend. Always keep large HTML/SVG
+    trees in api.showUI to prevent context pollution.
+  - Deprecated: returning { displayHtml } still works so existing tools keep
+    running (it takes precedence over the last api.showUI call), but new tools
+    should call api.showUI instead.
   - Header Summary: summary overrides the default arg-based header in the UI
     card.
   - Multimodal Feedback: If image is set (data URL) and the current model
@@ -273,6 +286,11 @@ const res = await api.showUI(html);
 if (res.cancelled) {
     return "User dismissed the action.";
 }
+
+// Optional: show the resolved state. If this card keeps data-choice attributes
+// (e.g. disabled-looking buttons), pass autoResolve: true so it does not wait
+// for another click.
+await api.showUI(resolvedHtml, { autoResolve: true });
 return `User clicked: ${res.choice}`;
 
 B. Live Terminal / Progress Streaming (py_run pattern)
@@ -288,6 +306,9 @@ for (let i = 0; i <= 100; i += 25) {
     `, { live: true });
     await new Promise(r => setTimeout(r, 200));
 }
+
+// Replace the transient frames with the final card (static call, last one wins).
+await api.showUI(finalHtml);
 
 9. Security, Paths & Sandboxing Rules
 
@@ -308,7 +329,7 @@ host APIs:
 
 Theme & Styling Conventions
 
-When building displayHtml, always inherit Ion theme CSS variables:
+When building HTML for api.showUI, always inherit Ion theme CSS variables:
 
   - Backgrounds: var(--bg-main), var(--bg-panel), var(--bg-input)
   - Borders: var(--border), var(--border-highlight)
@@ -345,15 +366,16 @@ async function handler(args, api) {
         .map(b => b.toString(16).padStart(2, "0"))
         .join("");
 
+    await api.showUI(`
+        <div style="font-family: var(--font-mono); padding: 8px; background: var(--bg-input); border-radius: 6px;">
+            <div style="color: var(--dim); font-size: 11px;">${args.filepath}</div>
+            <div style="color: var(--primary); font-weight: 600; font-size: 12px; margin-top: 4px;">${hash}</div>
+        </div>
+    `);
+
     return {
         output: `${args.filepath} SHA-256: ${hash}`,
-        summary: `SHA-256: ${args.filepath}`,
-        displayHtml: `
-            <div style="font-family: var(--font-mono); padding: 8px; background: var(--bg-input); border-radius: 6px;">
-                <div style="color: var(--dim); font-size: 11px;">${args.filepath}</div>
-                <div style="color: var(--primary); font-weight: 600; font-size: 12px; margin-top: 4px;">${hash}</div>
-            </div>
-        `
+        summary: `SHA-256: ${args.filepath}`
     };
 }
 
@@ -391,10 +413,12 @@ async function handler(args, api) {
     const res = await api.showUI(card);
     const confirmed = !res.cancelled && res.choice === "yes";
 
+    // No data-choice in the resolved card, so this is a plain display-only call.
+    await api.showUI(`<div style="font-size: 11px; color: ${confirmed ? 'var(--green)' : 'var(--red)'}; padding: 4px;">${confirmed ? '✓ Action approved' : '✗ Action rejected'}</div>`);
+
     return {
         output: confirmed ? "User confirmed the action." : "User cancelled the action.",
-        summary: confirmed ? "Confirmed" : "Cancelled",
-        displayHtml: `<div style="font-size: 11px; color: ${confirmed ? 'var(--green)' : 'var(--red)'}; padding: 4px;">${confirmed ? '✓ Action approved' : '✗ Action rejected'}</div>`
+        summary: confirmed ? "Confirmed" : "Cancelled"
     };
 }
 
@@ -406,7 +430,9 @@ Before deploying a tool:
 - [ ] Are all required parameters listed in TOOL_META.parameters.required?
 - [ ] If a string parameter can accept "", is "allowEmpty": true set on that property?
 - [ ] Does handler handle binary files using api.isBinary or api.readFileBytes?
-- [ ] Is heavy visualization markup returned via displayHtml rather than embedded in output?
-- [ ] Are all user-visible strings sanitized against XSS when generating displayHtml?
+- [ ] Is heavy visualization markup rendered via api.showUI rather than embedded in output (and not returned as the deprecated displayHtml)?
+- [ ] Are all user-visible strings sanitized against XSS when generating HTML for api.showUI?
 - [ ] Does interactive UI use data-choice attributes and set interactive: true in metadata?
+- [ ] If a resolved card keeps data-choice attributes, is it shown with { autoResolve: true }?
+- [ ] Are transient progress frames sent with { live: true } and followed by a final static showUI call?
 - [ ] Are theme colors using CSS variables (var(--fg), var(--primary), etc.)?
