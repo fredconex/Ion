@@ -6706,13 +6706,49 @@ function collectIdsFromMessage(sessionId, id) {
     return Array.from(ids);
 }
 
+// True only if the given messages left a real net change on disk. A logged op alone isn't enough:
+// no-op writes/edits (identical content) and write-then-restore sequences are logged but change nothing.
 function messageHasFileEdits(ids) {
-    const files = getAllTrackedFiles();
-    for (const rid of ids) {
-        for (const fp of files) {
-            const tl = getFileTimeline(fp);
-            if (tl.some((e) => e && e.prompt && e.prompt.id === rid)) return true;
+    const idSet = new Set(ids);
+    if (!idSet.size) return false;
+    const contentKinds = new Set(['create', 'write', 'edit']);
+    for (const fp of getAllTrackedFiles()) {
+        const ops = (registry.opsLog && registry.opsLog[fp]) || [];
+        const first = ops.findIndex((o) => o && o.prompt && idSet.has(o.prompt.id));
+        if (first === -1) continue;
+
+        // Renames and directory creation are always real changes.
+        if (ops.some((o) => o && o.prompt && idSet.has(o.prompt.id) &&
+            (o.kind === 'rename-in' || o.kind === 'rename-out' || o.kind === 'mkdir'))) return true;
+
+        // State of the file just before the first affected op (null = did not exist).
+        let before;
+        for (let i = first - 1; i >= 0 && before === undefined; i--) {
+            const o = ops[i];
+            if (!o) continue;
+            if (o.kind === 'delete') before = null;
+            else if (contentKinds.has(o.kind)) before = o.content;
         }
+        if (before === undefined) {
+            const orig = registry.originalFiles[fp];
+            if (orig !== undefined) before = orig;
+            else {
+                const fo = ops[first];
+                before = fo.previousContent !== undefined ? fo.previousContent : null;
+            }
+        }
+
+        // State after the last op (messages after the cut are removed too, so this is the end state).
+        let after;
+        for (let i = ops.length - 1; i >= 0 && after === undefined; i--) {
+            const o = ops[i];
+            if (!o) continue;
+            if (o.kind === 'delete') after = null;
+            else if (contentKinds.has(o.kind)) after = o.content;
+        }
+        if (after === undefined) after = before;
+
+        if (before !== after) return true;
     }
     return false;
 }
