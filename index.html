@@ -15148,11 +15148,8 @@ function commitEditFromModal(revert) {
     _pendingEditRevertIds = [];
     msgEditModalOverlay.classList.remove('visible');
 
-    if (isSessionRunning(state.activeSessionId)) {
-        abortGeneration({ showResumeUI: false });
-    }
-    // Unconditional: a waiting show_options card must never outlive the edit.
-    cancelPendingUIForSession(state.activeSessionId);
+    // Unconditional: a waiting show_options card / tool worker must never outlive the edit.
+    abortGeneration({ showResumeUI: false, discard: true });
 
     const editSid = state.activeSessionId;
     const rawForRevert = wrap.getAttribute('data-raw') || '';
@@ -16218,9 +16215,12 @@ function getSessionRunningMs(s) {
     return ms;
 }
 
-function abortGeneration({ toast = null, showResumeUI = true, sessionId } = {}) {
+// discard: true = the run's output is being thrown away (inline edit, /clear). Invalidates the run so its
+// in-flight tool calls drop their boxes silently instead of rendering an "Aborted" error into the chat.
+function abortGeneration({ toast = null, showResumeUI = true, sessionId, discard = false } = {}) {
     const sid = sessionId || state.activeSessionId;
     const gen = getGenState(sid);
+    if (discard) gen.runSeq = (gen.runSeq || 0) + 1;
     const wasRunning = !!(gen.activeController || gen.isRunning);
     const wasCompressing = !!gen.compressionInFlight;
 
@@ -19022,8 +19022,15 @@ function drainQueuedPrompt(sessionId) {
     });
 }
 
+// True when the text is one of the app's slash commands (not just "/some/path ..." prose).
+function isSlashCommand(text) {
+    const first = (text || '').trim().split(/\s+/)[0].toLowerCase();
+    return !!first && SLASH_COMMANDS.some(c => c.cmd === first);
+}
+
 async function submitPrompt() {
-        if (isSessionRunning(state.activeSessionId)) {
+        // Commands run instantly, even mid-generation; only real prompts get queued.
+        if (isSessionRunning(state.activeSessionId) && !isSlashCommand(input.value)) {
             const val = input.value.trim();
             const hasAttachments = state.attachedReferences.length > 0;
             if (!val && !hasAttachments) {
@@ -19087,12 +19094,22 @@ async function submitPrompt() {
             }
 
             if (cmd === '/execute-plan') {
+                if (isSessionRunning(state.activeSessionId)) {
+                    showToast('Cannot execute plan while generating — press Esc to stop first', 'error');
+                    focusPrompt();
+                    return;
+                }
                 await window.executePlan();
                 focusPrompt();
                 return;
             }
 
             if (cmd === '/continue') {
+                if (isSessionRunning(state.activeSessionId)) {
+                    showToast('Already generating — press Esc to stop first', 'error');
+                    focusPrompt();
+                    return;
+                }
                 await window.continueTask();
                 focusPrompt();
                 return;
@@ -19116,9 +19133,12 @@ async function submitPrompt() {
             }
 
             if (cmd === '/clear') {
-                if (isSessionRunning(state.activeSessionId)) {
-                    abortGeneration({ showResumeUI: false });
-                }
+                // A queued prompt belongs to the chat being wiped: drop it instead of letting abort restore it to the input.
+                delete state.queuedPrompts[state.activeSessionId];
+                renderQueuedPromptBanner();
+                // Unconditional: cancels pending UI cards, the tool worker and permission prompts,
+                // and invalidates the run so late tool results can't repaint the cleared chat.
+                abortGeneration({ showResumeUI: false, discard: true });
                 state.messages = [];
                 state.modifiedFiles.clear();
                 state.linesAdded = 0;
@@ -19839,7 +19859,11 @@ async function runTask(task, msgId, imageUrls, sessionId) {
 
                     if (runGen.activeController !== iterController || isSuperseded()) {
                         if (runningBox) {
-                            if (runningBox.dataset.aborted === 'true') {
+                            if (isSuperseded()) {
+                                // Edit / /clear threw this run away: leave no trace in the chat.
+                                stopRunningToolBox(runningBox);
+                                runningBox.remove();
+                            } else if (runningBox.dataset.aborted === 'true') {
                                 stopRunningToolBox(runningBox);
                                 safeRenderToolCallBox(call.function.name, args, String(resObj.output), true, true, toolGroupContainer, runningBox, runSessionId);
                                 runGen.hasNewContent = true;
