@@ -1169,7 +1169,7 @@
             color: var(--fg); font-size: 11px; font-weight: 600;
             font-family: var(--font-mono); overflow: hidden;
             text-overflow: ellipsis; white-space: nowrap;
-            flex: 1; min-width: 0;
+            flex: 1; min-width: 0; transition: color 0.2s ease, opacity 0.2s ease;
         }
         .ct-item-name.faint { color: var(--dim); opacity: 0.55; font-weight: 400; }
         .ct-item-name.faint:hover { opacity: 0.85; }
@@ -14042,8 +14042,7 @@ function buildToolRow(tool) {
     const modesLabel = (tool.modes || []).map(m => MODE_LABELS[m] || m).join(', ') || 'no modes';
     const titleAttr = tool.error ? tool.error : `${tool.description || ''}\nModes: ${modesLabel}`;
     const hasSettings = Array.isArray(tool.settings) && tool.settings.length > 0;
-    const nameFaint = !tool.error && tool.require_vision && !currentModelHasVision();
-    const nameClass = `ct-item-name${nameFaint ? ' faint' : ''}`;
+    const nameClass = `ct-item-name${isToolNameFaint(tool) ? ' faint' : ''}`;
 
     row.innerHTML = `
         <button class="ct-icon-btn lock-btn ${tool.locked ? 'locked' : ''}" data-lock-tool="${escapeHTML(tool.name)}" title="${tool.locked ? 'Locked - the model cannot modify this tool file. Click to unlock.' : 'Unlocked - the model can modify this tool file. Click to lock.'}">
@@ -14167,6 +14166,13 @@ function loadToolPermState() {
 function saveToolPermState(state) {
     localStorage.setItem('tool_perm_state', JSON.stringify(state));
 }
+// A tool's name is shown faint when it can't be used: permission is "never", or it needs vision
+// and the selected model has none.
+function isToolNameFaint(tool) {
+    if (!tool || tool.error) return false;
+    return tool.permission === 'never' || (!!tool.require_vision && !currentModelHasVision());
+}
+
 function setToolPermission(name, val) {
     const tool = toolRegistry[name];
     if (!tool) return;
@@ -14174,6 +14180,11 @@ function setToolPermission(name, val) {
     const permState = loadToolPermState();
     permState[name] = val;
     saveToolPermState(permState);
+    // Keep the name in the tools list in sync right away (rows aren't re-rendered on a permission change).
+    if (typeof toolsListEl !== 'undefined' && toolsListEl) {
+        const nameEl = toolsListEl.querySelector('.ct-item-name[data-open-tool="' + CSS.escape(name) + '"]');
+        if (nameEl) nameEl.classList.toggle('faint', isToolNameFaint(tool));
+    }
 }
 
 // Per-tool settings from TOOL_META.settings, stored as { [toolName]: { [key]: value } }.
