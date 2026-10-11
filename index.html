@@ -1256,6 +1256,9 @@
         .tri-btn.active.never { filter: brightness(0.6); }
         .tri-btn.active.ask { filter: brightness(0.85); }
         .tri-btn.active.always { filter: brightness(1.2); }
+        /* Settings switches: darker "off" position, brighter "on" position (mirrors the tri-switch ramp) */
+        .tri-btn.active.off { filter: brightness(0.6); }
+        .tri-btn.active.on { filter: brightness(1.2); }
         /* Ctrl held over a permission: preview applying it to every tool in the group */
         /* No font-weight/padding/border changes here: they would shift the text. inset box-shadow takes no layout space. */
         .tri-btn.group-preview { box-shadow: inset 0 0 0 1px currentColor; }
