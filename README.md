@@ -120,5 +120,15 @@ Ion is entirely client-side. There is no server, daemon or native binary.
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=fredconex%2Fion&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=fredconex/ion&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=fredconex/ion&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=fredconex/ion&type=date&legend=top-left" />
+ </picture>
+</a>
+
 # Support development
 <a href="https://www.paypal.com/donate/?hosted_button_id=24CJHH95X3AQS"><img width=256px src="https://raw.githubusercontent.com/stefan-niedermann/paypal-donate-button/master/paypal-donate-button.png" alt="Donate with PayPal" /></a>
